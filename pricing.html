@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Pricing — Case Closed Pro</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700;9..144,900&family=Inter+Tight:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --ink:#0F172A;--ink2:#1E293B;--muted:#5B6B85;--dim:#8B96AB;--line:#D7DEEA;--line2:#C3CEE0;
+  --bg:#F3F5FA;--surf:#FFFFFF;--surf2:#EEF1F7;--surf3:#E4E8F2;
+  --pri:#001C41;--pri2:#0056D2;--pri3:#00C9DB;
+  --green:#059669;--greenBg:#ECFDF5;
+  --serif:'Fraunces',Georgia,serif;--sans:'Inter Tight',-apple-system,system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{background:var(--bg);font-family:var(--sans);color:var(--ink);line-height:1.5;-webkit-font-smoothing:antialiased;}
+.serif{font-family:var(--serif);}
+a{color:inherit;}
+img,svg{display:block;}
+.wrap{max-width:1180px;margin:0 auto;padding:0 32px;}
+@media(max-width:720px){.wrap{padding:0 20px;}}
+
+/* ---------- NAV ---------- */
+nav{position:sticky;top:0;z-index:40;background:rgba(255,255,255,.9);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);}
+.nav-in{max-width:1180px;margin:0 auto;padding:14px 32px;display:flex;align-items:center;justify-content:space-between;}
+@media(max-width:720px){.nav-in{padding:14px 20px;}}
+.brand{display:flex;align-items:center;gap:11px;}
+.brand-mark{width:32px;height:32px;background:linear-gradient(135deg,#001C41 0%,#0056D2 100%);border-radius:8px;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,28,65,.4);flex-shrink:0;}
+.brand-name{font-family:var(--serif);font-weight:700;font-size:16px;letter-spacing:-.2px;}
+.nav-links{display:flex;align-items:center;gap:28px;font-size:13.5px;font-weight:500;color:var(--muted);}
+.nav-links a:hover{color:var(--pri);}
+.nav-cta{background:var(--pri);color:#fff;padding:9px 18px;border-radius:7px;font-size:13.5px;font-weight:600;text-decoration:none;transition:background .15s;}
+.nav-cta:hover{background:var(--pri2);}
+@media(max-width:720px){.nav-links{display:none;}}
+
+/* ---------- HERO / CALCULATOR ---------- */
+.hero{background:linear-gradient(160deg,#001C41 0%,#012a5e 45%,#0056D2 130%);color:#fff;padding:64px 0 0;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-120px;right:-120px;width:480px;height:480px;border-radius:50%;background:radial-gradient(circle,rgba(0,201,219,.18) 0%,transparent 70%);}
+.hero-in{max-width:1180px;margin:0 auto;padding:0 32px;position:relative;}
+@media(max-width:720px){.hero-in{padding:0 20px;}}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#7FD4E8;margin-bottom:16px;}
+.hero h1{font-family:var(--serif);font-size:clamp(32px,5vw,52px);font-weight:600;line-height:1.08;letter-spacing:-1px;max-width:820px;}
+.hero h1 em{font-style:normal;color:#7FD4E8;}
+.hero p.sub{font-size:16.5px;color:#C3D4EE;max-width:640px;margin-top:20px;line-height:1.6;}
+
+/* calculator card */
+.calc{background:#fff;border-radius:18px;margin:44px 0 0;box-shadow:0 30px 70px rgba(0,10,30,.35);overflow:hidden;color:var(--ink);}
+.calc-top{padding:34px 38px 26px;}
+.calc-label{font-size:11px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
+.calc-q{font-family:var(--serif);font-size:22px;font-weight:600;letter-spacing:-.3px;margin-bottom:26px;}
+.calc-row{display:flex;align-items:baseline;gap:14px;margin-bottom:8px;}
+.calc-num{font-family:var(--serif);font-size:44px;font-weight:700;color:var(--pri);letter-spacing:-1px;min-width:70px;}
+.calc-num-label{font-size:13px;color:var(--muted);font-weight:500;}
+input[type=range]{width:100%;height:6px;border-radius:3px;background:var(--surf3);appearance:none;outline:none;margin:18px 0 10px;}
+input[type=range]::-webkit-slider-thumb{appearance:none;width:24px;height:24px;border-radius:50%;background:var(--pri2);border:4px solid #fff;box-shadow:0 2px 8px rgba(0,86,210,.5);cursor:pointer;}
+input[type=range]::-moz-range-thumb{width:24px;height:24px;border-radius:50%;background:var(--pri2);border:4px solid #fff;box-shadow:0 2px 8px rgba(0,86,210,.5);cursor:pointer;border:none;}
+.calc-ticks{display:flex;justify-content:space-between;font-size:10.5px;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
+.calc-bottom{background:var(--surf2);padding:26px 38px;display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;border-top:1px solid var(--line);}
+.calc-tier{display:flex;align-items:center;gap:14px;}
+.calc-tier-badge{padding:5px 13px;border-radius:20px;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;background:var(--pri);color:#fff;transition:background .2s;}
+.calc-price{text-align:right;}
+.calc-price .amt{font-family:var(--serif);font-size:30px;font-weight:700;color:var(--pri);letter-spacing:-.5px;transition:color .2s;}
+.calc-price .per{font-size:12px;color:var(--muted);}
+.calc-firmnote{width:100%;padding-top:18px;margin-top:4px;border-top:1px dashed var(--line2);font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:8px;}
+.calc-firmnote strong{color:var(--green);}
+
+.hero-spacer{height:70px;}
+
+/* ---------- SECTION SHELL ---------- */
+section{padding:80px 0;}
+.section-head{max-width:640px;margin:0 auto 48px;text-align:center;}
+.section-eyebrow{font-size:11px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--pri2);margin-bottom:12px;}
+.section-head h2{font-family:var(--serif);font-size:clamp(26px,4vw,36px);font-weight:600;letter-spacing:-.6px;line-height:1.15;}
+.section-head p{font-size:15px;color:var(--muted);margin-top:14px;line-height:1.6;}
+
+/* ---------- TIER CARDS ---------- */
+.tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;}
+@media(max-width:900px){.tiers{grid-template-columns:1fr;max-width:440px;margin:0 auto;}}
+.tier{background:#fff;border:1.5px solid var(--line);border-radius:16px;padding:32px 28px;position:relative;transition:transform .2s,box-shadow .2s;}
+.tier.active{border-color:var(--pri2);box-shadow:0 16px 40px rgba(0,86,210,.16);transform:translateY(-4px);}
+.tier-name{font-family:var(--serif);font-size:21px;font-weight:600;margin-bottom:4px;}
+.tier-range{font-size:12.5px;color:var(--muted);margin-bottom:20px;}
+.tier-price{font-family:var(--serif);font-size:34px;font-weight:700;color:var(--pri);letter-spacing:-.7px;}
+.tier-price span{font-size:13px;font-weight:500;color:var(--muted);font-family:var(--sans);}
+.tier-desc{font-size:13px;color:var(--muted);margin:14px 0 22px;line-height:1.6;}
+.tier ul{list-style:none;margin-bottom:24px;}
+.tier li{display:flex;gap:10px;font-size:13.5px;padding:7px 0;border-bottom:1px solid var(--surf2);}
+.tier li:last-child{border:none;}
+.tier li svg{flex-shrink:0;margin-top:3px;}
+.tier-cta{display:block;text-align:center;padding:11px;border-radius:8px;font-weight:600;font-size:13.5px;text-decoration:none;border:1.5px solid var(--pri);color:var(--pri);transition:all .15s;}
+.tier.active .tier-cta{background:var(--pri);color:#fff;}
+.tier-cta:hover{background:var(--pri);color:#fff;}
+.tier-badge{position:absolute;top:-13px;left:50%;transform:translateX(-50%);background:var(--pri2);color:#fff;font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;padding:5px 14px;border-radius:20px;white-space:nowrap;}
+
+/* ---------- FREE FOR COUNSEL SPLIT ---------- */
+.split{background:var(--pri);color:#fff;border-radius:22px;padding:0;overflow:hidden;display:grid;grid-template-columns:1fr 1fr;}
+@media(max-width:800px){.split{grid-template-columns:1fr;}}
+.split-l,.split-r{padding:48px 44px;}
+.split-l{background:linear-gradient(160deg,#001C41,#00306e);}
+.split-r{background:#fff;color:var(--ink);}
+.split-kicker{font-size:11px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;margin-bottom:14px;}
+.split-l .split-kicker{color:#7FD4E8;}
+.split-r .split-kicker{color:var(--pri2);}
+.split h3{font-family:var(--serif);font-size:27px;font-weight:600;letter-spacing:-.5px;line-height:1.2;margin-bottom:16px;}
+.split p{font-size:14px;line-height:1.65;}
+.split-l p{color:#C3D4EE;}
+.split-r p{color:var(--muted);}
+.split-price{font-family:var(--serif);font-size:56px;font-weight:700;letter-spacing:-1.5px;margin:20px 0 6px;}
+.split-price-label{font-size:12.5px;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:.6px;}
+
+/* ---------- AI USAGE STRIP ---------- */
+.ai-strip{background:#fff;border:1.5px solid var(--line);border-radius:16px;padding:36px 40px;display:flex;align-items:center;gap:36px;flex-wrap:wrap;}
+.ai-icon{width:52px;height:52px;border-radius:12px;background:linear-gradient(135deg,var(--pri2),var(--pri3));display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:var(--serif);color:#fff;font-size:22px;font-weight:700;}
+.ai-strip-body{flex:1;min-width:260px;}
+.ai-strip-body h4{font-family:var(--serif);font-size:18px;font-weight:600;margin-bottom:6px;}
+.ai-strip-body p{font-size:13px;color:var(--muted);line-height:1.6;}
+.ai-table{display:flex;gap:28px;flex-wrap:wrap;}
+.ai-table div{text-align:center;}
+.ai-table .n{font-family:var(--serif);font-size:22px;font-weight:700;color:var(--pri);}
+.ai-table .l{font-size:10.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-top:3px;}
+
+/* ---------- IMPLEMENTATION ROW ---------- */
+.impl-row{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:14px;overflow:hidden;}
+@media(max-width:800px){.impl-row{grid-template-columns:1fr;}}
+.impl-cell{background:#fff;padding:26px 28px;}
+.impl-cell .t{font-size:11px;font-weight:700;color:var(--pri2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;}
+.impl-cell .v{font-family:var(--serif);font-size:24px;font-weight:700;margin-bottom:6px;}
+.impl-cell .d{font-size:12.5px;color:var(--muted);line-height:1.5;}
+
+/* ---------- FAQ ---------- */
+.faq{max-width:760px;margin:0 auto;}
+.faq-item{border-bottom:1px solid var(--line);}
+.faq-q{padding:22px 4px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;font-weight:600;font-size:15px;gap:16px;}
+.faq-q .plus{width:22px;height:22px;border-radius:50%;background:var(--surf3);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px;color:var(--pri2);transition:transform .2s;}
+.faq-item.open .plus{transform:rotate(45deg);}
+.faq-a{max-height:0;overflow:hidden;transition:max-height .25s ease;}
+.faq-item.open .faq-a{max-height:300px;}
+.faq-a-in{padding:0 4px 22px;font-size:13.5px;color:var(--muted);line-height:1.7;max-width:660px;}
+
+/* ---------- FOOTER CTA ---------- */
+.footcta{background:linear-gradient(135deg,#001C41,#0056D2);border-radius:22px;padding:56px 44px;text-align:center;color:#fff;}
+.footcta h2{font-family:var(--serif);font-size:clamp(24px,4vw,34px);font-weight:600;letter-spacing:-.6px;margin-bottom:14px;}
+.footcta p{color:#C3D4EE;font-size:14.5px;margin-bottom:26px;}
+.footcta-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;}
+.btn-white{background:#fff;color:var(--pri);padding:13px 26px;border-radius:9px;font-weight:700;font-size:14px;text-decoration:none;}
+.btn-outline{border:1.5px solid rgba(255,255,255,.5);color:#fff;padding:13px 26px;border-radius:9px;font-weight:600;font-size:14px;text-decoration:none;}
+
+footer{padding:36px 0;text-align:center;font-size:12px;color:var(--dim);}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-in">
+    <div class="brand">
+      <div class="brand-mark"><svg viewBox="0 0 300 160" width="19" height="10" fill="none" stroke="white">
+        <circle cx="82" cy="56" r="22" stroke-width="13"/><circle cx="82" cy="104" r="22" stroke-width="13"/>
+        <circle cx="119" cy="80" r="27" stroke-width="14"/>
+        <path d="M235.2 38.3 A60 60 0 1 0 235.2 121.7" stroke-width="25" stroke-linecap="butt"/>
+        <line x1="172" y1="80" x2="285" y2="80" stroke-width="14" stroke-linecap="butt"/>
+        <rect x="265" y="80" width="11" height="23" fill="white" stroke="none"/>
+        <rect x="248" y="80" width="11" height="15" fill="white" stroke="none"/>
+      </svg></div>
+      <div class="brand-name">Case Closed Pro</div>
+    </div>
+    <div class="nav-links">
+      <a href="#calculator">Pricing</a>
+      <a href="#counsel">For Defense Counsel</a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <a href="#footcta" class="nav-cta">Talk to Sales</a>
+  </div>
+</nav>
+
+<div class="hero">
+  <div class="hero-in">
+    <div class="eyebrow">Pricing</div>
+    <h1>Priced by litigated matters, <em>not logins.</em></h1>
+    <p class="sub">Charging per seat teaches adjusters to share passwords and stay out of the system you bought them. Case Closed Pro scales with your open litigation instead — so full adoption is never the expensive choice.</p>
+
+    <div class="calc" id="calculator">
+      <div class="calc-top">
+        <div class="calc-label">Your Plan, Calculated Live</div>
+        <div class="calc-q">How many litigated matters do you have open right now?</div>
+        <div class="calc-row">
+          <div class="calc-num" id="calcNum">250</div>
+          <div class="calc-num-label">active matters<br/>across your program</div>
+        </div>
+        <input type="range" min="10" max="1000" value="250" step="5" id="calcSlider" aria-label="Number of active litigated matters"/>
+        <div class="calc-ticks"><span>10</span><span>250</span><span>750</span><span>1000+</span></div>
+      </div>
+      <div class="calc-bottom">
+        <div class="calc-tier">
+          <span class="calc-tier-badge" id="calcTierBadge">Starter</span>
+          <span style="font-size:12.5px;color:var(--muted);" id="calcTierDesc">For smaller programs and self-insureds</span>
+        </div>
+        <div class="calc-price">
+          <div class="amt" id="calcPrice">$2,500<span style="font-size:14px;">/mo</span></div>
+          <div class="per" id="calcPer">billed monthly · or save 15% annually</div>
+        </div>
+        <div class="calc-firmnote">✉️ <span>Your defense firms get <strong>unlimited seats free</strong> — they never see a bill.</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="hero-spacer"></div>
+</div>
+
+<section id="tiers">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-eyebrow">Plans</div>
+      <h2>Three tiers. One meter: open matters.</h2>
+      <p>Every plan includes the full platform — litigation dashboard, closing &amp; claims handoff, reporting, and unlimited defense-counsel access. Higher tiers add integration depth and support, not gated features.</p>
+    </div>
+    <div class="tiers">
+      <div class="tier" id="tierStarter">
+        <div class="tier-name">Starter</div>
+        <div class="tier-range">0 – 250 active litigated matters</div>
+        <div class="tier-price">$2,500<span> /mo</span></div>
+        <div class="tier-desc">For self-insureds, smaller TPAs, and single-line carriers standing up their first litigation program.</div>
+        <ul>
+          <li>✓&nbsp; Full litigation &amp; claims dashboards</li>
+          <li>✓&nbsp; Closing &amp; claims handoff workflow</li>
+          <li>✓&nbsp; 20 pre-built reports + CSV export</li>
+          <li>✓&nbsp; 500 AI report generations / mo</li>
+          <li>✓&nbsp; Unlimited defense-firm seats</li>
+          <li>✓&nbsp; Email support, 1 business day</li>
+        </ul>
+        <a href="#footcta" class="tier-cta">Start a pilot</a>
+      </div>
+      <div class="tier" id="tierGrowth">
+        <div class="tier-badge">Most Common</div>
+        <div class="tier-name">Growth</div>
+        <div class="tier-range">251 – 750 active litigated matters</div>
+        <div class="tier-price">$6,500<span> /mo</span></div>
+        <div class="tier-desc">For multi-line carriers and larger TPAs running a structured litigation program across several business units.</div>
+        <ul>
+          <li>✓&nbsp; Everything in Starter</li>
+          <li>✓&nbsp; REST API &amp; bulk closed-case import</li>
+          <li>✓&nbsp; Custom report builder</li>
+          <li>✓&nbsp; 2,000 AI report generations / mo</li>
+          <li>✓&nbsp; Claims-system &amp; AP integration</li>
+          <li>✓&nbsp; Priority support, same business day</li>
+        </ul>
+        <a href="#footcta" class="tier-cta">Talk to sales</a>
+      </div>
+      <div class="tier" id="tierEnterprise">
+        <div class="tier-name">Enterprise</div>
+        <div class="tier-range">750+ active litigated matters</div>
+        <div class="tier-price">Custom<span> pricing</span></div>
+        <div class="tier-desc">For national carriers and large corporate legal departments with complex integration and reporting needs.</div>
+        <ul>
+          <li>✓&nbsp; Everything in Growth</li>
+          <li>✓&nbsp; SSO / SAML &amp; custom roles</li>
+          <li>✓&nbsp; Unlimited AI report generations</li>
+          <li>✓&nbsp; Dedicated implementation team</li>
+          <li>✓&nbsp; Named CSM &amp; contractual SLA</li>
+          <li>✓&nbsp; Locked-in renewal pricing</li>
+        </ul>
+        <a href="#footcta" class="tier-cta">Contact us</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="counsel">
+  <div class="wrap">
+    <div class="split">
+      <div class="split-l">
+        <div class="split-kicker">Who Pays</div>
+        <h3>The carrier pays.<br/>Defense counsel doesn't.</h3>
+        <p>Your firms use Case Closed Pro because you require it — not because they went shopping for litigation software. Charging them per seat just teaches your program to hide from the tool built to give you visibility into it.</p>
+      </div>
+      <div class="split-r">
+        <div class="split-kicker">Cost To Your Firms</div>
+        <div class="split-price">$0</div>
+        <div class="split-price-label">Per seat, forever</div>
+        <p style="margin-top:14px;">Every attorney, paralegal, and assistant at every defense firm on your panel gets a full seat — closing packages, billing, documents, everything — at no cost to them or you beyond your matter-volume plan.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="ai">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-eyebrow">Add-On</div>
+      <h2>AI usage, metered honestly</h2>
+      <p>Report insights and closing summaries are generated on demand — so this is the one line item priced by actual usage instead of bundled into your flat fee.</p>
+    </div>
+    <div class="ai-strip">
+      <div class="ai-icon">AI</div>
+      <div class="ai-strip-body">
+        <h4>Included generations reset monthly</h4>
+        <p>Every plan bundles a monthly allotment of AI-generated report insights and closing summaries. Go over, and overage bills at a flat per-generation rate — no surprise multipliers.</p>
+      </div>
+      <div class="ai-table">
+        <div><div class="n">500</div><div class="l">Starter / mo</div></div>
+        <div><div class="n">2,000</div><div class="l">Growth / mo</div></div>
+        <div><div class="n">$0.35</div><div class="l">Overage / gen</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="implementation">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-eyebrow">One-Time</div>
+      <h2>Implementation, priced upfront</h2>
+      <p>No hidden professional-services line. Implementation scope grows with integration depth, not with a vague "success fee."</p>
+    </div>
+    <div class="impl-row">
+      <div class="impl-cell">
+        <div class="t">Starter</div>
+        <div class="v">$2,500</div>
+        <div class="d">Guided self-serve setup: guideline templates, user provisioning, one training session.</div>
+      </div>
+      <div class="impl-cell">
+        <div class="t">Growth</div>
+        <div class="v">$7,500</div>
+        <div class="d">Claims-system &amp; AP integration, historical matter migration, two training sessions.</div>
+      </div>
+      <div class="impl-cell">
+        <div class="t">Enterprise</div>
+        <div class="v">Custom</div>
+        <div class="d">Dedicated integration team, multi-system data migration, phased rollout by business unit.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-eyebrow">Questions</div>
+      <h2>Before you talk to sales</h2>
+    </div>
+    <div class="faq">
+      <div class="faq-item open">
+        <div class="faq-q" onclick="toggleFaq(this)"><span>Why price by matter volume instead of per seat?</span><span class="plus">+</span></div>
+        <div class="faq-a"><div class="faq-a-in">Per-seat pricing rewards under-adoption: adjusters share logins, supervisors stay logged out, and the system stops being the shared source of truth it was bought to be. Matter-volume pricing tracks what actually drives both your litigation spend and our infrastructure cost, so full adoption across your claims team and every defense firm never adds to your bill.</div></div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)"><span>What counts as an "active litigated matter"?</span><span class="plus">+</span></div>
+        <div class="faq-a"><div class="faq-a-in">Any matter with a status other than Closed at any point during your billing period. A matter you open and close within the same month still counts once — we don't charge extra for closing cases quickly, which would work against the entire point of this product.</div></div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)"><span>Do defense firms really pay nothing, ever?</span><span class="plus">+</span></div>
+        <div class="faq-a"><div class="faq-a-in">Correct. Every firm on your panel gets unlimited seats — attorneys, paralegals, assistants — for every matter you assign them, at no cost. If a firm works for multiple carriers who use Case Closed Pro, their same login works across all of them.</div></div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)"><span>What happens if we cross into the next tier mid-month?</span><span class="plus">+</span></div>
+        <div class="faq-a"><div class="faq-a-in">Nothing changes automatically or unexpectedly. We review your open matter count monthly and confirm with you before any tier change takes effect on your next billing cycle — never a surprise retroactive charge.</div></div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)"><span>Is there a free trial or pilot program?</span><span class="plus">+</span></div>
+        <div class="faq-a"><div class="faq-a-in">Yes — a 90-day pilot on a subset of your litigated inventory, at no cost, so you can measure cycle-time and defense-spend impact before committing to a plan.</div></div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)"><span>Can we turn off AI features to avoid the overage cost?</span><span class="plus">+</span></div>
+        <div class="faq-a"><div class="faq-a-in">Yes, per user or firm-wide. AI-generated insights and closing summaries are additive — every core workflow, including the closing package itself, works fully without them.</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="footcta">
+  <div class="wrap">
+    <div class="footcta">
+      <h2>Bring your litigated inventory.<br/>We'll tell you your number.</h2>
+      <p>Most conversations start with a 20-minute look at your current open matters — no commitment, no seat count to negotiate.</p>
+      <div class="footcta-btns">
+        <a href="#" class="btn-white">Talk to Sales</a>
+        <a href="#" class="btn-outline">Start a 90-Day Pilot</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>© 2026 Case Closed Pro · Carrier-Grade Litigation Intelligence</footer>
+
+<script>
+function toggleFaq(el){
+  const item = el.parentElement;
+  const wasOpen = item.classList.contains('open');
+  document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
+  if (!wasOpen) item.classList.add('open');
+}
+
+const slider = document.getElementById('calcSlider');
+const calcNum = document.getElementById('calcNum');
+const tierBadge = document.getElementById('calcTierBadge');
+const tierDesc = document.getElementById('calcTierDesc');
+const calcPrice = document.getElementById('calcPrice');
+const calcPer = document.getElementById('calcPer');
+
+const TIERS = {
+  starter: {name:'Starter', desc:'For smaller programs and self-insureds', price:2500, el:'tierStarter'},
+  growth: {name:'Growth', desc:'For multi-line carriers at scale', price:6500, el:'tierGrowth'},
+  enterprise: {name:'Enterprise', desc:'National carriers & complex integrations', price:null, el:'tierEnterprise'}
+};
+
+function updateCalc(){
+  const v = parseInt(slider.value, 10);
+  calcNum.textContent = v >= 1000 ? '1000+' : v;
+
+  let tier;
+  if (v <= 250) tier = TIERS.starter;
+  else if (v <= 750) tier = TIERS.growth;
+  else tier = TIERS.enterprise;
+
+  tierBadge.textContent = tier.name;
+  tierDesc.textContent = tier.desc;
+
+  if (tier.price) {
+    calcPrice.innerHTML = '$' + tier.price.toLocaleString() + '<span style="font-size:14px;">/mo</span>';
+    calcPer.textContent = 'billed monthly · or save 15% annually';
+  } else {
+    calcPrice.innerHTML = 'Custom<span style="font-size:14px;"> pricing</span>';
+    calcPer.textContent = 'scoped to your program';
+  }
+
+  document.querySelectorAll('.tier').forEach(t => t.classList.remove('active'));
+  document.getElementById(tier.el).classList.add('active');
+}
+
+slider.addEventListener('input', updateCalc);
+updateCalc();
+</script>
+
+</body>
+</html>

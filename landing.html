@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Case Closed Pro — Carrier-Grade Litigation Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700;9..144,900&family=Inter+Tight:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --ink:#0F172A;--ink2:#1E293B;--muted:#5B6B85;--dim:#8B96AB;--line:#D7DEEA;--line2:#C3CEE0;
+  --bg:#F3F5FA;--surf:#FFFFFF;--surf2:#EEF1F7;--surf3:#E4E8F2;
+  --pri:#001C41;--pri2:#0056D2;--pri3:#00C9DB;
+  --green:#059669;--greenBg:#ECFDF5;
+  --serif:'Fraunces',Georgia,serif;--sans:'Inter Tight',-apple-system,system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{background:var(--bg);font-family:var(--sans);color:var(--ink);line-height:1.5;-webkit-font-smoothing:antialiased;}
+.serif{font-family:var(--serif);}
+a{color:inherit;}
+img,svg{display:block;}
+.wrap{max-width:1180px;margin:0 auto;padding:0 32px;}
+@media(max-width:720px){.wrap{padding:0 20px;}}
+
+/* ---------- NAV ---------- */
+nav{position:sticky;top:0;z-index:40;background:rgba(255,255,255,.9);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);}
+.nav-in{max-width:1180px;margin:0 auto;padding:14px 32px;display:flex;align-items:center;justify-content:space-between;}
+@media(max-width:720px){.nav-in{padding:14px 20px;}}
+.brand{display:flex;align-items:center;gap:11px;}
+.brand-mark{width:32px;height:32px;background:linear-gradient(135deg,#001C41 0%,#0056D2 100%);border-radius:8px;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,28,65,.4);flex-shrink:0;}
+.brand-name{font-family:var(--serif);font-weight:700;font-size:16px;letter-spacing:-.2px;}
+.nav-links{display:flex;align-items:center;gap:28px;font-size:13.5px;font-weight:500;color:var(--muted);}
+.nav-links a:hover{color:var(--pri);}
+.nav-r{display:flex;align-items:center;gap:14px;}
+.nav-login{font-size:13.5px;font-weight:600;color:var(--pri);text-decoration:none;}
+.nav-cta{background:var(--pri);color:#fff;padding:9px 18px;border-radius:7px;font-size:13.5px;font-weight:600;text-decoration:none;transition:background .15s;}
+.nav-cta:hover{background:var(--pri2);}
+@media(max-width:820px){.nav-links{display:none;}}
+
+/* ---------- HERO ---------- */
+.hero{background:linear-gradient(160deg,#001C41 0%,#012a5e 45%,#0056D2 130%);color:#fff;padding:76px 0 90px;position:relative;overflow:hidden;}
+.hero::before{content:'';position:absolute;top:-140px;right:-140px;width:520px;height:520px;border-radius:50%;background:radial-gradient(circle,rgba(0,201,219,.18) 0%,transparent 70%);}
+.hero::after{content:'';position:absolute;bottom:-200px;left:-160px;width:460px;height:460px;border-radius:50%;background:radial-gradient(circle,rgba(0,86,210,.25) 0%,transparent 70%);}
+.hero-in{max-width:1180px;margin:0 auto;padding:0 32px;position:relative;text-align:center;}
+@media(max-width:720px){.hero-in{padding:0 20px;}}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:#7FD4E8;margin-bottom:20px;background:rgba(127,212,232,.12);border:1px solid rgba(127,212,232,.3);padding:6px 14px;border-radius:20px;}
+.hero h1{font-family:var(--serif);font-size:clamp(34px,5.4vw,58px);font-weight:600;line-height:1.08;letter-spacing:-1.2px;max-width:780px;margin:0 auto;}
+.hero h1 em{font-style:normal;color:#7FD4E8;}
+.hero p.sub{font-size:16.5px;color:#C3D4EE;max-width:600px;margin:22px auto 0;line-height:1.6;}
+.hero-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:32px;}
+.btn-white{background:#fff;color:var(--pri);padding:13px 26px;border-radius:9px;font-weight:700;font-size:14px;text-decoration:none;display:inline-block;}
+.btn-outline-w{border:1.5px solid rgba(255,255,255,.5);color:#fff;padding:13px 26px;border-radius:9px;font-weight:600;font-size:14px;text-decoration:none;display:inline-block;}
+.hero-stats{display:flex;gap:40px;justify-content:center;margin-top:56px;flex-wrap:wrap;}
+.hero-stat .n{font-family:var(--serif);font-size:30px;font-weight:700;color:#fff;letter-spacing:-.5px;}
+.hero-stat .l{font-size:11.5px;color:#9FB6D9;margin-top:2px;}
+
+/* ---------- SECTION SHELL ---------- */
+section{padding:84px 0;}
+.section-head{max-width:640px;margin:0 auto 48px;text-align:center;}
+.section-eyebrow{font-size:11px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--pri2);margin-bottom:12px;}
+.section-head h2{font-family:var(--serif);font-size:clamp(26px,4vw,36px);font-weight:600;letter-spacing:-.6px;line-height:1.15;}
+.section-head p{font-size:15px;color:var(--muted);margin-top:14px;line-height:1.6;}
+
+/* ---------- FEATURES ---------- */
+.feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;}
+@media(max-width:900px){.feat-grid{grid-template-columns:1fr 1fr;}}
+@media(max-width:600px){.feat-grid{grid-template-columns:1fr;}}
+.feat{background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:26px 24px;transition:transform .15s,box-shadow .15s;}
+.feat:hover{transform:translateY(-3px);box-shadow:0 14px 34px rgba(0,28,65,.09);}
+.feat-icon{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:19px;margin-bottom:16px;}
+.feat h3{font-family:var(--serif);font-size:16.5px;font-weight:600;margin-bottom:8px;}
+.feat p{font-size:13px;color:var(--muted);line-height:1.6;}
+
+/* ---------- CALCULATOR (shared with pricing.html) ---------- */
+.calc-wrap{background:linear-gradient(160deg,#001C41 0%,#012a5e 45%,#0056D2 130%);border-radius:22px;padding:52px 8px;color:#fff;}
+.calc{background:#fff;border-radius:18px;margin:0 auto;max-width:640px;box-shadow:0 30px 70px rgba(0,10,30,.35);overflow:hidden;color:var(--ink);}
+.calc-top{padding:30px 34px 24px;}
+.calc-label{font-size:11px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
+.calc-q{font-family:var(--serif);font-size:20px;font-weight:600;letter-spacing:-.3px;margin-bottom:24px;}
+.calc-row{display:flex;align-items:baseline;gap:14px;margin-bottom:8px;}
+.calc-num{font-family:var(--serif);font-size:40px;font-weight:700;color:var(--pri);letter-spacing:-1px;min-width:64px;}
+.calc-num-label{font-size:12.5px;color:var(--muted);font-weight:500;}
+input[type=range]{width:100%;height:6px;border-radius:3px;background:var(--surf3);appearance:none;outline:none;margin:16px 0 8px;}
+input[type=range]::-webkit-slider-thumb{appearance:none;width:22px;height:22px;border-radius:50%;background:var(--pri2);border:4px solid #fff;box-shadow:0 2px 8px rgba(0,86,210,.5);cursor:pointer;}
+input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:var(--pri2);border:4px solid #fff;box-shadow:0 2px 8px rgba(0,86,210,.5);cursor:pointer;border:none;}
+.calc-ticks{display:flex;justify-content:space-between;font-size:10.5px;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:.5px;}
+.calc-bottom{background:var(--surf2);padding:22px 34px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-top:1px solid var(--line);}
+.calc-tier{display:flex;align-items:center;gap:12px;}
+.calc-tier-badge{padding:5px 13px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;background:var(--pri);color:#fff;}
+.calc-price{text-align:right;}
+.calc-price .amt{font-family:var(--serif);font-size:28px;font-weight:700;color:var(--pri);letter-spacing:-.5px;}
+.calc-price .per{font-size:11.5px;color:var(--muted);}
+.calc-cta{text-align:center;margin-top:28px;}
+
+/* ---------- SPLIT (free for counsel) ---------- */
+.split{background:var(--pri);color:#fff;border-radius:22px;overflow:hidden;display:grid;grid-template-columns:1fr 1fr;}
+@media(max-width:800px){.split{grid-template-columns:1fr;}}
+.split-l,.split-r{padding:48px 44px;}
+.split-l{background:linear-gradient(160deg,#001C41,#00306e);}
+.split-r{background:#fff;color:var(--ink);}
+.split-kicker{font-size:11px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;margin-bottom:14px;}
+.split-l .split-kicker{color:#7FD4E8;}
+.split-r .split-kicker{color:var(--pri2);}
+.split h3{font-family:var(--serif);font-size:26px;font-weight:600;letter-spacing:-.5px;line-height:1.2;margin-bottom:16px;}
+.split p{font-size:14px;line-height:1.65;}
+.split-l p{color:#C3D4EE;}
+.split-r p{color:var(--muted);}
+.split-price{font-family:var(--serif);font-size:54px;font-weight:700;letter-spacing:-1.5px;margin:18px 0 4px;}
+.split-price-label{font-size:12.5px;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:.6px;}
+
+/* ---------- TRUST STRIP ---------- */
+.trust{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;}
+@media(max-width:800px){.trust{grid-template-columns:1fr;}}
+.trust-card{background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:26px;}
+.trust-quote{font-size:13.5px;line-height:1.7;color:var(--ink2);margin-bottom:18px;}
+.trust-quote::before{content:'"';font-family:var(--serif);font-size:32px;color:var(--pri3);display:block;line-height:.5;margin-bottom:6px;}
+.trust-who{font-size:12px;font-weight:700;color:var(--pri);}
+.trust-role{font-size:11.5px;color:var(--muted);}
+
+/* ---------- FOOTER CTA ---------- */
+.footcta{background:linear-gradient(135deg,#001C41,#0056D2);border-radius:22px;padding:56px 44px;text-align:center;color:#fff;}
+.footcta h2{font-family:var(--serif);font-size:clamp(24px,4vw,34px);font-weight:600;letter-spacing:-.6px;margin-bottom:14px;}
+.footcta p{color:#C3D4EE;font-size:14.5px;margin-bottom:26px;}
+.footcta-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;}
+
+footer{padding:44px 0 36px;}
+.foot-grid{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:24px;padding-bottom:28px;border-bottom:1px solid var(--line);margin-bottom:20px;}
+.foot-links{display:flex;gap:28px;font-size:13px;color:var(--muted);flex-wrap:wrap;}
+.foot-links a:hover{color:var(--pri);}
+.foot-copy{font-size:12px;color:var(--dim);text-align:center;}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-in">
+    <div class="brand">
+      <div class="brand-mark"><svg viewBox="0 0 300 160" width="19" height="10" fill="none" stroke="white">
+        <circle cx="82" cy="56" r="22" stroke-width="13"/><circle cx="82" cy="104" r="22" stroke-width="13"/>
+        <circle cx="119" cy="80" r="27" stroke-width="14"/>
+        <path d="M235.2 38.3 A60 60 0 1 0 235.2 121.7" stroke-width="25" stroke-linecap="butt"/>
+        <line x1="172" y1="80" x2="285" y2="80" stroke-width="14" stroke-linecap="butt"/>
+        <rect x="265" y="80" width="11" height="23" fill="white" stroke="none"/>
+        <rect x="248" y="80" width="11" height="15" fill="white" stroke="none"/>
+      </svg></div>
+      <div class="brand-name">Case Closed Pro</div>
+    </div>
+    <div class="nav-links">
+      <a href="#features">Product</a>
+      <a href="#calculator">Pricing</a>
+      <a href="roi-calculator.html">ROI Calculator</a>
+      <a href="#counsel">For Defense Counsel</a>
+      <a href="pricing.html">Full Pricing Details</a>
+    </div>
+    <div class="nav-r">
+      <a href="case-closed-pro.html" class="nav-login">Sign In</a>
+      <a href="#footcta" class="nav-cta">Talk to Sales</a>
+    </div>
+  </div>
+</nav>
+
+<div class="hero">
+  <div class="hero-in">
+    <div class="eyebrow">✦ Carrier-Grade Litigation Intelligence</div>
+    <h1>One shared source of truth for your claims team <em>and</em> defense counsel.</h1>
+    <p class="sub">Case Closed Pro replaces the email threads and spreadsheets between claims and outside counsel with a single litigation platform — from first assignment to a closing package your claims team can actually act on.</p>
+    <div class="hero-btns">
+      <a href="#footcta" class="btn-white">Start a 90-Day Pilot</a>
+      <a href="#calculator" class="btn-outline-w">See Your Price</a>
+    </div>
+    <div class="hero-stats">
+      <div class="hero-stat"><div class="n">$0</div><div class="l">Cost to defense firms</div></div>
+      <div class="hero-stat"><div class="n">21</div><div class="l">Built-in reports</div></div>
+      <div class="hero-stat"><div class="n">100–200</div><div class="l">Target days to close, down from 300+</div></div>
+    </div>
+  </div>
+</div>
+
+<section id="features">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-eyebrow">Product</div>
+      <h2>Everything between "assigned" and "closed"</h2>
+      <p>Every workflow claims and defense counsel already do by email or spreadsheet — structured, tracked, and reportable in one place.</p>
+    </div>
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="feat-icon" style="background:#001C4118;color:var(--pri);">📊</div>
+        <h3>Litigation Dashboard</h3>
+        <p>Portfolio-wide view of every open matter — CCI favorability scoring, reserve adequacy, SOL tracking, and pipeline by stage.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon" style="background:#0056D218;color:var(--pri2);">🤝</div>
+        <h3>Closing &amp; Claims Handoff</h3>
+        <p>Disposition, liens, settlement authority requests, release &amp; dismissal status — everything claims needs before a file can close, in one tab.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon" style="background:#00C9DB18;color:#00A8B8;">📁</div>
+        <h3>Reporting, Saved &amp; Emailed</h3>
+        <p>21 pre-built reports plus a custom builder. Every report you generate is saved automatically and can be emailed with one click.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon" style="background:#05966918;color:var(--green);">⇄</div>
+        <h3>Open REST API</h3>
+        <p>Bulk-import your existing closed case history, or connect your claims system, AP, and document management platforms directly.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon" style="background:#6D28D918;color:#6D28D9;">✦</div>
+        <h3>AI-Powered Insights</h3>
+        <p>Ask for a strategic memo, settlement analysis, or portfolio summary in plain language — grounded in your actual case data.</p>
+      </div>
+      <div class="feat">
+        <div class="feat-icon" style="background:#B4530918;color:#B45309;">🔐</div>
+        <h3>Role-Based Access</h3>
+        <p>Claims adjusters, TPAs, defense attorneys, and firm partners each get the view built for their job — on one shared record.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="calculator">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-eyebrow">Pricing</div>
+      <h2>Priced by litigated matters, not logins</h2>
+      <p>Per-seat pricing teaches adjusters to share passwords. Case Closed Pro scales with your open litigation instead — so full adoption is never the expensive choice.</p>
+    </div>
+    <div class="calc-wrap">
+      <div class="calc">
+        <div class="calc-top">
+          <div class="calc-label">Your Plan, Calculated Live</div>
+          <div class="calc-q">How many litigated matters do you have open right now?</div>
+          <div class="calc-row">
+            <div class="calc-num" id="calcNum">250</div>
+            <div class="calc-num-label">active matters<br/>across your program</div>
+          </div>
+          <input type="range" min="10" max="1000" value="250" step="5" id="calcSlider" aria-label="Number of active litigated matters"/>
+          <div class="calc-ticks"><span>10</span><span>250</span><span>750</span><span>1000+</span></div>
+        </div>
+        <div class="calc-bottom">
+          <div class="calc-tier">
+            <span class="calc-tier-badge" id="calcTierBadge">Starter</span>
+            <span style="font-size:12.5px;color:var(--muted);" id="calcTierDesc">For smaller programs and self-insureds</span>
+          </div>
+          <div class="calc-price">
+            <div class="amt" id="calcPrice">$2,500<span style="font-size:13px;">/mo</span></div>
+            <div class="per">defense firms: unlimited seats, $0</div>
+          </div>
+        </div>
+      </div>
+      <div class="calc-cta">
+        <a href="pricing.html" class="btn-white">See Full Plan Details &amp; FAQ →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="counsel">
+  <div class="wrap">
+    <div class="split">
+      <div class="split-l">
+        <div class="split-kicker">Who Pays</div>
+        <h3>The carrier pays.<br/>Defense counsel doesn't.</h3>
+        <p>Your firms use Case Closed Pro because you require it — not because they went shopping for litigation software. Charging them per seat just teaches your program to hide from the tool built to give you visibility into it.</p>
+      </div>
+      <div class="split-r">
+        <div class="split-kicker">Cost To Your Firms</div>
+        <div class="split-price">$0</div>
+        <div class="split-price-label">Per seat, forever</div>
+        <p style="margin-top:14px;">Every attorney, paralegal, and assistant at every defense firm on your panel gets a full seat — closing packages, billing, documents, everything — at no cost to them or you beyond your matter-volume plan.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="trust">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-eyebrow">Built For</div>
+      <h2>Claims teams and the firms they work with</h2>
+    </div>
+    <div class="trust">
+      <div class="trust-card">
+        <div class="trust-quote">Reserve reviews used to mean chasing four different email threads per file. Now it's one dashboard, updated by the firm directly.</div>
+        <div class="trust-who">VP of Claims</div>
+        <div class="trust-role">Regional P&amp;C Carrier</div>
+      </div>
+      <div class="trust-card">
+        <div class="trust-quote">The closing checklist alone cut our average handoff time by weeks — liens, release status, and authority requests all live in one place.</div>
+        <div class="trust-who">Litigation Manager</div>
+        <div class="trust-role">Third-Party Administrator</div>
+      </div>
+      <div class="trust-card">
+        <div class="trust-quote">Our firm didn't have to buy anything. We log in, work the file, and the carrier gets the visibility they want.</div>
+        <div class="trust-who">Partner</div>
+        <div class="trust-role">Insurance Defense Firm</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="footcta">
+  <div class="wrap">
+    <div class="footcta">
+      <h2>Bring your litigated inventory.<br/>We'll tell you your number.</h2>
+      <p>Most conversations start with a 20-minute look at your current open matters — no commitment, no seat count to negotiate.</p>
+      <div class="footcta-btns">
+        <a href="#" class="btn-white">Talk to Sales</a>
+        <a href="pricing.html" class="btn-outline-w">See Full Pricing</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="brand">
+        <div class="brand-mark"><svg viewBox="0 0 300 160" width="17" height="9" fill="none" stroke="white">
+          <circle cx="82" cy="56" r="22" stroke-width="13"/><circle cx="82" cy="104" r="22" stroke-width="13"/>
+          <circle cx="119" cy="80" r="27" stroke-width="14"/>
+          <path d="M235.2 38.3 A60 60 0 1 0 235.2 121.7" stroke-width="25" stroke-linecap="butt"/>
+          <line x1="172" y1="80" x2="285" y2="80" stroke-width="14" stroke-linecap="butt"/>
+          <rect x="265" y="80" width="11" height="23" fill="white" stroke="none"/>
+          <rect x="248" y="80" width="11" height="15" fill="white" stroke="none"/>
+        </svg></div>
+        <div class="brand-name">Case Closed Pro</div>
+      </div>
+      <div class="foot-links">
+        <a href="#features">Product</a>
+        <a href="pricing.html">Pricing</a>
+        <a href="case-closed-pro.html">Sign In</a>
+        <a href="#footcta">Talk to Sales</a>
+      </div>
+    </div>
+    <div class="foot-links" style="justify-content:center;margin-bottom:14px;">
+      <a href="legal/terms-of-service.md">Terms of Service</a>
+      <a href="legal/privacy-policy.md">Privacy Policy</a>
+      <a href="legal/data-processing-agreement.md">Data Processing Agreement</a>
+    </div>
+    <div class="foot-copy">© 2026 Case Closed Pro · Carrier-Grade Litigation Intelligence</div>
+  </div>
+</footer>
+
+<script>
+const slider = document.getElementById('calcSlider');
+const calcNum = document.getElementById('calcNum');
+const tierBadge = document.getElementById('calcTierBadge');
+const tierDesc = document.getElementById('calcTierDesc');
+const calcPrice = document.getElementById('calcPrice');
+
+const TIERS = {
+  starter: {name:'Starter', desc:'For smaller programs and self-insureds', price:2500},
+  growth: {name:'Growth', desc:'For multi-line carriers at scale', price:6500},
+  enterprise: {name:'Enterprise', desc:'National carriers & complex integrations', price:null}
+};
+
+function updateCalc(){
+  const v = parseInt(slider.value, 10);
+  calcNum.textContent = v >= 1000 ? '1000+' : v;
+
+  let tier;
+  if (v <= 250) tier = TIERS.starter;
+  else if (v <= 750) tier = TIERS.growth;
+  else tier = TIERS.enterprise;
+
+  tierBadge.textContent = tier.name;
+  tierDesc.textContent = tier.desc;
+
+  if (tier.price) {
+    calcPrice.innerHTML = '$' + tier.price.toLocaleString() + '<span style="font-size:13px;">/mo</span>';
+  } else {
+    calcPrice.innerHTML = 'Custom<span style="font-size:13px;"> pricing</span>';
+  }
+}
+slider.addEventListener('input', updateCalc);
+updateCalc();
+</script>
+
+</body>
+</html>

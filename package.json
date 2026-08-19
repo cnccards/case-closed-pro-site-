@@ -1,0 +1,21 @@
+{
+  "name": "case-closed-pro-api",
+  "version": "2.0.0",
+  "description": "Production API for Case Closed Pro — Postgres-backed, multi-tenant, with real auth and Stripe billing.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "migrate": "psql \"$DATABASE_URL\" -f db/schema.sql"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^6.9.14",
+    "pg": "^8.12.0",
+    "stripe": "^16.8.0"
+  }
+}
