@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>ROI Calculator — Case Closed Pro</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700;9..144,900&family=Inter+Tight:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --ink:#0F172A;--ink2:#1E293B;--muted:#5B6B85;--dim:#8B96AB;--line:#D7DEEA;--line2:#C3CEE0;
+  --bg:#F3F5FA;--surf:#FFFFFF;--surf2:#EEF1F7;--surf3:#E4E8F2;
+  --pri:#001C41;--pri2:#0056D2;--pri3:#00C9DB;
+  --green:#059669;--greenBg:#ECFDF5;
+  --serif:'Fraunces',Georgia,serif;--sans:'Inter Tight',-apple-system,system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{background:var(--bg);font-family:var(--sans);color:var(--ink);line-height:1.5;-webkit-font-smoothing:antialiased;}
+.serif{font-family:var(--serif);}
+a{color:inherit;}
+.wrap{max-width:1100px;margin:0 auto;padding:0 32px;}
+@media(max-width:720px){.wrap{padding:0 20px;}}
+
+nav{position:sticky;top:0;z-index:40;background:rgba(255,255,255,.9);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);}
+.nav-in{max-width:1100px;margin:0 auto;padding:14px 32px;display:flex;align-items:center;justify-content:space-between;}
+@media(max-width:720px){.nav-in{padding:14px 20px;}}
+.brand{display:flex;align-items:center;gap:11px;}
+.brand-mark{width:32px;height:32px;background:linear-gradient(135deg,#001C41 0%,#0056D2 100%);border-radius:8px;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,28,65,.4);flex-shrink:0;}
+.brand-name{font-family:var(--serif);font-weight:700;font-size:16px;letter-spacing:-.2px;}
+.nav-links{display:flex;align-items:center;gap:24px;font-size:13.5px;font-weight:500;color:var(--muted);}
+.nav-links a:hover{color:var(--pri);}
+.nav-cta{background:var(--pri);color:#fff;padding:9px 18px;border-radius:7px;font-size:13.5px;font-weight:600;text-decoration:none;}
+@media(max-width:760px){.nav-links{display:none;}}
+
+.hero{background:linear-gradient(160deg,#001C41 0%,#012a5e 45%,#0056D2 130%);color:#fff;padding:56px 0 44px;text-align:center;}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:#7FD4E8;margin-bottom:16px;background:rgba(127,212,232,.12);border:1px solid rgba(127,212,232,.3);padding:6px 14px;border-radius:20px;}
+.hero h1{font-family:var(--serif);font-size:clamp(28px,4.6vw,44px);font-weight:600;line-height:1.12;letter-spacing:-1px;max-width:680px;margin:0 auto;}
+.hero h1 em{font-style:normal;color:#7FD4E8;}
+.hero p{font-size:15.5px;color:#C3D4EE;max-width:560px;margin:16px auto 0;line-height:1.6;}
+
+.calc-shell{max-width:1000px;margin:-30px auto 0;padding:0 24px 60px;}
+@media(max-width:720px){.calc-shell{padding:0 16px 40px;}}
+.calc-panel{background:#fff;border-radius:20px;box-shadow:0 30px 70px rgba(0,10,30,.2);overflow:hidden;}
+.calc-grid{display:grid;grid-template-columns:1fr 1fr;}
+@media(max-width:800px){.calc-grid{grid-template-columns:1fr;}}
+
+.inputs-col{padding:34px 34px 30px;border-right:1px solid var(--line);}
+@media(max-width:800px){.inputs-col{border-right:none;border-bottom:1px solid var(--line);}}
+.results-col{padding:34px 34px 30px;background:var(--surf2);}
+
+.col-label{font-size:10.5px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:var(--pri2);margin-bottom:20px;}
+
+.field{margin-bottom:24px;}
+.field-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;}
+.field-name{font-size:13px;font-weight:600;color:var(--ink);}
+.field-val{font-family:var(--serif);font-size:17px;font-weight:700;color:var(--pri);}
+input[type=range]{width:100%;height:5px;border-radius:3px;background:var(--surf3);appearance:none;outline:none;}
+input[type=range]::-webkit-slider-thumb{appearance:none;width:19px;height:19px;border-radius:50%;background:var(--pri2);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,86,210,.5);cursor:pointer;}
+input[type=range]::-moz-range-thumb{width:19px;height:19px;border-radius:50%;background:var(--pri2);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,86,210,.5);cursor:pointer;border:none;}
+.field-range{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);font-weight:600;margin-top:5px;}
+
+.assump-toggle{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--pri2);font-weight:600;cursor:pointer;margin-top:6px;user-select:none;}
+.assump-panel{display:none;margin-top:16px;padding:14px 16px;background:var(--surf2);border-radius:10px;border:1px solid var(--line);}
+.assump-panel.open{display:block;}
+.assump-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;font-size:12px;}
+.assump-row input{width:64px;text-align:right;padding:5px 7px;border:1px solid var(--line2);border-radius:5px;font-size:12px;font-family:inherit;}
+.assump-note{font-size:10.5px;color:var(--dim);margin-top:8px;line-height:1.5;}
+
+.result-hero{text-align:center;padding:8px 0 24px;border-bottom:1px solid var(--line);margin-bottom:22px;}
+.result-hero .l{font-size:10.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
+.result-hero .v{font-family:var(--serif);font-size:44px;font-weight:700;color:var(--green);letter-spacing:-1.5px;line-height:1;}
+.result-hero .s{font-size:12px;color:var(--muted);margin-top:8px;}
+
+.breakdown-row{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid var(--line);font-size:12.5px;}
+.breakdown-row:last-child{border-bottom:none;}
+.breakdown-row .n{color:var(--ink);font-weight:500;}
+.breakdown-row .n small{display:block;color:var(--dim);font-size:10.5px;font-weight:400;margin-top:2px;}
+.breakdown-row .v{font-family:var(--serif);font-weight:700;color:var(--ink);font-size:14.5px;white-space:nowrap;}
+.breakdown-row.sub .v{color:var(--green);}
+.breakdown-row.cost .v{color:#B45309;}
+.breakdown-row.net{margin-top:8px;padding-top:14px;border-top:2px solid var(--ink);}
+.breakdown-row.net .v{font-size:18px;color:var(--pri);}
+
+.stat-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:20px;}
+.stat-box{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center;}
+.stat-box .v{font-family:var(--serif);font-size:22px;font-weight:700;color:var(--pri);}
+.stat-box .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-top:4px;}
+
+.calc-cta{padding:22px 34px;background:var(--pri);text-align:center;}
+.calc-cta a{display:inline-block;background:#fff;color:var(--pri);padding:12px 26px;border-radius:9px;font-weight:700;font-size:13.5px;text-decoration:none;}
+.calc-cta p{color:#C3D4EE;font-size:11.5px;margin-top:10px;}
+
+section{padding:20px 0 70px;}
+.section-head{max-width:640px;margin:0 auto 36px;text-align:center;}
+.section-eyebrow{font-size:11px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--pri2);margin-bottom:12px;}
+.section-head h2{font-family:var(--serif);font-size:clamp(22px,3.4vw,30px);font-weight:600;letter-spacing:-.5px;}
+.section-head p{font-size:14px;color:var(--muted);margin-top:12px;line-height:1.6;}
+
+.method-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;}
+@media(max-width:800px){.method-grid{grid-template-columns:1fr;}}
+.method-card{background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:22px;}
+.method-card .n{font-family:var(--serif);font-size:26px;font-weight:700;color:var(--pri3);margin-bottom:10px;}
+.method-card h4{font-size:14px;font-weight:700;margin-bottom:8px;}
+.method-card p{font-size:12px;color:var(--muted);line-height:1.6;}
+
+.disclaimer{max-width:700px;margin:0 auto;font-size:11.5px;color:var(--dim);text-align:center;line-height:1.7;padding:0 20px;}
+
+footer{padding:36px 0;text-align:center;font-size:12px;color:var(--dim);}
+
+/* ---------- CONTACT SALES MODAL ---------- */
+.contact-modal-bg{position:fixed;inset:0;background:rgba(0,10,30,.55);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px;}
+.contact-modal{background:#fff;border-radius:16px;max-width:440px;width:100%;box-shadow:0 30px 70px rgba(0,10,30,.3);overflow:hidden;}
+.contact-modal-h{padding:24px 26px 4px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;}
+.contact-modal-h h3{font-family:var(--serif);font-size:19px;font-weight:700;color:var(--ink);}
+.contact-modal-h p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.5;}
+.contact-modal-x{background:transparent;border:none;font-size:24px;color:var(--dim);cursor:pointer;line-height:1;padding:2px 6px;flex-shrink:0;}
+.contact-modal-x:hover{color:var(--ink);}
+.contact-modal-b{padding:16px 26px 26px;}
+.cf-field{margin-bottom:14px;}
+.cf-label{display:block;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:6px;}
+.cf-input,.cf-textarea{width:100%;padding:10px 12px;border:1.5px solid var(--line2);border-radius:8px;font-family:var(--sans);font-size:13px;color:var(--ink);outline:none;transition:border-color .15s;}
+.cf-input:focus,.cf-textarea:focus{border-color:var(--pri2);}
+.cf-textarea{min-height:80px;resize:vertical;}
+.cf-submit{width:100%;background:var(--pri);color:#fff;border:none;padding:12px;border-radius:9px;font-weight:700;font-size:13.5px;cursor:pointer;margin-top:4px;}
+.cf-submit:hover{background:var(--pri2);}
+.cf-submit:disabled{opacity:.6;cursor:not-allowed;}
+.cf-status{font-size:12px;margin-top:10px;padding:10px 12px;border-radius:8px;}
+.cf-status.ok{background:var(--greenBg);color:var(--green);}
+.cf-status.err{background:#FEF2F2;color:#B91C1C;}
+.cf-note{font-size:11px;color:var(--dim);margin-top:14px;text-align:center;}
+.cf-note a{color:var(--pri2);text-decoration:none;font-weight:600;}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-in">
+    <div class="brand">
+      <div class="brand-mark"><svg viewBox="0 0 300 160" width="19" height="10" fill="none" stroke="white">
+        <circle cx="82" cy="56" r="22" stroke-width="13"/><circle cx="82" cy="104" r="22" stroke-width="13"/>
+        <circle cx="119" cy="80" r="27" stroke-width="14"/>
+        <path d="M235.2 38.3 A60 60 0 1 0 235.2 121.7" stroke-width="25" stroke-linecap="butt"/>
+        <line x1="172" y1="80" x2="285" y2="80" stroke-width="14" stroke-linecap="butt"/>
+        <rect x="265" y="80" width="11" height="23" fill="white" stroke="none"/>
+        <rect x="248" y="80" width="11" height="15" fill="white" stroke="none"/>
+      </svg></div>
+      <div class="brand-name">Case Closed Pro</div>
+    </div>
+    <div class="nav-links">
+      <a href="landing.html">Product</a>
+      <a href="pricing.html">Pricing</a>
+      <a href="landing.html#counsel">For Defense Counsel</a>
+    </div>
+    <a href="javascript:void(0)" onclick="openContactModal()" class="nav-cta">Talk to Sales</a>
+  </div>
+</nav>
+
+<div class="hero">
+  <div class="eyebrow">✦ ROI Calculator</div>
+  <h1>What is your litigation program actually <em>costing</em> you today?</h1>
+  <p>Adjust the numbers to match your program. Every assumption below is visible and editable — this isn't a black box.</p>
+</div>
+
+<div class="calc-shell">
+  <div class="calc-panel">
+    <div class="calc-grid">
+
+      <div class="inputs-col">
+        <div class="col-label">Your Program, Today</div>
+
+        <div class="field">
+          <div class="field-top"><span class="field-name">Open litigated matters</span><span class="field-val" id="vMatters">250</span></div>
+          <input type="range" id="iMatters" min="10" max="1000" step="10" value="250"/>
+          <div class="field-range"><span>10</span><span>1000+</span></div>
+        </div>
+
+        <div class="field">
+          <div class="field-top"><span class="field-name">Avg. annual defense spend / matter</span><span class="field-val" id="vSpend">$18,000</span></div>
+          <input type="range" id="iSpend" min="5000" max="50000" step="1000" value="18000"/>
+          <div class="field-range"><span>$5K</span><span>$50K</span></div>
+        </div>
+
+        <div class="field">
+          <div class="field-top"><span class="field-name">Adjuster hrs/week spent chasing status, per matter</span><span class="field-val" id="vHours">1</span></div>
+          <input type="range" id="iHours" min="0" max="5" step="0.25" value="1"/>
+          <div class="field-range"><span>0</span><span>5 hrs</span></div>
+        </div>
+
+        <div class="field">
+          <div class="field-top"><span class="field-name">Fully-loaded adjuster hourly cost</span><span class="field-val" id="vRate">$65</span></div>
+          <input type="range" id="iRate" min="30" max="150" step="5" value="65"/>
+          <div class="field-range"><span>$30</span><span>$150</span></div>
+        </div>
+
+        <div class="assump-toggle" onclick="document.getElementById('assumpPanel').classList.toggle('open')">
+          <span>⚙</span><span>Show / edit the savings assumptions</span>
+        </div>
+        <div class="assump-panel" id="assumpPanel">
+          <div class="assump-row"><span>Defense spend reduction from oversight</span><input type="number" id="aSpendPct" value="8" min="0" max="30" step="1"/>%</div>
+          <div class="assump-row"><span>Status-chasing time eliminated</span><input type="number" id="aTimePct" value="40" min="0" max="100" step="5"/>%</div>
+          <div class="assump-row"><span>Avg. days to close, today</span><input type="number" id="aDaysNow" value="300" min="60" max="600" step="10"/> days</div>
+          <div class="assump-row"><span>Avg. days to close, with CCP</span><input type="number" id="aDaysAfter" value="150" min="30" max="500" step="10"/> days</div>
+          <div class="assump-note">Defaults reflect conservative, commonly-cited benchmarks for litigation-management platforms: modest budget-oversight savings, not a discount off outside counsel rates, plus adjuster time reclaimed from manual status-chasing. Adjust freely to match your own program's numbers.</div>
+        </div>
+      </div>
+
+      <div class="results-col">
+        <div class="col-label">Estimated Annual Value</div>
+
+        <div class="result-hero">
+          <div class="l">Net Annual Value vs. Platform Cost</div>
+          <div class="v" id="rNet">$0</div>
+          <div class="s" id="rMultiple">—</div>
+        </div>
+
+        <div class="breakdown-row sub">
+          <div class="n">Defense spend reduction<small>Budget oversight &amp; guideline compliance</small></div>
+          <div class="v" id="rSpendSavings">$0</div>
+        </div>
+        <div class="breakdown-row sub">
+          <div class="n">Adjuster time reclaimed<small>Status-chasing time eliminated</small></div>
+          <div class="v" id="rTimeSavings">$0</div>
+        </div>
+        <div class="breakdown-row">
+          <div class="n">Total estimated savings</div>
+          <div class="v" id="rTotalSavings">$0</div>
+        </div>
+        <div class="breakdown-row cost">
+          <div class="n">Case Closed Pro annual cost<small id="rTierNote">Starter tier</small></div>
+          <div class="v" id="rCost">$0</div>
+        </div>
+        <div class="breakdown-row net">
+          <div class="n">Net annual value</div>
+          <div class="v" id="rNetInline">$0</div>
+        </div>
+
+        <div class="stat-pair">
+          <div class="stat-box"><div class="v" id="rPayback">—</div><div class="l">Payback Period</div></div>
+          <div class="stat-box"><div class="v" id="rDaysFaster">—</div><div class="l">Faster to Close</div></div>
+        </div>
+      </div>
+
+    </div>
+    <div class="calc-cta">
+      <a href="javascript:void(0)" onclick="openContactModalWithROI()">Talk to Sales About This Number</a>
+      <p>Bring your actual matter count and we'll refine this together — no commitment.</p>
+    </div>
+  </div>
+</div>
+
+<section>
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-eyebrow">Methodology</div>
+      <h2>Where the number comes from</h2>
+      <p>Three levers, each tied to a specific product capability — not a vague "efficiency gain."</p>
+    </div>
+    <div class="method-grid">
+      <div class="method-card">
+        <div class="n">01</div>
+        <h4>Defense Spend Reduction</h4>
+        <p>Reserve-adequacy tracking, litigation guideline compliance, and budget-vs-actual reporting give claims oversight that reduces overruns — without touching your firms' billing rates.</p>
+      </div>
+      <div class="method-card">
+        <div class="n">02</div>
+        <h4>Adjuster Time Reclaimed</h4>
+        <p>One dashboard replaces the email threads and phone calls adjusters use today to find out where a matter stands. That reclaimed time goes back to handling more claims, not chasing status.</p>
+      </div>
+      <div class="method-card">
+        <div class="n">03</div>
+        <h4>Faster Cycle Time</h4>
+        <p>Closing &amp; Claims Handoff tracking — liens, authority requests, release status — surfaces exactly what's blocking a file from closing, instead of it sitting untouched.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section style="padding-top:0;">
+  <div class="disclaimer">
+    This calculator produces an estimate based on assumptions you can see and edit above — it is not a guarantee of savings. Actual results depend on your program's current processes, matter mix, and how fully the platform is adopted across your claims team and defense panel. We're happy to work through your actual numbers directly — see the "Talk to Sales" link above.
+  </div>
+</section>
+
+<footer>© 2026 Case Closed Pro · Carrier-Grade Litigation Intelligence</footer>
+
+<div class="contact-modal-bg" id="contactModalBg" style="display:none;" onclick="if(event.target===this)closeContactModal()">
+  <div class="contact-modal">
+    <div class="contact-modal-h">
+      <div>
+        <h3>Talk to Sales</h3>
+        <p>Tell us about your program — we'll get back to you within one business day.</p>
+      </div>
+      <button class="contact-modal-x" onclick="closeContactModal()">×</button>
+    </div>
+    <div class="contact-modal-b">
+      <div class="cf-field"><label class="cf-label">Name</label><input class="cf-input" id="cfName" type="text" placeholder="Jane Doe"/></div>
+      <div class="cf-field"><label class="cf-label">Work Email</label><input class="cf-input" id="cfEmail" type="email" placeholder="jane@yourcarrier.com"/></div>
+      <div class="cf-field"><label class="cf-label">Company</label><input class="cf-input" id="cfCompany" type="text" placeholder="Acme Insurance Co"/></div>
+      <div class="cf-field"><label class="cf-label">Message</label><textarea class="cf-textarea" id="cfMessage" placeholder="Tell us about your litigated matter volume, current process, or anything else..."></textarea></div>
+      <button class="cf-submit" id="cfSubmitBtn" onclick="submitContactSales()">Send Message</button>
+      <div id="cfStatus"></div>
+      <div class="cf-note">Or email us directly at <a href="mailto:sales@cclosed.com">sales@cclosed.com</a></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmtMoney = v => '$' + Math.round(v).toLocaleString();
+const fmtMoneyK = v => {
+  const r = Math.round(v);
+  return (r < 0 ? '-' : '') + '$' + Math.round(Math.abs(r)/1000).toLocaleString() + 'K';
+};
+
+function tierForMatters(n){
+  if (n <= 250) return { name: 'Starter', annual: 2500*12 };
+  if (n <= 750) return { name: 'Growth', annual: 6500*12 };
+  return { name: 'Enterprise (custom)', annual: null };
+}
+
+function recalc(){
+  const matters = parseInt($('iMatters').value, 10);
+  const spendPerMatter = parseInt($('iSpend').value, 10);
+  const hours = parseFloat($('iHours').value);
+  const rate = parseInt($('iRate').value, 10);
+  const spendPct = parseFloat($('aSpendPct').value) / 100;
+  const timePct = parseFloat($('aTimePct').value) / 100;
+  const daysNow = parseFloat($('aDaysNow').value);
+  const daysAfter = parseFloat($('aDaysAfter').value);
+
+  $('vMatters').textContent = matters >= 1000 ? '1000+' : matters;
+  $('vSpend').textContent = '$' + spendPerMatter.toLocaleString();
+  $('vHours').textContent = hours;
+  $('vRate').textContent = '$' + rate;
+
+  const annualDefenseSpend = matters * spendPerMatter;
+  const spendSavings = annualDefenseSpend * spendPct;
+  const annualAdjusterTimeCost = matters * hours * 52 * rate;
+  const timeSavings = annualAdjusterTimeCost * timePct;
+  const totalSavings = spendSavings + timeSavings;
+
+  const tier = tierForMatters(matters);
+  const platformCost = tier.annual;
+  const netValue = platformCost != null ? totalSavings - platformCost : null;
+  const roiMultiple = platformCost ? totalSavings / platformCost : null;
+  const paybackMonths = platformCost ? (platformCost / (totalSavings/12)) : null;
+  const daysFaster = Math.max(0, daysNow - daysAfter);
+  const daysFasterPct = daysNow > 0 ? Math.round((daysFaster/daysNow)*100) : 0;
+
+  $('rSpendSavings').textContent = fmtMoney(spendSavings);
+  $('rTimeSavings').textContent = fmtMoney(timeSavings);
+  $('rTotalSavings').textContent = fmtMoney(totalSavings);
+  $('rTierNote').textContent = tier.name + ' tier';
+
+  if (platformCost != null) {
+    $('rCost').textContent = fmtMoney(platformCost);
+    $('rNet').textContent = fmtMoneyK(netValue);
+    $('rNetInline').textContent = fmtMoney(netValue);
+    $('rMultiple').textContent = roiMultiple >= 1
+      ? roiMultiple.toFixed(1) + '× return on platform cost'
+      : 'Below platform cost at these inputs — try a higher matter count';
+    $('rPayback').textContent = paybackMonths < 1 ? '<1 mo' : paybackMonths.toFixed(1) + ' mo';
+  } else {
+    $('rCost').textContent = 'Custom';
+    $('rNet').textContent = fmtMoneyK(totalSavings);
+    $('rNetInline').textContent = fmtMoney(totalSavings) + ' (before platform cost)';
+    $('rMultiple').textContent = 'Enterprise pricing — talk to sales for exact ROI';
+    $('rPayback').textContent = '—';
+  }
+  $('rDaysFaster').textContent = daysFaster > 0 ? daysFasterPct + '%' : '—';
+}
+
+['iMatters','iSpend','iHours','iRate','aSpendPct','aTimePct','aDaysNow','aDaysAfter'].forEach(id => {
+  $(id).addEventListener('input', recalc);
+});
+recalc();
+
+/* ── CONTACT SALES ─────────────────────────────────────────
+   Set window.CCP_API_BASE (same convention as the product app) to
+   send through a real backend at /api/contact-sales. Left unset,
+   this falls back to a mailto: link — always works, zero setup.
+   The "Talk to Sales About This Number" link additionally prefills
+   the message with the calculator's current numbers, so sales
+   starts the conversation already knowing what the visitor saw. */
+const SALES_EMAILS = ['matt@cclosed.com', 'mike@cclosed.com', 'sales@cclosed.com'];
+
+function openContactModal(prefillMessage){
+  document.getElementById('contactModalBg').style.display = 'flex';
+  document.getElementById('cfStatus').innerHTML = '';
+  document.getElementById('cfSubmitBtn').style.display = 'block';
+  document.getElementById('cfSubmitBtn').disabled = false;
+  document.getElementById('cfSubmitBtn').textContent = 'Send Message';
+  if (prefillMessage) document.getElementById('cfMessage').value = prefillMessage;
+}
+function closeContactModal(){
+  document.getElementById('contactModalBg').style.display = 'none';
+}
+function openContactModalWithROI(){
+  const matters = $('vMatters').textContent;
+  const net = $('rNet').textContent;
+  const total = $('rTotalSavings').textContent;
+  const cost = $('rCost').textContent;
+  const tier = $('rTierNote').textContent;
+  const prefill = 'Regarding my ROI estimate: at ' + matters + ' open litigated matters (' + tier + '), the calculator showed ' +
+    total + ' in total estimated savings against ' + cost + ' in platform cost — net value of ' + net + '. ' +
+    'I\'d like to talk through these numbers against our actual program.';
+  openContactModal(prefill);
+}
+function sendContactMailto(name, email, company, message){
+  const subject = 'Sales inquiry from ' + name + (company ? ' (' + company + ')' : '');
+  const body = 'Name: ' + name + '\nEmail: ' + email + '\nCompany: ' + (company || '—') + '\n\n' + (message || '(no message provided)');
+  const mailto = 'mailto:' + SALES_EMAILS.join(',') + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+  window.location.href = mailto;
+}
+async function submitContactSales(){
+  const name = document.getElementById('cfName').value.trim();
+  const email = document.getElementById('cfEmail').value.trim();
+  const company = document.getElementById('cfCompany').value.trim();
+  const message = document.getElementById('cfMessage').value.trim();
+  const statusEl = document.getElementById('cfStatus');
+  const btn = document.getElementById('cfSubmitBtn');
+
+  if (!name || !email || !email.includes('@')) {
+    statusEl.innerHTML = '<div class="cf-status err">Enter your name and a valid email.</div>';
+    return;
+  }
+
+  const apiBase = (window.CCP_API_BASE || '').replace(/\/$/, '');
+
+  if (!apiBase) {
+    sendContactMailto(name, email, company, message);
+    statusEl.innerHTML = '<div class="cf-status ok">Opening your email app with this pre-filled…</div>';
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    const r = await fetch(apiBase + '/api/contact-sales', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, company, message })
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || 'Request failed');
+    statusEl.innerHTML = '<div class="cf-status ok">Thanks, ' + name.split(' ')[0] + ' — we\'ll be in touch shortly.</div>';
+    btn.style.display = 'none';
+  } catch (e) {
+    statusEl.innerHTML = '<div class="cf-status err">Couldn\'t reach the server — opening your email app instead.</div>';
+    sendContactMailto(name, email, company, message);
+    btn.disabled = false; btn.textContent = 'Send Message';
+  }
+}
+</script>
+
+</body>
+</html>
