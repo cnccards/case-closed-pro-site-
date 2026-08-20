@@ -128,6 +128,29 @@ footer{padding:44px 0 36px;}
 .foot-links{display:flex;gap:28px;font-size:13px;color:var(--muted);flex-wrap:wrap;}
 .foot-links a:hover{color:var(--pri);}
 .foot-copy{font-size:12px;color:var(--dim);text-align:center;}
+
+/* ---------- CONTACT SALES MODAL ---------- */
+.contact-modal-bg{position:fixed;inset:0;background:rgba(0,10,30,.55);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px;}
+.contact-modal{background:#fff;border-radius:16px;max-width:440px;width:100%;box-shadow:0 30px 70px rgba(0,10,30,.3);overflow:hidden;}
+.contact-modal-h{padding:24px 26px 4px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;}
+.contact-modal-h h3{font-family:var(--serif);font-size:19px;font-weight:700;color:var(--ink);}
+.contact-modal-h p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.5;}
+.contact-modal-x{background:transparent;border:none;font-size:24px;color:var(--dim);cursor:pointer;line-height:1;padding:2px 6px;flex-shrink:0;}
+.contact-modal-x:hover{color:var(--ink);}
+.contact-modal-b{padding:16px 26px 26px;}
+.cf-field{margin-bottom:14px;}
+.cf-label{display:block;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:6px;}
+.cf-input,.cf-textarea{width:100%;padding:10px 12px;border:1.5px solid var(--line2);border-radius:8px;font-family:var(--sans);font-size:13px;color:var(--ink);outline:none;transition:border-color .15s;}
+.cf-input:focus,.cf-textarea:focus{border-color:var(--pri2);}
+.cf-textarea{min-height:80px;resize:vertical;}
+.cf-submit{width:100%;background:var(--pri);color:#fff;border:none;padding:12px;border-radius:9px;font-weight:700;font-size:13.5px;cursor:pointer;margin-top:4px;}
+.cf-submit:hover{background:var(--pri2);}
+.cf-submit:disabled{opacity:.6;cursor:not-allowed;}
+.cf-status{font-size:12px;margin-top:10px;padding:10px 12px;border-radius:8px;}
+.cf-status.ok{background:var(--greenBg);color:var(--green);}
+.cf-status.err{background:#FEF2F2;color:#B91C1C;}
+.cf-note{font-size:11px;color:var(--dim);margin-top:14px;text-align:center;}
+.cf-note a{color:var(--pri2);text-decoration:none;font-weight:600;}
 </style>
 </head>
 <body>
@@ -154,7 +177,7 @@ footer{padding:44px 0 36px;}
     </div>
     <div class="nav-r">
       <a href="case-closed-pro.html" class="nav-login">Sign In</a>
-      <a href="#footcta" class="nav-cta">Talk to Sales</a>
+      <a href="javascript:void(0)" onclick="openContactModal()" class="nav-cta">Talk to Sales</a>
     </div>
   </div>
 </nav>
@@ -305,7 +328,7 @@ footer{padding:44px 0 36px;}
       <h2>Bring your litigated inventory.<br/>We'll tell you your number.</h2>
       <p>Most conversations start with a 20-minute look at your current open matters — no commitment, no seat count to negotiate.</p>
       <div class="footcta-btns">
-        <a href="#" class="btn-white">Talk to Sales</a>
+        <a href="javascript:void(0)" onclick="openContactModal()" class="btn-white">Talk to Sales</a>
         <a href="pricing.html" class="btn-outline-w">See Full Pricing</a>
       </div>
     </div>
@@ -330,7 +353,7 @@ footer{padding:44px 0 36px;}
         <a href="#features">Product</a>
         <a href="pricing.html">Pricing</a>
         <a href="case-closed-pro.html">Sign In</a>
-        <a href="#footcta">Talk to Sales</a>
+        <a href="javascript:void(0)" onclick="openContactModal()">Talk to Sales</a>
       </div>
     </div>
     <div class="foot-links" style="justify-content:center;margin-bottom:14px;">
@@ -341,6 +364,27 @@ footer{padding:44px 0 36px;}
     <div class="foot-copy">© 2026 Case Closed Pro · Carrier-Grade Litigation Intelligence</div>
   </div>
 </footer>
+
+<div class="contact-modal-bg" id="contactModalBg" style="display:none;" onclick="if(event.target===this)closeContactModal()">
+  <div class="contact-modal">
+    <div class="contact-modal-h">
+      <div>
+        <h3>Talk to Sales</h3>
+        <p>Tell us about your program — we'll get back to you within one business day.</p>
+      </div>
+      <button class="contact-modal-x" onclick="closeContactModal()">×</button>
+    </div>
+    <div class="contact-modal-b">
+      <div class="cf-field"><label class="cf-label">Name</label><input class="cf-input" id="cfName" type="text" placeholder="Jane Doe"/></div>
+      <div class="cf-field"><label class="cf-label">Work Email</label><input class="cf-input" id="cfEmail" type="email" placeholder="jane@yourcarrier.com"/></div>
+      <div class="cf-field"><label class="cf-label">Company</label><input class="cf-input" id="cfCompany" type="text" placeholder="Acme Insurance Co"/></div>
+      <div class="cf-field"><label class="cf-label">Message</label><textarea class="cf-textarea" id="cfMessage" placeholder="Tell us about your litigated matter volume, current process, or anything else..."></textarea></div>
+      <button class="cf-submit" id="cfSubmitBtn" onclick="submitContactSales()">Send Message</button>
+      <div id="cfStatus"></div>
+      <div class="cf-note">Or email us directly at <a href="mailto:sales@cclosed.com">sales@cclosed.com</a></div>
+    </div>
+  </div>
+</div>
 
 <script>
 const slider = document.getElementById('calcSlider');
@@ -375,6 +419,68 @@ function updateCalc(){
 }
 slider.addEventListener('input', updateCalc);
 updateCalc();
+
+/* ── CONTACT SALES ─────────────────────────────────────────
+   Set window.CCP_API_BASE (same convention as the product app) to
+   send through a real backend at /api/contact-sales. Left unset,
+   this falls back to a mailto: link — always works, zero setup. */
+const SALES_EMAILS = ['matt@cclosed.com', 'mike@cclosed.com', 'sales@cclosed.com'];
+
+function openContactModal(prefillMessage){
+  document.getElementById('contactModalBg').style.display = 'flex';
+  document.getElementById('cfStatus').innerHTML = '';
+  document.getElementById('cfSubmitBtn').style.display = 'block';
+  document.getElementById('cfSubmitBtn').disabled = false;
+  document.getElementById('cfSubmitBtn').textContent = 'Send Message';
+  if (prefillMessage) document.getElementById('cfMessage').value = prefillMessage;
+}
+function closeContactModal(){
+  document.getElementById('contactModalBg').style.display = 'none';
+}
+function sendContactMailto(name, email, company, message){
+  const subject = 'Sales inquiry from ' + name + (company ? ' (' + company + ')' : '');
+  const body = 'Name: ' + name + '\nEmail: ' + email + '\nCompany: ' + (company || '—') + '\n\n' + (message || '(no message provided)');
+  const mailto = 'mailto:' + SALES_EMAILS.join(',') + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+  window.location.href = mailto;
+}
+async function submitContactSales(){
+  const name = document.getElementById('cfName').value.trim();
+  const email = document.getElementById('cfEmail').value.trim();
+  const company = document.getElementById('cfCompany').value.trim();
+  const message = document.getElementById('cfMessage').value.trim();
+  const statusEl = document.getElementById('cfStatus');
+  const btn = document.getElementById('cfSubmitBtn');
+
+  if (!name || !email || !email.includes('@')) {
+    statusEl.innerHTML = '<div class="cf-status err">Enter your name and a valid email.</div>';
+    return;
+  }
+
+  const apiBase = (window.CCP_API_BASE || '').replace(/\/$/, '');
+
+  if (!apiBase) {
+    sendContactMailto(name, email, company, message);
+    statusEl.innerHTML = '<div class="cf-status ok">Opening your email app with this pre-filled…</div>';
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    const r = await fetch(apiBase + '/api/contact-sales', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, company, message })
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || 'Request failed');
+    statusEl.innerHTML = '<div class="cf-status ok">Thanks, ' + name.split(' ')[0] + ' — we\'ll be in touch shortly.</div>';
+    btn.style.display = 'none';
+  } catch (e) {
+    statusEl.innerHTML = '<div class="cf-status err">Couldn\'t reach the server — opening your email app instead.</div>';
+    sendContactMailto(name, email, company, message);
+    btn.disabled = false; btn.textContent = 'Send Message';
+  }
+}
 </script>
 
 </body>
