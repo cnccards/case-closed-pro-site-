@@ -23,6 +23,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
 import Stripe from 'stripe';
+import crypto from 'crypto';
 
 const { Pool } = pkg;
 
@@ -89,7 +90,7 @@ function isValidEmail(email) {
   return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 function publicUser(u) {
-  return { id: u.id, orgId: u.org_id, email: u.email, name: u.name, persona: u.persona, role: u.role, createdAt: u.created_at };
+  return { id: u.id, orgId: u.org_id, email: u.email, name: u.name, persona: u.persona, role: u.role, createdAt: u.created_at, totpEnabled: !!u.totp_enabled };
 }
 function signToken(user) {
   return jwt.sign(
@@ -97,6 +98,90 @@ function signToken(user) {
     EFFECTIVE_JWT_SECRET,
     { expiresIn: JWT_EXPIRY }
   );
+}
+// A short-lived, narrowly-scoped token issued after password is correct
+// but before 2FA is verified. It can ONLY be exchanged at
+// /api/auth/2fa/login-verify — it does not work as a normal session
+// token anywhere else, since it carries no orgId/persona/role.
+function signPending2FAToken(user) {
+  return jwt.sign({ sub: user.id, pending2fa: true }, EFFECTIVE_JWT_SECRET, { expiresIn: '10m' });
+}
+
+// ---------------------------------------------------------------
+// TOTP (RFC 6238) — the standard algorithm behind Google
+// Authenticator / Authy / 1Password-style 2FA codes. Implemented
+// directly on Node's built-in crypto module (HMAC-SHA1) rather than
+// pulling in a dependency — this is a well-specified, small, and
+// security-sensitive enough algorithm that it's worth being able to
+// read and test every line of it directly. Verified against the
+// official RFC 6238 Appendix B test vectors (see totp_test.mjs).
+// ---------------------------------------------------------------
+const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+function base32Encode(buffer) {
+  let bits = '', output = '';
+  for (const byte of buffer) bits += byte.toString(2).padStart(8, '0');
+  for (let i = 0; i + 5 <= bits.length; i += 5) output += BASE32_ALPHABET[parseInt(bits.substr(i, 5), 2)];
+  if (bits.length % 5 !== 0) {
+    const rem = bits.slice(bits.length - (bits.length % 5)).padEnd(5, '0');
+    output += BASE32_ALPHABET[parseInt(rem, 2)];
+  }
+  return output;
+}
+function base32Decode(str) {
+  let bits = '', bytes = [];
+  str = String(str).replace(/=+$/, '').toUpperCase().replace(/\s+/g, '');
+  for (const c of str) {
+    const val = BASE32_ALPHABET.indexOf(c);
+    if (val === -1) continue;
+    bits += val.toString(2).padStart(5, '0');
+  }
+  for (let i = 0; i + 8 <= bits.length; i += 8) bytes.push(parseInt(bits.substr(i, 8), 2));
+  return Buffer.from(bytes);
+}
+function generateTotpSecret() {
+  return base32Encode(crypto.randomBytes(20)); // 160-bit secret, standard for TOTP
+}
+function totpAt(secretBase32, forTimeMs, timeStep = 30, digits = 6) {
+  const key = base32Decode(secretBase32);
+  const counter = Math.floor(forTimeMs / 1000 / timeStep);
+  const counterBuf = Buffer.alloc(8);
+  counterBuf.writeBigUInt64BE(BigInt(counter));
+  const hmac = crypto.createHmac('sha1', key).update(counterBuf).digest();
+  const offset = hmac[hmac.length - 1] & 0xf;
+  const binCode = ((hmac[offset] & 0x7f) << 24) | ((hmac[offset + 1] & 0xff) << 16) |
+                  ((hmac[offset + 2] & 0xff) << 8) | (hmac[offset + 3] & 0xff);
+  return (binCode % (10 ** digits)).toString().padStart(digits, '0');
+}
+// Allows the code from one step before/after the current one, since
+// clocks between a phone and a server are never perfectly in sync.
+function verifyTotp(secretBase32, token, windowSteps = 1) {
+  token = String(token || '').trim();
+  if (!/^\d{6}$/.test(token)) return false;
+  const now = Date.now();
+  for (let w = -windowSteps; w <= windowSteps; w++) {
+    if (totpAt(secretBase32, now + w * 30000) === token) return true;
+  }
+  return false;
+}
+function otpauthUrl(secretBase32, email, issuer = 'Case Closed Pro') {
+  const label = encodeURIComponent(`${issuer}:${email}`);
+  return `otpauth://totp/${label}?secret=${secretBase32}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
+}
+function generateBackupCodes(count = 8) {
+  return Array.from({ length: count }, () =>
+    crypto.randomBytes(5).toString('hex').toUpperCase().match(/.{1,4}/g).join('-') // e.g. "A1B2-C3D4-E5"
+  );
+}
+
+// ---------------------------------------------------------------
+// Password reset tokens — random, only ever stored hashed.
+// ---------------------------------------------------------------
+function generateResetToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+function hashToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
 }
 
 // ---------------------------------------------------------------
@@ -138,6 +223,23 @@ function rowToCase(row) {
     ...row.data, // parties, exposure, closing, liens, authorityRequests, billing, evidence, experts, settlements, tasks, documents, updates, keyDates, court, opposing
     _createdAt: row.created_at,
     _updatedAt: row.updated_at
+  };
+}
+
+// ---------------------------------------------------------------
+// Privileged / private notes. An update entry with
+// visibility === 'private' is only ever visible to users in the
+// SAME org as its author (authorOrgId). This is what lets defense
+// counsel keep genuinely privileged work product out of what the
+// carrier sees — filtered here, server-side, before the case object
+// is ever serialized to JSON, so it's not something a browser
+// dev-tools inspection or a raw API call can bypass. A UI-only
+// "hide this" would not provide that guarantee; this does.
+function filterCaseForViewer(caseObj, viewerOrgId) {
+  if (!Array.isArray(caseObj.updates)) return caseObj;
+  return {
+    ...caseObj,
+    updates: caseObj.updates.filter(u => u.visibility !== 'private' || u.authorOrgId === viewerOrgId)
   };
 }
 function defaultCaseData() {
@@ -265,6 +367,45 @@ app.get('/api/health', async (req, res) => {
 });
 
 // ---------------------------------------------------------------
+// Contact Sales — public, unauthenticated (marketing-site visitors
+// aren't logged in). Deliberately separate, tighter rate limit from
+// the main API limiter below, since this is intentionally reachable
+// with zero credentials and is otherwise open to spam/abuse.
+// ---------------------------------------------------------------
+const SALES_EMAILS = (process.env.SALES_EMAILS || 'matt@cclosed.com,mike@cclosed.com,sales@cclosed.com')
+  .split(',').map(s => s.trim()).filter(Boolean);
+const contactRateLimits = new Map();
+
+app.post('/api/contact-sales', async (req, res) => {
+  const key = req.ip;
+  const now = Date.now(), windowMs = 60 * 60 * 1000, limit = 5; // 5/hour/IP — generous for real use, tight against spam
+  const record = contactRateLimits.get(key) || { count: 0, resetAt: now + windowMs };
+  if (now > record.resetAt) { record.count = 0; record.resetAt = now + windowMs; }
+  record.count += 1;
+  contactRateLimits.set(key, record);
+  if (record.count > limit) return res.status(429).json({ error: 'Too many requests — please try again later or email sales@cclosed.com directly.' });
+
+  const { name, email, company, message } = req.body || {};
+  if (!name || typeof name !== 'string' || !name.trim()) return res.status(400).json({ error: 'Name is required' });
+  if (!isValidEmail(email)) return res.status(400).json({ error: 'A valid email is required' });
+  if (!SMTP_CONFIGURED) return res.status(503).json({ error: 'Email is not configured on this server yet. See SETUP.md — SMTP_HOST/PORT/USER/PASS and FROM_EMAIL.' });
+
+  try {
+    await mailer.sendMail({
+      from: process.env.FROM_EMAIL || process.env.SMTP_USER,
+      to: SALES_EMAILS.join(','),
+      replyTo: email,
+      subject: `New sales inquiry: ${name.trim()}${company ? ' (' + String(company).trim() + ')' : ''}`,
+      text: `Name: ${name.trim()}\nEmail: ${email}\nCompany: ${company ? String(company).trim() : '—'}\n\nMessage:\n${message ? String(message).trim() : '(no message provided)'}\n\n—\nSubmitted from the Case Closed Pro marketing site. Reply-to is set to the submitter's email.`
+    });
+    res.json({ success: true, message: `Thanks — we'll be in touch shortly.` });
+  } catch (e) {
+    console.error('Contact-sales email failed to send:', e.message);
+    res.status(502).json({ error: 'Could not send your message right now — please email sales@cclosed.com directly.' });
+  }
+});
+
+// ---------------------------------------------------------------
 // Auth — registration creates a NEW organization with the
 // registering user as its owner. Additional users join an existing
 // org via an invite flow (not built here — see README for the
@@ -319,8 +460,56 @@ app.post('/api/auth/login', async (req, res) => {
   if (!user) return invalid();
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) return invalid();
+
+  if (user.totp_enabled) {
+    // Password is correct, but the account requires a 2FA code next.
+    // No session token yet — only a narrow pending token good for
+    // exactly one thing: /api/auth/2fa/login-verify.
+    return res.json({ twoFactorRequired: true, pendingToken: signPending2FAToken(user) });
+  }
+
   await q('UPDATE users SET last_login_at = now() WHERE id = $1', [user.id]);
   await audit(user.org_id, user.id, 'auth.login', 'user', user.id, null, req.ip);
+  res.json({ token: signToken(user), user: publicUser(user) });
+});
+
+// Step 2 of login when 2FA is enabled — exchange the pending token +
+// a 6-digit authenticator code (or an unused backup code) for a real
+// session token.
+app.post('/api/auth/2fa/login-verify', async (req, res) => {
+  const { pendingToken, code } = req.body || {};
+  if (!pendingToken || !code) return res.status(400).json({ error: 'pendingToken and code are required' });
+  let payload;
+  try {
+    payload = jwt.verify(pendingToken, EFFECTIVE_JWT_SECRET);
+  } catch (e) {
+    return res.status(401).json({ error: 'Pending login expired — sign in again' });
+  }
+  if (!payload.pending2fa) return res.status(401).json({ error: 'Invalid pending token' });
+
+  const result = await q('SELECT * FROM users WHERE id = $1 AND is_active = true', [payload.sub]);
+  const user = result.rows[0];
+  if (!user || !user.totp_enabled) return res.status(401).json({ error: 'Invalid pending login' });
+
+  let usedBackupCode = null;
+  const validTotp = verifyTotp(user.totp_secret, code);
+  if (!validTotp) {
+    // Not a valid TOTP code — check whether it matches an unused backup code.
+    const codes = user.totp_backup_codes || [];
+    for (let i = 0; i < codes.length; i++) {
+      if (await bcrypt.compare(String(code).trim().toUpperCase(), codes[i])) { usedBackupCode = i; break; }
+    }
+    if (usedBackupCode === null) return res.status(401).json({ error: 'Invalid or expired code' });
+  }
+  if (usedBackupCode !== null) {
+    const remaining = [...user.totp_backup_codes];
+    remaining.splice(usedBackupCode, 1);
+    await q('UPDATE users SET totp_backup_codes = $1 WHERE id = $2', [remaining, user.id]);
+    await audit(user.org_id, user.id, 'auth.2fa_backup_code_used', 'user', user.id, { remaining: remaining.length }, req.ip);
+  }
+
+  await q('UPDATE users SET last_login_at = now() WHERE id = $1', [user.id]);
+  await audit(user.org_id, user.id, 'auth.login', 'user', user.id, { via2fa: true }, req.ip);
   res.json({ token: signToken(user), user: publicUser(user) });
 });
 
@@ -336,6 +525,68 @@ app.get('/api/auth/me', async (req, res) => {
   } catch (e) {
     res.status(401).json({ error: 'Invalid or expired token' });
   }
+});
+
+// ---------------------------------------------------------------
+// Forgot / reset password. Deliberately public (no auth required —
+// you're locked out, that's the whole point). Always returns the
+// same generic success message whether or not the email exists, so
+// this endpoint can't be used to check who has an account.
+// ---------------------------------------------------------------
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const { email } = req.body || {};
+  const generic = { message: 'If an account exists for that email, a reset link has been sent.' };
+  if (!isValidEmail(email)) return res.json(generic); // still generic — don't confirm/deny format issues either
+  const normalizedEmail = email.trim().toLowerCase();
+  const result = await q('SELECT * FROM users WHERE email = $1 AND is_active = true', [normalizedEmail]);
+  const user = result.rows[0];
+  if (!user) return res.json(generic);
+
+  const rawToken = generateResetToken();
+  const tokenHash = hashToken(rawToken);
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+  await q('INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES ($1,$2,$3)', [user.id, tokenHash, expiresAt]);
+  await audit(user.org_id, user.id, 'auth.password_reset_requested', 'user', user.id, null, req.ip);
+
+  const resetUrl = `${process.env.APP_URL || 'http://localhost:3000'}/case-closed-pro.html?resetToken=${rawToken}`;
+  if (SMTP_CONFIGURED) {
+    try {
+      await mailer.sendMail({
+        from: process.env.FROM_EMAIL || process.env.SMTP_USER,
+        to: user.email,
+        subject: 'Reset your Case Closed Pro password',
+        text: `Hi ${user.name},\n\nSomeone requested a password reset for your account. This link expires in 1 hour:\n\n${resetUrl}\n\nIf you didn't request this, you can safely ignore this email — your password will not change.`
+      });
+    } catch (e) {
+      console.error('Password reset email failed to send:', e.message);
+      // Deliberately still returns the generic success message — we don't
+      // want to reveal delivery failures to the caller either.
+    }
+  } else {
+    console.warn(`SMTP not configured — password reset link for ${user.email}: ${resetUrl}`);
+  }
+  res.json(generic);
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  const { token, newPassword } = req.body || {};
+  if (!token || !newPassword) return res.status(400).json({ error: 'token and newPassword are required' });
+  if (newPassword.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+  const tokenHash = hashToken(token);
+  const result = await q(
+    `SELECT pr.*, u.org_id, u.email FROM password_resets pr JOIN users u ON u.id = pr.user_id
+     WHERE pr.token_hash = $1 AND pr.used_at IS NULL AND pr.expires_at > now()`,
+    [tokenHash]
+  );
+  const resetRow = result.rows[0];
+  if (!resetRow) return res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new one.' });
+
+  const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+  await q('UPDATE users SET password_hash = $1 WHERE id = $2', [passwordHash, resetRow.user_id]);
+  await q('UPDATE password_resets SET used_at = now() WHERE id = $1', [resetRow.id]);
+  await audit(resetRow.org_id, resetRow.user_id, 'auth.password_reset_completed', 'user', resetRow.user_id, null, req.ip);
+  res.json({ success: true, message: 'Password updated. You can now sign in with your new password.' });
 });
 
 // ---------------------------------------------------------------
@@ -377,6 +628,57 @@ app.use('/api', (req, res, next) => {
   record.count += 1; hits.set(key, record);
   if (record.count > limit) return res.status(429).json({ error: 'Rate limit exceeded — try again shortly' });
   next();
+});
+
+// ---------------------------------------------------------------
+// 2FA management — all three require a full session (already past
+// the rate limiter and auth gate above), unlike the login-time
+// endpoints further up which are deliberately public.
+// ---------------------------------------------------------------
+
+// Step 1: generate a secret + manual-entry key for an authenticator
+// app. Not enabled yet — enabling happens only once the user proves
+// they actually scanned/entered it correctly, in verify-setup below.
+app.post('/api/auth/2fa/setup', async (req, res) => {
+  if (!req.user) return res.status(403).json({ error: 'Not available for API-key access' });
+  const secret = generateTotpSecret();
+  await q('UPDATE users SET totp_secret = $1, totp_enabled = false WHERE id = $2', [secret, req.user.sub]);
+  res.json({
+    secret,
+    manualEntryKey: secret.match(/.{1,4}/g).join(' '),
+    otpauthUrl: otpauthUrl(secret, req.user.email)
+  });
+});
+
+// Step 2: confirm the code from the app actually works before
+// flipping totp_enabled on. Also issues backup codes exactly once,
+// shown to the user a single time — we only ever store their hashes.
+app.post('/api/auth/2fa/verify-setup', async (req, res) => {
+  if (!req.user) return res.status(403).json({ error: 'Not available for API-key access' });
+  const { code } = req.body || {};
+  const result = await q('SELECT totp_secret FROM users WHERE id = $1', [req.user.sub]);
+  const secret = result.rows[0]?.totp_secret;
+  if (!secret) return res.status(400).json({ error: 'Call /api/auth/2fa/setup first' });
+  if (!verifyTotp(secret, code)) return res.status(400).json({ error: 'That code didn\'t match — check the time on your phone and try again' });
+
+  const backupCodes = generateBackupCodes();
+  const hashedCodes = await Promise.all(backupCodes.map(c => bcrypt.hash(c, BCRYPT_ROUNDS)));
+  await q('UPDATE users SET totp_enabled = true, totp_backup_codes = $1 WHERE id = $2', [hashedCodes, req.user.sub]);
+  await audit(req.orgId, req.user.sub, 'auth.2fa_enabled', 'user', req.user.sub, null, req.ip);
+  res.json({ enabled: true, backupCodes }); // last time these plaintext codes are ever available — show once, then gone
+});
+
+app.post('/api/auth/2fa/disable', async (req, res) => {
+  if (!req.user) return res.status(403).json({ error: 'Not available for API-key access' });
+  const { password } = req.body || {};
+  const result = await q('SELECT * FROM users WHERE id = $1', [req.user.sub]);
+  const user = result.rows[0];
+  if (!password || !(await bcrypt.compare(password, user.password_hash))) {
+    return res.status(401).json({ error: 'Incorrect password' });
+  }
+  await q('UPDATE users SET totp_enabled = false, totp_secret = NULL, totp_backup_codes = NULL WHERE id = $1', [req.user.sub]);
+  await audit(req.orgId, req.user.sub, 'auth.2fa_disabled', 'user', req.user.sub, null, req.ip);
+  res.json({ disabled: true });
 });
 
 // ---------------------------------------------------------------
@@ -460,20 +762,20 @@ app.get('/api/cases', async (req, res) => {
   const result = req.user?.persona === 'defense'
     ? await scopedCaseQuery(req, extra, status ? [status] : [])
     : await scopedCaseQuery(req, extraNoAlias, status ? [status] : []);
-  const cases = result.rows.map(rowToCase);
+  const cases = result.rows.map(r => filterCaseForViewer(rowToCase(r), req.orgId));
   res.json({ count: cases.length, cases });
 });
 
 app.get('/api/cases/:id', async (req, res) => {
   const result = await scopedCaseQuery(req, req.user?.persona === 'defense' ? ' AND c.id = $2' : ' AND id = $2', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: 'Case not found' });
-  res.json(rowToCase(result.rows[0]));
+  res.json(filterCaseForViewer(rowToCase(result.rows[0]), req.orgId));
 });
 
 app.get('/api/cases/:id/closing-summary', async (req, res) => {
   const result = await scopedCaseQuery(req, req.user?.persona === 'defense' ? ' AND c.id = $2' : ' AND id = $2', [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ error: 'Case not found' });
-  const c = rowToCase(result.rows[0]);
+  const c = filterCaseForViewer(rowToCase(result.rows[0]), req.orgId);
   if (req.query.format === 'json') return res.json({ readiness: closingReadiness(c), summary: buildClosingSummaryText(c) });
   res.type('text/plain').send(buildClosingSummaryText(c));
 });
