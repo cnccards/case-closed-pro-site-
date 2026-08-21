@@ -22,6 +22,12 @@ CREATE TABLE organizations (
   name            TEXT NOT NULL,
   persona         TEXT NOT NULL DEFAULT 'carrier' CHECK (persona IN ('carrier','defense')),
   plan_tier       TEXT NOT NULL DEFAULT 'starter' CHECK (plan_tier IN ('starter','growth','enterprise')),
+  -- Platform-admin controlled on/off switch. Self-service registration
+  -- still creates an org that's immediately 'active' (unchanged
+  -- behavior) — this exists so matt@/mike@/sales@cclosed.com can
+  -- suspend access on any org, or provision a brand-new customer
+  -- directly from the admin panel, without touching the database.
+  access_status   TEXT NOT NULL DEFAULT 'active' CHECK (access_status IN ('active','suspended')),
   stripe_customer_id      TEXT UNIQUE,
   stripe_subscription_id  TEXT UNIQUE,
   subscription_status     TEXT DEFAULT 'trialing', -- trialing | active | past_due | canceled
@@ -47,9 +53,32 @@ CREATE TABLE users (
   role            TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner','admin','member')),
   is_active       BOOLEAN NOT NULL DEFAULT true,
   last_login_at   TIMESTAMPTZ,
+  -- Two-factor authentication (TOTP, RFC 6238 — authenticator apps like
+  -- Google Authenticator, Authy, 1Password). totp_secret is only set once
+  -- the user has actually confirmed setup with a valid code; totp_enabled
+  -- gates whether login requires the second step.
+  totp_secret         TEXT,
+  totp_enabled        BOOLEAN NOT NULL DEFAULT false,
+  totp_backup_codes   TEXT[],  -- bcrypt-hashed one-time recovery codes
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_users_org ON users(org_id);
+
+-- ---------------------------------------------------------------
+-- Password reset tokens. Short-lived, single-use, stored hashed
+-- (never the raw token) so a database read alone can't be used to
+-- reset someone's password.
+-- ---------------------------------------------------------------
+CREATE TABLE password_resets (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash      TEXT NOT NULL,
+  expires_at      TIMESTAMPTZ NOT NULL,
+  used_at         TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_password_resets_user ON password_resets(user_id);
+CREATE INDEX idx_password_resets_token ON password_resets(token_hash);
 
 -- ---------------------------------------------------------------
 -- Cases (matters). org_id = the CARRIER that owns the matter.
@@ -74,6 +103,12 @@ CREATE TABLE cases (
   deadline_date   DATE,
   value           NUMERIC(14,2) DEFAULT 0,
   data            JSONB NOT NULL DEFAULT '{}'::jsonb, -- parties, exposure, closing, liens, authorityRequests, billing, evidence, experts, settlements, tasks, documents, updates, keyDates, court, opposing, insurance
+  -- NOTE on data.updates[]: each entry may carry visibility ('shared' | 'private')
+  -- and authorOrgId. Entries marked 'private' are stripped server-side (see
+  -- server.js filterCaseForViewer) before the case is ever sent to a user
+  -- outside the authoring org — this is what backs the "private to my firm"
+  -- notes feature, so defense counsel can keep genuinely privileged work
+  -- product out of what the carrier sees.
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
