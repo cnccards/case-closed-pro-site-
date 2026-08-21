@@ -37,6 +37,22 @@ const EFFECTIVE_JWT_SECRET = JWT_SECRET || 'dev-only-insecure-secret-change-me';
 const JWT_EXPIRY = process.env.JWT_EXPIRY || '7d';
 const BCRYPT_ROUNDS = 10;
 
+// ---------------------------------------------------------------
+// Platform admins — cross-organization access, distinct from the
+// per-org 'owner'/'admin'/'member' roles. These accounts can see and
+// manage EVERY customer's organization: provision new ones, suspend
+// or reactivate access, adjust plan tiers. Deliberately configured
+// via env var (not a database flag tied to one person) so the list
+// can change without a migration. Checked by email at login/register
+// time — being on this list is what grants access, not org
+// membership or role.
+// ---------------------------------------------------------------
+const PLATFORM_ADMIN_EMAILS = (process.env.PLATFORM_ADMIN_EMAILS || 'matt@cclosed.com,mike@cclosed.com,sales@cclosed.com')
+  .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+function isPlatformAdminEmail(email) {
+  return PLATFORM_ADMIN_EMAILS.includes(String(email || '').trim().toLowerCase());
+}
+
 if (!process.env.DATABASE_URL) {
   console.error('FATAL: DATABASE_URL is not set. Point it at your Postgres instance and re-run.');
   process.exit(1);
@@ -90,11 +106,11 @@ function isValidEmail(email) {
   return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 function publicUser(u) {
-  return { id: u.id, orgId: u.org_id, email: u.email, name: u.name, persona: u.persona, role: u.role, createdAt: u.created_at, totpEnabled: !!u.totp_enabled };
+  return { id: u.id, orgId: u.org_id, email: u.email, name: u.name, persona: u.persona, role: u.role, createdAt: u.created_at, totpEnabled: !!u.totp_enabled, platformAdmin: isPlatformAdminEmail(u.email) };
 }
 function signToken(user) {
   return jwt.sign(
-    { sub: user.id, orgId: user.org_id, email: user.email, persona: user.persona, role: user.role },
+    { sub: user.id, orgId: user.org_id, email: user.email, persona: user.persona, role: user.role, platformAdmin: isPlatformAdminEmail(user.email) },
     EFFECTIVE_JWT_SECRET,
     { expiresIn: JWT_EXPIRY }
   );
@@ -612,6 +628,16 @@ app.use('/api', async (req, res, next) => {
   try {
     const payload = jwt.verify(token, EFFECTIVE_JWT_SECRET);
     req.user = payload; req.orgId = payload.orgId; req.authType = 'user';
+
+    // Platform admins bypass their own org's access_status entirely —
+    // an admin account's "own" org is never what's actually in use,
+    // and they need to be able to reach /api/admin/* regardless of it.
+    if (!payload.platformAdmin) {
+      const orgCheck = await q('SELECT access_status FROM organizations WHERE id = $1', [payload.orgId]);
+      if (orgCheck.rows[0]?.access_status === 'suspended') {
+        return res.status(403).json({ error: 'Access to this organization has been suspended. Contact your account administrator or sales@cclosed.com.' });
+      }
+    }
     return next();
   } catch (e) {
     return res.status(401).json({ error: 'Unauthorized — invalid API key or token' });
@@ -628,6 +654,110 @@ app.use('/api', (req, res, next) => {
   record.count += 1; hits.set(key, record);
   if (record.count > limit) return res.status(429).json({ error: 'Rate limit exceeded — try again shortly' });
   next();
+});
+
+// ---------------------------------------------------------------
+// Platform admin panel — matt@/mike@/sales@cclosed.com (or whoever
+// PLATFORM_ADMIN_EMAILS lists). Every route here requires
+// req.user.platformAdmin === true, checked fresh on every request —
+// having an old token doesn't help if you're removed from the
+// allowlist, since the flag is recomputed at login/register time
+// from the current env var, not cached anywhere long-lived.
+// ---------------------------------------------------------------
+function requirePlatformAdmin(req, res, next) {
+  if (!req.user?.platformAdmin) return res.status(403).json({ error: 'Platform admin access required' });
+  next();
+}
+
+// List every customer organization — this is the whole "cabinet"
+// directory. Includes a live matter count and user count per org so
+// you can see program size at a glance without opening each one.
+app.get('/api/admin/organizations', requirePlatformAdmin, async (req, res) => {
+  const result = await q(`
+    SELECT o.*,
+      (SELECT COUNT(*) FROM cases c WHERE c.org_id = o.id) AS case_count,
+      (SELECT COUNT(*) FROM users u WHERE u.org_id = o.id) AS user_count
+    FROM organizations o
+    ORDER BY o.created_at DESC
+  `);
+  res.json({
+    count: result.rows.length,
+    organizations: result.rows.map(o => ({
+      id: o.id, name: o.name, persona: o.persona, planTier: o.plan_tier,
+      accessStatus: o.access_status, subscriptionStatus: o.subscription_status,
+      caseCount: Number(o.case_count), userCount: Number(o.user_count),
+      createdAt: o.created_at
+    }))
+  });
+});
+
+// Provision a brand-new customer directly — this is "give them
+// access to their own cabinet." Creates the organization AND its
+// first (owner) user in one step, active immediately, and returns a
+// one-time temporary password since there's no invite-email flow
+// built yet — hand it to the customer through whatever channel
+// you're already using (the sales conversation, a follow-up email).
+// They should change it after first login.
+app.post('/api/admin/organizations', requirePlatformAdmin, async (req, res) => {
+  const { orgName, persona, ownerName, ownerEmail, planTier } = req.body || {};
+  if (!orgName || !orgName.trim()) return res.status(400).json({ error: 'orgName is required' });
+  if (!isValidEmail(ownerEmail)) return res.status(400).json({ error: 'A valid ownerEmail is required' });
+  const normalizedEmail = ownerEmail.trim().toLowerCase();
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const existing = await client.query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
+    if (existing.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'A user with that email already exists' });
+    }
+    const personaVal = persona === 'defense' ? 'defense' : 'carrier';
+    const tierVal = ['starter', 'growth', 'enterprise'].includes(planTier) ? planTier : 'starter';
+    const orgResult = await client.query(
+      `INSERT INTO organizations (name, persona, plan_tier, access_status) VALUES ($1,$2,$3,'active') RETURNING *`,
+      [orgName.trim(), personaVal, tierVal]
+    );
+    const org = orgResult.rows[0];
+
+    // Temporary password — random, shown once in this response only.
+    // Never logged, never stored anywhere but its bcrypt hash.
+    const tempPassword = crypto.randomBytes(9).toString('base64').replace(/[+/=]/g, '').slice(0, 12);
+    const passwordHash = await bcrypt.hash(tempPassword, BCRYPT_ROUNDS);
+    const userResult = await client.query(
+      `INSERT INTO users (org_id, email, password_hash, name, persona, role)
+       VALUES ($1,$2,$3,$4,$5,'owner') RETURNING *`,
+      [org.id, normalizedEmail, passwordHash, (ownerName || normalizedEmail.split('@')[0]).trim(), personaVal]
+    );
+    const user = userResult.rows[0];
+    await client.query('COMMIT');
+    await audit(org.id, req.user.sub, 'admin.organization_created', 'organization', org.id, { orgName: org.name, createdByAdmin: req.user.email }, req.ip);
+    res.status(201).json({
+      organization: { id: org.id, name: org.name, persona: org.persona, planTier: org.plan_tier, accessStatus: org.access_status },
+      owner: publicUser(user),
+      temporaryPassword: tempPassword
+    });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: 'Could not create organization: ' + e.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/admin/organizations/:id/suspend', requirePlatformAdmin, async (req, res) => {
+  const result = await q(`UPDATE organizations SET access_status = 'suspended' WHERE id = $1 RETURNING id, name`, [req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: 'Organization not found' });
+  await audit(req.params.id, req.user.sub, 'admin.organization_suspended', 'organization', req.params.id, { by: req.user.email }, req.ip);
+  res.json({ suspended: true, organization: result.rows[0] });
+});
+
+app.post('/api/admin/organizations/:id/activate', requirePlatformAdmin, async (req, res) => {
+  const result = await q(`UPDATE organizations SET access_status = 'active' WHERE id = $1 RETURNING id, name`, [req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: 'Organization not found' });
+  await audit(req.params.id, req.user.sub, 'admin.organization_activated', 'organization', req.params.id, { by: req.user.email }, req.ip);
+  res.json({ activated: true, organization: result.rows[0] });
 });
 
 // ---------------------------------------------------------------
