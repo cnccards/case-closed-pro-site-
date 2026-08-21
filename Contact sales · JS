@@ -1,0 +1,93 @@
+// api/contact-sales.js
+// -----------------------------------------------------------------
+// Vercel Serverless Function — no database, no separate backend to
+// deploy. Vercel auto-detects any file inside /api and turns it into
+// its own function, on the same domain as your static site. Sends
+// through Resend's REST API using plain fetch — no npm package to
+// install, no build step to configure.
+//
+// SETUP (about 5 minutes):
+//   1. Create a free account at https://resend.com
+//   2. Verify a sending domain (Resend walks you through adding a
+//      couple of DNS records at Namecheap — same place you already
+//      added the Vercel records). While testing, you can skip this
+//      and use their shared test address instead — see FROM_EMAIL note
+//      below.
+//   3. Dashboard → API Keys → Create API Key → copy it.
+//   4. In Vercel: your project → Settings → Environment Variables →
+//      add RESEND_API_KEY with that value → Save.
+//   5. Redeploy (Vercel → Deployments → ⋯ → Redeploy). Done — no
+//      other setup needed, and nothing on the frontend needs to change.
+// -----------------------------------------------------------------
+
+const SALES_EMAILS = (process.env.SALES_EMAILS || 'matt@cclosed.com,mike@cclosed.com,sales@cclosed.com')
+  .split(',').map(s => s.trim()).filter(Boolean);
+
+// Resets whenever this function cold-starts — fine for this volume;
+// swap for a shared store (Upstash Redis, etc.) if you ever need
+// rate limiting that survives across instances.
+const rateLimits = new Map();
+
+function isValidEmail(email) {
+  return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+module.exports = async function handler(req, res) {
+  // Same-origin by default (frontend and this function share a domain
+  // on Vercel), but this keeps it working even if you ever call it
+  // from a different domain.
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+  const now = Date.now(), windowMs = 60 * 60 * 1000, limit = 5; // 5/hour/IP
+  const record = rateLimits.get(ip) || { count: 0, resetAt: now + windowMs };
+  if (now > record.resetAt) { record.count = 0; record.resetAt = now + windowMs; }
+  record.count += 1;
+  rateLimits.set(ip, record);
+  if (record.count > limit) {
+    return res.status(429).json({ error: 'Too many requests — please try again later or email sales@cclosed.com directly.' });
+  }
+
+  const { name, email, company, message } = req.body || {};
+  if (!name || typeof name !== 'string' || !name.trim()) return res.status(400).json({ error: 'Name is required' });
+  if (!isValidEmail(email)) return res.status(400).json({ error: 'A valid email is required' });
+
+  if (!process.env.RESEND_API_KEY) {
+    return res.status(503).json({ error: 'Email is not configured yet — set RESEND_API_KEY in Vercel project settings.' });
+  }
+
+  try {
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        // Until you verify your own sending domain in Resend, use their
+        // shared test address here — real delivery, no domain setup
+        // needed yet: 'Case Closed Pro <onboarding@resend.dev>'
+        from: process.env.FROM_EMAIL || 'Case Closed Pro <onboarding@resend.dev>',
+        to: SALES_EMAILS,
+        reply_to: email,
+        subject: `New sales inquiry: ${name.trim()}${company ? ' (' + String(company).trim() + ')' : ''}`,
+        text: `Name: ${name.trim()}\nEmail: ${email}\nCompany: ${company ? String(company).trim() : '—'}\n\nMessage:\n${message ? String(message).trim() : '(no message provided)'}\n\n—\nSubmitted from the Case Closed Pro marketing site. Reply-to is set to the submitter's email.`
+      })
+    });
+
+    if (!r.ok) {
+      const errBody = await r.text().catch(() => '');
+      console.error('Resend API error:', r.status, errBody);
+      return res.status(502).json({ error: 'Could not send your message right now — please email sales@cclosed.com directly.' });
+    }
+
+    res.status(200).json({ success: true, message: "Thanks — we'll be in touch shortly." });
+  } catch (e) {
+    console.error('Contact-sales send failed:', e.message);
+    res.status(502).json({ error: 'Could not send your message right now — please email sales@cclosed.com directly.' });
+  }
+};
