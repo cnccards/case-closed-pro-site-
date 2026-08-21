@@ -136,13 +136,14 @@ footer{padding:36px 0;text-align:center;font-size:12px;color:var(--dim);}
 <nav>
   <div class="nav-in">
     <div class="brand">
-      <div class="brand-mark"><svg viewBox="0 0 300 160" width="19" height="10" fill="none" stroke="white">
-        <circle cx="82" cy="56" r="22" stroke-width="13"/><circle cx="82" cy="104" r="22" stroke-width="13"/>
-        <circle cx="119" cy="80" r="27" stroke-width="14"/>
-        <path d="M235.2 38.3 A60 60 0 1 0 235.2 121.7" stroke-width="25" stroke-linecap="butt"/>
-        <line x1="172" y1="80" x2="285" y2="80" stroke-width="14" stroke-linecap="butt"/>
-        <rect x="265" y="80" width="11" height="23" fill="white" stroke="none"/>
-        <rect x="248" y="80" width="11" height="15" fill="white" stroke="none"/>
+      <div class="brand-mark"><svg viewBox="0 0 300 160" width="19" height="10" fill="none">
+        <circle cx="80" cy="55" r="21" stroke-width="12" stroke="#F5B700"/><circle cx="80" cy="105" r="21" stroke-width="12" stroke="#F5B700"/>
+        <circle cx="118" cy="80" r="26" stroke-width="13" stroke="#F5B700"/>
+        <path d="M233 37 A62 62 0 1 0 233 123" stroke-width="24" stroke-linecap="butt" stroke="white"/>
+        <line x1="170" y1="80" x2="289" y2="80" stroke-width="11" stroke-linecap="butt" stroke="#F5B700"/>
+        <rect x="278" y="80" width="10" height="27" fill="#F5B700" stroke="none"/>
+        <rect x="261" y="80" width="10" height="20" fill="#F5B700" stroke="none"/>
+        <rect x="244" y="80" width="10" height="13" fill="#F5B700" stroke="none"/>
       </svg></div>
       <div class="brand-name">Case Closed Pro</div>
     </div>
@@ -425,17 +426,19 @@ async function submitContactSales(){
     return;
   }
 
+  // Tries a real send first, every time — no configuration needed.
+  // Same-origin '/api/contact-sales' works automatically once that
+  // Vercel function exists in this repo. window.CCP_API_BASE can
+  // override it to point at the full server.js backend instead, if
+  // you're running that. Falls back to mailto only if the request
+  // itself fails (function not deployed yet, network error, etc.) —
+  // never silently skips the real send.
   const apiBase = (window.CCP_API_BASE || '').replace(/\/$/, '');
-
-  if (!apiBase) {
-    sendContactMailto(name, email, company, message);
-    statusEl.innerHTML = '<div class="cf-status ok">Opening your email app with this pre-filled…</div>';
-    return;
-  }
+  const endpoint = apiBase + '/api/contact-sales';
 
   btn.disabled = true; btn.textContent = 'Sending…';
   try {
-    const r = await fetch(apiBase + '/api/contact-sales', {
+    const r = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, email, company, message })
