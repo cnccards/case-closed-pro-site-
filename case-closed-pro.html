@@ -5016,7 +5016,138 @@ async function runCustomReport(){
   st({rptLoad:false, rptResult:result});
 }
 
+/* ── DEMO DATA RANDOMIZATION ───────────────────────────────
+   Runs ONCE per page load, only when there's no real backend
+   connected (!API_BASE) — this is a hard safety gate. If a real
+   server.js is wired up, CASES gets replaced with actual customer
+   data after login (loadCasesFromApi), and randomizing seed data
+   before that is harmless but this function must NEVER run against
+   real data, hence the explicit guard at the call site below rather
+   than relying on demo-mode UI cues alone.
+
+   Scope, deliberately: names, dollar figures, and dates get
+   randomized (the things a viewer would visually recognize as
+   "the same demo every time"). Judge names, docket numbers, and
+   hand-written case notes are left alone — rewriting those well
+   would need real narrative generation, not simple randomization,
+   and touching them risks internal inconsistencies for little
+   visible benefit. */
+const RANDO_FIRST = ['James','Michael','Sarah','Jennifer','David','Lisa','Robert','Maria','John','Patricia','Daniel','Karen','Christopher','Nancy','Matthew','Emily','Andrew','Rachel','Joshua','Michelle','Kevin','Amanda','Brian','Stephanie','Jason','Laura','Ryan','Rebecca','Justin','Samantha'];
+const RANDO_LAST = ['Chen','Ortega','Park','Santos','Goldberg','Whitfield','Bell','Nair','Delgado','Kim','Nowak','Ruiz','Marsh','Sullivan','Bennett','Cortez','Fitzgerald','Hoffman','Reyes','Blackwood','Donovan','Ferreira','Hutchins','Larkin','Mercer','Okonkwo','Pruitt','Vance','Whitmore','Zimmerman'];
+const RANDO_CO_PREFIX = ['Meridian','Coastal','Summit','Harbor','Sterling','Ashford','Beacon','Redwood','Highland','Vanguard','Cornerstone','Lighthouse','Granite','Pinnacle','Hearthstone','Ironwood','Northgate','Fairview','Westbrook','Brightwater'];
+const RANDO_CO_SUFFIX = ['Industries','Holdings','Group','Partners','Corp','LLC','Enterprises','Realty','Logistics','Manufacturing','Properties','Ventures','Solutions','Capital','Systems'];
+const RANDO_CARRIERS = ['Meridian Mutual','Continental Assurance','Pinnacle Insurance Group','Guardian National','Heartland Casualty','Beacon Hill Insurance','Sentinel Mutual','Anchor Point Insurance','Summit Assurance','Coastal Underwriters'];
+
+function randoPick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function randoUniqueNames(count, firstPool, lastPool){
+  const used = new Set(); const out = [];
+  let guard = 0;
+  while (out.length < count && guard < count*50) {
+    guard++;
+    const name = randoPick(firstPool) + ' ' + randoPick(lastPool);
+    if (!used.has(name)) { used.add(name); out.push(name); }
+  }
+  return out;
+}
+function randoShiftDateStr(dstr, shiftDays){
+  if (!dstr || typeof dstr !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(dstr)) return dstr;
+  const d = new Date(dstr);
+  if (isNaN(d.getTime())) return dstr;
+  d.setDate(d.getDate() + shiftDays);
+  return d.toISOString().slice(0,10);
+}
+function randomizeDemoData(){
+  // Attorneys — new unique names, same 5 brand colors just remapped.
+  const oldNames = ATTY.slice();
+  const oldColors = oldNames.map(a => ATTY_COLOR[a]);
+  const newNames = randoUniqueNames(oldNames.length, RANDO_FIRST, RANDO_LAST);
+  const nameMap = {};
+  oldNames.forEach((old,i) => { nameMap[old] = newNames[i]; });
+
+  ATTY.length = 0; ATTY.push(...newNames);
+  Object.keys(ATTY_COLOR).forEach(k => delete ATTY_COLOR[k]);
+  newNames.forEach((name,i) => { ATTY_COLOR[name] = oldColors[i]; });
+
+  const usedClients = new Set();
+  CASES.forEach(c => {
+    // Attorney reassignment (preserves the original workload distribution)
+    c.attorney = nameMap[c.attorney] || randoPick(newNames);
+
+    // Client name — mostly company-style (matches this dataset's
+    // mostly-commercial matter mix), occasionally a person's name.
+    let newClient = Math.random() < 0.8
+      ? randoPick(RANDO_CO_PREFIX) + ' ' + randoPick(RANDO_CO_SUFFIX)
+      : randoPick(RANDO_FIRST) + ' ' + randoPick(RANDO_LAST);
+    let guard = 0;
+    while (usedClients.has(newClient) && guard++ < 20) {
+      newClient = randoPick(RANDO_CO_PREFIX) + ' ' + randoPick(RANDO_CO_SUFFIX);
+    }
+    usedClients.add(newClient);
+    c.client = newClient;
+
+    // Carrier / adjuster
+    if (c.insurance) {
+      if (c.insurance.carrier) c.insurance.carrier = randoPick(RANDO_CARRIERS);
+      if (c.insurance.adjuster) c.insurance.adjuster = randoPick(ADJUSTER_POOL);
+    }
+
+    // Dollar figures — jittered 0.6x-1.4x, keeps realistic relative
+    // scale (a $5M exposure case stays roughly a $3-7M case) while
+    // no longer showing the exact same numbers every time.
+    const jitter = () => 0.6 + Math.random()*0.8;
+    const scaleTo1k = v => Math.round(v * jitter() / 1000) * 1000;
+    if (c.value) c.value = scaleTo1k(c.value);
+    if (c.insurance?.reserveAmount) c.insurance.reserveAmount = scaleTo1k(c.insurance.reserveAmount);
+    if (c.exposure) {
+      ['demandAmount','offerAmount','reserveAmount','likelyExposure','worstCase','bestCase','settlementAmount'].forEach(k => {
+        if (c.exposure[k]) c.exposure[k] = scaleTo1k(c.exposure[k]);
+      });
+    }
+    if (c.closing?.finalIndemnityPaid) c.closing.finalIndemnityPaid = scaleTo1k(c.closing.finalIndemnityPaid);
+    if (c.billing) {
+      if (c.billing.totalBilled) c.billing.totalBilled = scaleTo1k(c.billing.totalBilled);
+      if (c.billing.totalPaid) c.billing.totalPaid = scaleTo1k(c.billing.totalPaid);
+    }
+
+    // Dates — shift the WHOLE timeline for this case by one random
+    // offset, so filed/deadline/SOL/trial/mediation all move together
+    // and stay internally consistent (SOL still after filed, etc.)
+    // rather than each field randomizing independently.
+    const shiftDays = Math.floor(Math.random()*120) - 60;
+    c.filed = randoShiftDateStr(c.filed, shiftDays);
+    c.deadline = randoShiftDateStr(c.deadline, shiftDays);
+    if (c.keyDates) {
+      Object.keys(c.keyDates).forEach(k => {
+        if (typeof c.keyDates[k] === 'string') c.keyDates[k] = randoShiftDateStr(c.keyDates[k], shiftDays);
+      });
+    }
+    if (c.court?.filingDate) c.court.filingDate = randoShiftDateStr(c.court.filingDate, shiftDays);
+    if (c.closing?.dispositionDate) c.closing.dispositionDate = randoShiftDateStr(c.closing.dispositionDate, shiftDays);
+
+    // Activity log authorship follows the attorney rename so the
+    // update history still reads as written by the "same" person.
+    if (Array.isArray(c.updates)) {
+      c.updates.forEach(u => { if (nameMap[u.author]) u.author = nameMap[u.author]; });
+    }
+    // Same for task assignees and billing time-entry authorship —
+    // both reference attorneys by name, same rename needs to reach them.
+    if (Array.isArray(c.tasks)) {
+      c.tasks.forEach(t => { if (nameMap[t.assignee]) t.assignee = nameMap[t.assignee]; });
+    }
+    if (Array.isArray(c.billing?.timeEntries)) {
+      c.billing.timeEntries.forEach(te => { if (nameMap[te.attorney]) te.attorney = nameMap[te.attorney]; });
+    }
+  });
+
+  // Default form/selector values that referenced an old attorney by
+  // name need to point at a still-valid one, or dropdowns silently
+  // fall back to whichever option happens to render first.
+  if (nameMap[S.scoreSel]) S.scoreSel = nameMap[S.scoreSel];
+  if (nameMap[S.addForm?.attorney]) S.addForm.attorney = nameMap[S.addForm.attorney];
+}
+
 /* ── INITIALIZE ────────────────────────────────────────── */
+if (!API_BASE) randomizeDemoData(); // hard gate — never runs against a real connected backend
 render();
 
 </script>
