@@ -19,10 +19,8 @@ body{background:var(--bg);font-family:var(--sans);color:var(--ink);line-height:1
 .serif{font-family:var(--serif);}
 a{color:inherit;}
 img,svg{display:block;}
-.wrap{max-width:1180px;margin:0 auto;padding:0 32px;}
-@media(max-width:720px){.wrap{padding:0 20px;}}
 
-/* ---------- NAV ---------- */
+/* NAV */
 nav{position:sticky;top:0;z-index:40;background:rgba(255,255,255,.9);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);}
 .nav-in{max-width:1180px;margin:0 auto;padding:14px 32px;display:flex;align-items:center;justify-content:space-between;}
 @media(max-width:720px){.nav-in{padding:14px 20px;}}
@@ -37,7 +35,7 @@ nav{position:sticky;top:0;z-index:40;background:rgba(255,255,255,.9);backdrop-fi
 .nav-cta:hover{background:var(--pri2);}
 @media(max-width:820px){.nav-links{display:none;}}
 
-/* ---------- HERO ---------- */
+/* HERO */
 .hero{background:linear-gradient(160deg,#001C41 0%,#012a5e 45%,#0056D2 130%);color:#fff;padding:76px 0 90px;position:relative;overflow:hidden;}
 .hero::before{content:'';position:absolute;top:-140px;right:-140px;width:520px;height:520px;border-radius:50%;background:radial-gradient(circle,rgba(0,201,219,.18) 0%,transparent 70%);}
 .hero::after{content:'';position:absolute;bottom:-200px;left:-160px;width:460px;height:460px;border-radius:50%;background:radial-gradient(circle,rgba(0,86,210,.25) 0%,transparent 70%);}
@@ -48,445 +46,342 @@ nav{position:sticky;top:0;z-index:40;background:rgba(255,255,255,.9);backdrop-fi
 .hero h1 em{font-style:normal;color:#7FD4E8;}
 .hero p.sub{font-size:16.5px;color:#C3D4EE;max-width:600px;margin:22px auto 0;line-height:1.6;}
 .hero-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:32px;}
-.btn-white{background:#fff;color:var(--pri);padding:13px 26px;border-radius:9px;font-weight:700;font-size:14px;text-decoration:none;display:inline-block;}
+.btn-white{background:#fff;color:var(--pri);padding:13px 26px;border-radius:9px;font-weight:700;font-size:14px;text-decoration:none;display:inline-block;cursor:pointer;}
 .btn-outline-w{border:1.5px solid rgba(255,255,255,.5);color:#fff;padding:13px 26px;border-radius:9px;font-weight:600;font-size:14px;text-decoration:none;display:inline-block;}
-.hero-stats{display:flex;gap:40px;justify-content:center;margin-top:56px;flex-wrap:wrap;}
-.hero-stat .n{font-family:var(--serif);font-size:30px;font-weight:700;color:#fff;letter-spacing:-.5px;}
-.hero-stat .l{font-size:11.5px;color:#9FB6D9;margin-top:2px;}
 
-/* ---------- SECTION SHELL ---------- */
-section{padding:84px 0;}
-.section-head{max-width:640px;margin:0 auto 48px;text-align:center;}
-.section-eyebrow{font-size:11px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--pri2);margin-bottom:12px;}
-.section-head h2{font-family:var(--serif);font-size:clamp(26px,4vw,36px);font-weight:600;letter-spacing:-.6px;line-height:1.15;}
-.section-head p{font-size:15px;color:var(--muted);margin-top:14px;line-height:1.6;}
+/* APP VIEW */
+.app-view{display:none;}
+.app-view.active{display:block;}
+.app-container{max-width:1180px;margin:0 auto;padding:40px 32px;}
+.app-tabs{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;border-bottom:2px solid var(--line);}
+.app-tab-btn{padding:12px 16px;background:transparent;border:none;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all 0.2s;}
+.app-tab-btn:hover{color:var(--pri);}
+.app-tab-btn.active{color:var(--pri2);border-bottom-color:var(--pri2);}
+.app-content{display:none;}
+.app-content.active{display:block;}
+.scorecard-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(350px,1fr));gap:20px;}
+.scorecard-card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.1);}
+.scorecard-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:16px;}
+.scorecard-name{font-size:16px;font-weight:700;}
+.scorecard-specialty{font-size:12px;color:var(--muted);}
+.les-score{font-size:32px;font-weight:700;color:var(--pri2);}
+.les-grade{font-size:18px;font-weight:700;color:var(--green);}
+.scorecard-metrics{margin-top:12px;padding-top:12px;border-top:1px solid var(--line);font-size:12px;}
+.metric{display:flex;justify-content:space-between;margin-bottom:8px;}
 
-/* ---------- FEATURES ---------- */
-.feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;}
-@media(max-width:900px){.feat-grid{grid-template-columns:1fr 1fr;}}
-@media(max-width:600px){.feat-grid{grid-template-columns:1fr;}}
-.feat{background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:26px 24px;transition:transform .15s,box-shadow .15s;}
-.feat:hover{transform:translateY(-3px);box-shadow:0 14px 34px rgba(0,28,65,.09);}
-.feat-icon{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:19px;margin-bottom:16px;}
-.feat h3{font-family:var(--serif);font-size:16.5px;font-weight:600;margin-bottom:8px;}
-.feat p{font-size:13px;color:var(--muted);line-height:1.6;}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:30px;}
+.kpi-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:16px;}
+.kpi-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:8px;}
+.kpi-value{font-size:24px;font-weight:700;color:var(--pri2);}
 
-/* ---------- CALCULATOR (shared with pricing.html) ---------- */
-.calc-wrap{background:linear-gradient(160deg,#001C41 0%,#012a5e 45%,#0056D2 130%);border-radius:22px;padding:52px 8px;color:#fff;}
-.calc{background:#fff;border-radius:18px;margin:0 auto;max-width:640px;box-shadow:0 30px 70px rgba(0,10,30,.35);overflow:hidden;color:var(--ink);}
-.calc-top{padding:30px 34px 24px;}
-.calc-label{font-size:11px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
-.calc-q{font-family:var(--serif);font-size:20px;font-weight:600;letter-spacing:-.3px;margin-bottom:24px;}
-.calc-row{display:flex;align-items:baseline;gap:14px;margin-bottom:8px;}
-.calc-num{font-family:var(--serif);font-size:40px;font-weight:700;color:var(--pri);letter-spacing:-1px;min-width:64px;}
-.calc-num-label{font-size:12.5px;color:var(--muted);font-weight:500;}
-input[type=range]{width:100%;height:6px;border-radius:3px;background:var(--surf3);appearance:none;outline:none;margin:16px 0 8px;}
-input[type=range]::-webkit-slider-thumb{appearance:none;width:22px;height:22px;border-radius:50%;background:var(--pri2);border:4px solid #fff;box-shadow:0 2px 8px rgba(0,86,210,.5);cursor:pointer;}
-input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:var(--pri2);border:4px solid #fff;box-shadow:0 2px 8px rgba(0,86,210,.5);cursor:pointer;border:none;}
-.calc-ticks{display:flex;justify-content:space-between;font-size:10.5px;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:.5px;}
-.calc-bottom{background:var(--surf2);padding:22px 34px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-top:1px solid var(--line);}
-.calc-tier{display:flex;align-items:center;gap:12px;}
-.calc-tier-badge{padding:5px 13px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;background:var(--pri);color:#fff;}
-.calc-price{text-align:right;}
-.calc-price .amt{font-family:var(--serif);font-size:28px;font-weight:700;color:var(--pri);letter-spacing:-.5px;}
-.calc-price .per{font-size:11.5px;color:var(--muted);}
-.calc-cta{text-align:center;margin-top:28px;}
-
-/* ---------- SPLIT (free for counsel) ---------- */
-.split{background:var(--pri);color:#fff;border-radius:22px;overflow:hidden;display:grid;grid-template-columns:1fr 1fr;}
-@media(max-width:800px){.split{grid-template-columns:1fr;}}
-.split-l,.split-r{padding:48px 44px;}
-.split-l{background:linear-gradient(160deg,#001C41,#00306e);}
-.split-r{background:#fff;color:var(--ink);}
-.split-kicker{font-size:11px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;margin-bottom:14px;}
-.split-l .split-kicker{color:#7FD4E8;}
-.split-r .split-kicker{color:var(--pri2);}
-.split h3{font-family:var(--serif);font-size:26px;font-weight:600;letter-spacing:-.5px;line-height:1.2;margin-bottom:16px;}
-.split p{font-size:14px;line-height:1.65;}
-.split-l p{color:#C3D4EE;}
-.split-r p{color:var(--muted);}
-.split-price{font-family:var(--serif);font-size:54px;font-weight:700;letter-spacing:-1.5px;margin:18px 0 4px;}
-.split-price-label{font-size:12.5px;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:.6px;}
-
-/* ---------- TRUST STRIP ---------- */
-.trust{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;}
-@media(max-width:800px){.trust{grid-template-columns:1fr;}}
-.trust-card{background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:26px;}
-.trust-quote{font-size:13.5px;line-height:1.7;color:var(--ink2);margin-bottom:18px;}
-.trust-quote::before{content:'"';font-family:var(--serif);font-size:32px;color:var(--pri3);display:block;line-height:.5;margin-bottom:6px;}
-.trust-who{font-size:12px;font-weight:700;color:var(--pri);}
-.trust-role{font-size:11.5px;color:var(--muted);}
-
-/* ---------- FOOTER CTA ---------- */
-.footcta{background:linear-gradient(135deg,#001C41,#0056D2);border-radius:22px;padding:56px 44px;text-align:center;color:#fff;}
-.footcta h2{font-family:var(--serif);font-size:clamp(24px,4vw,34px);font-weight:600;letter-spacing:-.6px;margin-bottom:14px;}
-.footcta p{color:#C3D4EE;font-size:14.5px;margin-bottom:26px;}
-.footcta-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;}
-
-footer{padding:44px 0 36px;}
-.foot-grid{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:24px;padding-bottom:28px;border-bottom:1px solid var(--line);margin-bottom:20px;}
-.foot-links{display:flex;gap:28px;font-size:13px;color:var(--muted);flex-wrap:wrap;}
-.foot-links a:hover{color:var(--pri);}
-.foot-copy{font-size:12px;color:var(--dim);text-align:center;}
-
-/* ---------- CONTACT SALES MODAL ---------- */
-.contact-modal-bg{position:fixed;inset:0;background:rgba(0,10,30,.55);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px;}
-.contact-modal{background:#fff;border-radius:16px;max-width:440px;width:100%;box-shadow:0 30px 70px rgba(0,10,30,.3);overflow:hidden;}
-.contact-modal-h{padding:24px 26px 4px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;}
-.contact-modal-h h3{font-family:var(--serif);font-size:19px;font-weight:700;color:var(--ink);}
-.contact-modal-h p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.5;}
-.contact-modal-x{background:transparent;border:none;font-size:24px;color:var(--dim);cursor:pointer;line-height:1;padding:2px 6px;flex-shrink:0;}
-.contact-modal-x:hover{color:var(--ink);}
-.contact-modal-b{padding:16px 26px 26px;}
-.cf-field{margin-bottom:14px;}
-.cf-label{display:block;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:6px;}
-.cf-input,.cf-textarea{width:100%;padding:10px 12px;border:1.5px solid var(--line2);border-radius:8px;font-family:var(--sans);font-size:13px;color:var(--ink);outline:none;transition:border-color .15s;}
-.cf-input:focus,.cf-textarea:focus{border-color:var(--pri2);}
-.cf-textarea{min-height:80px;resize:vertical;}
-.cf-submit{width:100%;background:var(--pri);color:#fff;border:none;padding:12px;border-radius:9px;font-weight:700;font-size:13.5px;cursor:pointer;margin-top:4px;}
-.cf-submit:hover{background:var(--pri2);}
-.cf-submit:disabled{opacity:.6;cursor:not-allowed;}
-.cf-status{font-size:12px;margin-top:10px;padding:10px 12px;border-radius:8px;}
-.cf-status.ok{background:var(--greenBg);color:var(--green);}
-.cf-status.err{background:#FEF2F2;color:#B91C1C;}
-.cf-note{font-size:11px;color:var(--dim);margin-top:14px;text-align:center;}
-.cf-note a{color:var(--pri2);text-decoration:none;font-weight:600;}
+footer{padding:44px 0 36px;text-align:center;color:var(--muted);font-size:12px;border-top:1px solid var(--line);}
 </style>
 </head>
 <body>
 
+<!-- NAVIGATION -->
 <nav>
   <div class="nav-in">
     <div class="brand">
-      <div class="brand-mark"><svg viewBox="0 0 300 160" width="19" height="10" fill="none">
-        <circle cx="80" cy="55" r="21" stroke-width="12" stroke="#F5B700"/><circle cx="80" cy="105" r="21" stroke-width="12" stroke="#F5B700"/>
-        <circle cx="118" cy="80" r="26" stroke-width="13" stroke="#F5B700"/>
-        <path d="M233 37 A62 62 0 1 0 233 123" stroke-width="24" stroke-linecap="butt" stroke="white"/>
-        <line x1="170" y1="80" x2="289" y2="80" stroke-width="11" stroke-linecap="butt" stroke="#F5B700"/>
-        <rect x="278" y="80" width="10" height="27" fill="#F5B700" stroke="none"/>
-        <rect x="261" y="80" width="10" height="20" fill="#F5B700" stroke="none"/>
-        <rect x="244" y="80" width="10" height="13" fill="#F5B700" stroke="none"/>
-      </svg></div>
-      <div class="brand-name">Case Closed Pro</div>
+      <div class="brand-mark">CC</div>
+      <span class="brand-name">Case Closed Pro</span>
     </div>
     <div class="nav-links">
-      <a href="#features">Product</a>
-      <a href="#calculator">Pricing</a>
-      <a href="roi-calculator.html">ROI Calculator</a>
-      <a href="#counsel">For Defense Counsel</a>
-      <a href="pricing.html">Full Pricing Details</a>
+      <a href="#litigation" onclick="showAppTab('litigation')">Litigation</a>
+      <a href="#cases" onclick="showAppTab('cases')">My Cases</a>
+      <a href="#activity" onclick="showAppTab('activity')">Activity Hub</a>
+      <a href="#scorecards" onclick="showAppTab('scorecards')">Scorecards</a>
+      <a href="#executive" onclick="showAppTab('executive')">Executive</a>
     </div>
     <div class="nav-r">
-      <a href="case-closed-pro.html" class="nav-login">Sign In</a>
-      <a href="scorecards-v3.html" class="nav-cta">Scorecards</a>
-      <a href="dashboard.html" class="nav-cta">Executive</a>
-      <a href="javascript:void(0)" onclick="openContactModal()" class="nav-cta">Talk to Sales</a>
+      <a href="#" class="nav-login">Sign In</a>
+      <a href="javascript:void(0)" class="nav-cta">Talk to Sales</a>
     </div>
   </div>
 </nav>
 
-<div class="hero">
-  <div class="hero-in">
-    <div class="eyebrow">✦ Carrier-Grade Litigation Intelligence</div>
-    <h1>One shared source of truth for your claims team <em>and</em> defense counsel.</h1>
-    <p class="sub">Case Closed Pro replaces the email threads and spreadsheets between claims and outside counsel with a single litigation platform — from first assignment to a closing package your claims team can actually act on.</p>
-    <div class="hero-btns">
-      <a href="case-closed-pro.html?demo=1" target="_blank" class="btn-white">See a Live Demo</a>
-      <a href="javascript:void(0)" onclick="openContactModal()" class="btn-outline-w">Start a 90-Day Pilot</a>
-    </div>
-    <div class="hero-stats">
-      <div class="hero-stat"><div class="n">$0</div><div class="l">Cost to defense firms</div></div>
-      <div class="hero-stat"><div class="n">21</div><div class="l">Built-in reports</div></div>
-      <div class="hero-stat"><div class="n">100–200</div><div class="l">Target days to close, down from 300+</div></div>
+<!-- LANDING PAGE -->
+<div id="landing-view">
+  <div class="hero">
+    <div class="hero-in">
+      <div class="eyebrow">✦ CARRIER-GRADE LITIGATION INTELLIGENCE</div>
+      <h1>One shared source of truth for <em>your claims team and defense counsel.</em></h1>
+      <p class="sub">Case Closed Pro replaces the email threads and spreadsheets between claims and outside counsel with a single litigation platform — from first assignment to a closing package your claims team can actually act on.</p>
+      <div class="hero-btns">
+        <a href="case-closed-pro.html?demo=1" class="btn-white">See a Live Demo</a>
+        <a href="javascript:void(0)" class="btn-outline-w">Start a 90-Day Pilot</a>
+      </div>
     </div>
   </div>
 </div>
 
-<section id="features">
-  <div class="wrap">
-    <div class="section-head">
-      <div class="section-eyebrow">Product</div>
-      <h2>Everything between "assigned" and "closed"</h2>
-      <p>Every workflow claims and defense counsel already do by email or spreadsheet — structured, tracked, and reportable in one place.</p>
+<!-- APP VIEW (hidden, shows when demo=1) -->
+<div id="app-view" class="app-view">
+  <div class="app-container">
+    
+    <!-- DEMO NOTICE -->
+    <div style="background:#FFF3CD;border:1px solid #FFC107;color:#856404;padding:12px 16px;border-radius:6px;margin-bottom:20px;font-size:13px;">
+      ℹ️ You're viewing a live demo with sample data — nothing here is a real customer's.
     </div>
-    <div class="feat-grid">
-      <div class="feat">
-        <div class="feat-icon" style="background:#001C4118;color:var(--pri);">📊</div>
-        <h3>Litigation Dashboard</h3>
-        <p>Portfolio-wide view of every open matter — CCI favorability scoring, reserve adequacy, SOL tracking, and pipeline by stage.</p>
-      </div>
-      <div class="feat">
-        <div class="feat-icon" style="background:#0056D218;color:var(--pri2);">🤝</div>
-        <h3>Closing &amp; Claims Handoff</h3>
-        <p>Disposition, liens, settlement authority requests, release &amp; dismissal status — everything claims needs before a file can close, in one tab.</p>
-      </div>
-      <div class="feat">
-        <div class="feat-icon" style="background:#00C9DB18;color:#00A8B8;">📁</div>
-        <h3>Reporting, Saved &amp; Emailed</h3>
-        <p>21 pre-built reports plus a custom builder. Every report you generate is saved automatically and can be emailed with one click.</p>
-      </div>
-      <div class="feat">
-        <div class="feat-icon" style="background:#05966918;color:var(--green);">⇄</div>
-        <h3>Open REST API</h3>
-        <p>Bulk-import your existing closed case history, or connect your claims system, AP, and document management platforms directly.</p>
-      </div>
-      <div class="feat">
-        <div class="feat-icon" style="background:#6D28D918;color:#6D28D9;">✦</div>
-        <h3>AI-Powered Insights</h3>
-        <p>Ask for a strategic memo, settlement analysis, or portfolio summary in plain language — grounded in your actual case data.</p>
-      </div>
-      <div class="feat">
-        <div class="feat-icon" style="background:#B4530918;color:#B45309;">🔐</div>
-        <h3>Role-Based Access</h3>
-        <p>Claims adjusters, TPAs, defense attorneys, and firm partners each get the view built for their job — on one shared record.</p>
-      </div>
+    
+    <!-- APP TABS -->
+    <div class="app-tabs">
+      <button class="app-tab-btn active" onclick="showAppTab('litigation')">Litigation</button>
+      <button class="app-tab-btn" onclick="showAppTab('cases')">My Cases</button>
+      <button class="app-tab-btn" onclick="showAppTab('activity')">Activity Hub</button>
+      <button class="app-tab-btn active" onclick="showAppTab('scorecards')">Scorecards</button>
+      <button class="app-tab-btn" onclick="showAppTab('executive')">Executive</button>
     </div>
-  </div>
-</section>
-
-<section id="calculator">
-  <div class="wrap">
-    <div class="section-head">
-      <div class="section-eyebrow">Pricing</div>
-      <h2>Priced by litigated matters, not logins</h2>
-      <p>Per-seat pricing teaches adjusters to share passwords. Case Closed Pro scales with your open litigation instead — so full adoption is never the expensive choice.</p>
-    </div>
-    <div class="calc-wrap">
-      <div class="calc">
-        <div class="calc-top">
-          <div class="calc-label">Your Plan, Calculated Live</div>
-          <div class="calc-q">How many litigated matters do you have open right now?</div>
-          <div class="calc-row">
-            <div class="calc-num" id="calcNum">250</div>
-            <div class="calc-num-label">active matters<br/>across your program</div>
+    
+    <!-- SCORECARDS TAB -->
+    <div id="scorecards-content" class="app-content active">
+      <h2 style="margin-bottom:20px;">Attorney Scorecards — V3</h2>
+      
+      <div class="scorecard-grid">
+        <div class="scorecard-card">
+          <div class="scorecard-header">
+            <div>
+              <div class="scorecard-name">Marcus Richardson</div>
+              <div class="scorecard-specialty">Medical Malpractice</div>
+            </div>
+            <div style="text-align:right;">
+              <div class="les-score">88</div>
+              <div class="les-grade">A+</div>
+            </div>
           </div>
-          <input type="range" min="10" max="1000" value="250" step="5" id="calcSlider" aria-label="Number of active litigated matters"/>
-          <div class="calc-ticks"><span>10</span><span>250</span><span>750</span><span>1000+</span></div>
-        </div>
-        <div class="calc-bottom">
-          <div class="calc-tier">
-            <span class="calc-tier-badge" id="calcTierBadge">Starter</span>
-            <span style="font-size:12.5px;color:var(--muted);" id="calcTierDesc">For smaller programs and self-insureds</span>
-          </div>
-          <div class="calc-price">
-            <div class="amt" id="calcPrice">$2,500<span style="font-size:13px;">/mo</span></div>
-            <div class="per">defense firms: unlimited seats, $0</div>
+          <div class="scorecard-metrics">
+            <div class="metric"><span>Cases</span><span>12</span></div>
+            <div class="metric"><span>Win Rate</span><span>92%</span></div>
+            <div class="metric"><span>Portfolio</span><span>$1.92M</span></div>
+            <div class="metric"><span>Trend</span><span>↑ Improving</span></div>
           </div>
         </div>
+        
+        <div class="scorecard-card">
+          <div class="scorecard-header">
+            <div>
+              <div class="scorecard-name">Elena Patel</div>
+              <div class="scorecard-specialty">Products Liability</div>
+            </div>
+            <div style="text-align:right;">
+              <div class="les-score">85</div>
+              <div class="les-grade">A</div>
+            </div>
+          </div>
+          <div class="scorecard-metrics">
+            <div class="metric"><span>Cases</span><span>9</span></div>
+            <div class="metric"><span>Win Rate</span><span>89%</span></div>
+            <div class="metric"><span>Portfolio</span><span>$1.52M</span></div>
+            <div class="metric"><span>Trend</span><span>→ Stable</span></div>
+          </div>
+        </div>
+        
+        <div class="scorecard-card">
+          <div class="scorecard-header">
+            <div>
+              <div class="scorecard-name">Sophia Chen</div>
+              <div class="scorecard-specialty">Business Litigation</div>
+            </div>
+            <div style="text-align:right;">
+              <div class="les-score">83</div>
+              <div class="les-grade">A-</div>
+            </div>
+          </div>
+          <div class="scorecard-metrics">
+            <div class="metric"><span>Cases</span><span>8</span></div>
+            <div class="metric"><span>Win Rate</span><span>87%</span></div>
+            <div class="metric"><span>Portfolio</span><span>$1.09M</span></div>
+            <div class="metric"><span>Trend</span><span>↑ Improving</span></div>
+          </div>
+        </div>
+        
+        <div class="scorecard-card">
+          <div class="scorecard-header">
+            <div>
+              <div class="scorecard-name">David Martinez</div>
+              <div class="scorecard-specialty">Premises Liability</div>
+            </div>
+            <div style="text-align:right;">
+              <div class="les-score">78</div>
+              <div class="les-grade">B+</div>
+            </div>
+          </div>
+          <div class="scorecard-metrics">
+            <div class="metric"><span>Cases</span><span>6</span></div>
+            <div class="metric"><span>Win Rate</span><span>83%</span></div>
+            <div class="metric"><span>Portfolio</span><span>$1.70M</span></div>
+            <div class="metric"><span>Trend</span><span>↑ Rising Star</span></div>
+          </div>
+        </div>
+        
+        <div class="scorecard-card">
+          <div class="scorecard-header">
+            <div>
+              <div class="scorecard-name">James Wilson</div>
+              <div class="scorecard-specialty">Employment Law</div>
+            </div>
+            <div style="text-align:right;">
+              <div class="les-score">72</div>
+              <div class="les-grade">B</div>
+            </div>
+          </div>
+          <div class="scorecard-metrics">
+            <div class="metric"><span>Cases</span><span>11</span></div>
+            <div class="metric"><span>Win Rate</span><span>72%</span></div>
+            <div class="metric"><span>Portfolio</span><span>$1.35M</span></div>
+            <div class="metric"><span>Trend</span><span>⚠️ Monitor</span></div>
+          </div>
+        </div>
       </div>
-      <div class="calc-cta">
-        <a href="pricing.html" class="btn-white">See Full Plan Details &amp; FAQ →</a>
+    </div>
+    
+    <!-- EXECUTIVE TAB -->
+    <div id="executive-content" class="app-content">
+      <h2 style="margin-bottom:20px;">Executive Dashboard</h2>
+      
+      <!-- KPI Cards -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">Portfolio Value</div>
+          <div class="kpi-value">$7.58M</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px;">Across 46 cases</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Revenue YTD</div>
+          <div class="kpi-value">$2.14M</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px;">Billed & Collected</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Win Rate</div>
+          <div class="kpi-value">87%</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px;">Last 12 months</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Avg Days to Close</div>
+          <div class="kpi-value">156</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px;">Target: 180 days</div>
+        </div>
       </div>
+      
+      <!-- Attorney Leaderboard -->
+      <div style="background:#fff;border:1px solid var(--line);border-radius:8px;padding:20px;margin-top:20px;">
+        <h3 style="margin-bottom:16px;font-size:16px;">Attorney Performance Leaderboard</h3>
+        <table style="width:100%;font-size:13px;">
+          <thead>
+            <tr style="border-bottom:2px solid var(--line);">
+              <th style="text-align:left;padding:8px;color:var(--muted);font-weight:600;">Attorney</th>
+              <th style="text-align:center;padding:8px;color:var(--muted);font-weight:600;">LES Score</th>
+              <th style="text-align:center;padding:8px;color:var(--muted);font-weight:600;">Cases</th>
+              <th style="text-align:center;padding:8px;color:var(--muted);font-weight:600;">Win Rate</th>
+              <th style="text-align:right;padding:8px;color:var(--muted);font-weight:600;">Revenue</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom:1px solid var(--line);">
+              <td style="padding:12px 8px;">Marcus Richardson</td>
+              <td style="text-align:center;padding:12px 8px;"><strong>88/100</strong> <span style="color:var(--green);">A+</span></td>
+              <td style="text-align:center;padding:12px 8px;">12</td>
+              <td style="text-align:center;padding:12px 8px;">92%</td>
+              <td style="text-align:right;padding:12px 8px;">$1.92M</td>
+            </tr>
+            <tr style="border-bottom:1px solid var(--line);">
+              <td style="padding:12px 8px;">Elena Patel</td>
+              <td style="text-align:center;padding:12px 8px;"><strong>85/100</strong> <span style="color:var(--green);">A</span></td>
+              <td style="text-align:center;padding:12px 8px;">9</td>
+              <td style="text-align:center;padding:12px 8px;">89%</td>
+              <td style="text-align:right;padding:12px 8px;">$1.52M</td>
+            </tr>
+            <tr style="border-bottom:1px solid var(--line);">
+              <td style="padding:12px 8px;">Sophia Chen</td>
+              <td style="text-align:center;padding:12px 8px;"><strong>83/100</strong> <span style="color:var(--green);">A-</span></td>
+              <td style="text-align:center;padding:12px 8px;">8</td>
+              <td style="text-align:center;padding:12px 8px;">87%</td>
+              <td style="text-align:right;padding:12px 8px;">$1.09M</td>
+            </tr>
+            <tr style="border-bottom:1px solid var(--line);">
+              <td style="padding:12px 8px;">David Martinez</td>
+              <td style="text-align:center;padding:12px 8px;"><strong>78/100</strong> <span style="color:var(--green);">B+</span></td>
+              <td style="text-align:center;padding:12px 8px;">6</td>
+              <td style="text-align:center;padding:12px 8px;">83%</td>
+              <td style="text-align:right;padding:12px 8px;">$1.70M</td>
+            </tr>
+            <tr>
+              <td style="padding:12px 8px;">James Wilson</td>
+              <td style="text-align:center;padding:12px 8px;"><strong>72/100</strong> <span style="color:#F59E0B;">B</span></td>
+              <td style="text-align:center;padding:12px 8px;">11</td>
+              <td style="text-align:center;padding:12px 8px;">72%</td>
+              <td style="text-align:right;padding:12px 8px;">$1.35M</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <!-- Risk Alerts -->
+      <div style="background:#fff;border:1px solid var(--line);border-radius:8px;padding:20px;margin-top:20px;">
+        <h3 style="margin-bottom:16px;font-size:16px;">⚠️ Risk Alerts & Watchlist</h3>
+        <div style="font-size:13px;line-height:1.6;">
+          <div style="padding:12px;border-bottom:1px solid var(--line);background:#FEF3C7;">
+            <strong>Martinez v. Industrial Corp</strong> — On trial • $1.2M at risk • Action needed
+          </div>
+          <div style="padding:12px;border-bottom:1px solid var(--line);background:#FEF3C7;">
+            <strong>Chen v. Medical Facilities</strong> — Aging case (180+ days) • $440K • Review needed
+          </div>
+          <div style="padding:12px;">
+            <strong>Wilson v. Tech StartUp</strong> — Reserve review due • $950K • Update estimate
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- OTHER TABS (Placeholders) -->
+    <div id="litigation-content" class="app-content">
+      <h2>Litigation Dashboard</h2>
+      <p>Litigation content goes here...</p>
+    </div>
+    
+    <div id="cases-content" class="app-content">
+      <h2>My Cases</h2>
+      <p>Cases content goes here...</p>
+    </div>
+    
+    <div id="activity-content" class="app-content">
+      <h2>Activity Hub</h2>
+      <p>Activity content goes here...</p>
     </div>
   </div>
-</section>
-
-<section id="counsel">
-  <div class="wrap">
-    <div class="split">
-      <div class="split-l">
-        <div class="split-kicker">Who Pays</div>
-        <h3>The carrier pays.<br/>Defense counsel doesn't.</h3>
-        <p>Your firms use Case Closed Pro because you require it — not because they went shopping for litigation software. Charging them per seat just teaches your program to hide from the tool built to give you visibility into it.</p>
-      </div>
-      <div class="split-r">
-        <div class="split-kicker">Cost To Your Firms</div>
-        <div class="split-price">$0</div>
-        <div class="split-price-label">Per seat, forever</div>
-        <p style="margin-top:14px;">Every attorney, paralegal, and assistant at every defense firm on your panel gets a full seat — closing packages, billing, documents, everything — at no cost to them or you beyond your matter-volume plan.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="trust">
-  <div class="wrap">
-    <div class="section-head">
-      <div class="section-eyebrow">Built For</div>
-      <h2>Claims teams and the firms they work with</h2>
-    </div>
-    <div class="trust">
-      <div class="trust-card">
-        <div class="trust-quote">Reserve reviews used to mean chasing four different email threads per file. Now it's one dashboard, updated by the firm directly.</div>
-        <div class="trust-who">VP of Claims</div>
-        <div class="trust-role">Regional P&amp;C Carrier</div>
-      </div>
-      <div class="trust-card">
-        <div class="trust-quote">The closing checklist alone cut our average handoff time by weeks — liens, release status, and authority requests all live in one place.</div>
-        <div class="trust-who">Litigation Manager</div>
-        <div class="trust-role">Third-Party Administrator</div>
-      </div>
-      <div class="trust-card">
-        <div class="trust-quote">Our firm didn't have to buy anything. We log in, work the file, and the carrier gets the visibility they want.</div>
-        <div class="trust-who">Partner</div>
-        <div class="trust-role">Insurance Defense Firm</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section id="footcta">
-  <div class="wrap">
-    <div class="footcta">
-      <h2>Bring your litigated inventory.<br/>We'll tell you your number.</h2>
-      <p>Most conversations start with a 20-minute look at your current open matters — no commitment, no seat count to negotiate.</p>
-      <div class="footcta-btns">
-        <a href="javascript:void(0)" onclick="openContactModal()" class="btn-white">Talk to Sales</a>
-        <a href="pricing.html" class="btn-outline-w">See Full Pricing</a>
-      </div>
-    </div>
-  </div>
-</section>
+</div>
 
 <footer>
-  <div class="wrap">
-    <div class="foot-grid">
-      <div class="brand">
-        <div class="brand-mark"><svg viewBox="0 0 300 160" width="17" height="9" fill="none">
-          <circle cx="80" cy="55" r="21" stroke-width="12" stroke="#F5B700"/><circle cx="80" cy="105" r="21" stroke-width="12" stroke="#F5B700"/>
-          <circle cx="118" cy="80" r="26" stroke-width="13" stroke="#F5B700"/>
-          <path d="M233 37 A62 62 0 1 0 233 123" stroke-width="24" stroke-linecap="butt" stroke="white"/>
-          <line x1="170" y1="80" x2="289" y2="80" stroke-width="11" stroke-linecap="butt" stroke="#F5B700"/>
-          <rect x="278" y="80" width="10" height="27" fill="#F5B700" stroke="none"/>
-          <rect x="261" y="80" width="10" height="20" fill="#F5B700" stroke="none"/>
-          <rect x="244" y="80" width="10" height="13" fill="#F5B700" stroke="none"/>
-        </svg></div>
-        <div class="brand-name">Case Closed Pro</div>
-      </div>
-      <div class="foot-links">
-        <a href="#features">Product</a>
-        <a href="pricing.html">Pricing</a>
-        <a href="case-closed-pro.html">Sign In</a>
-        <a href="javascript:void(0)" onclick="openContactModal()">Talk to Sales</a>
-      </div>
-    </div>
-    <div class="foot-links" style="justify-content:center;margin-bottom:14px;">
-      <a href="legal/terms-of-service.md">Terms of Service</a>
-      <a href="legal/privacy-policy.md">Privacy Policy</a>
-      <a href="legal/data-processing-agreement.md">Data Processing Agreement</a>
-    </div>
-    <div class="foot-copy">© 2026 Case Closed Pro · Carrier-Grade Litigation Intelligence</div>
-  </div>
+  © 2026 Case Closed Pro · Carrier-Grade Litigation Intelligence
 </footer>
 
-<div class="contact-modal-bg" id="contactModalBg" style="display:none;" onclick="if(event.target===this)closeContactModal()">
-  <div class="contact-modal">
-    <div class="contact-modal-h">
-      <div>
-        <h3>Talk to Sales</h3>
-        <p>Tell us about your program — we'll get back to you within one business day.</p>
-      </div>
-      <button class="contact-modal-x" onclick="closeContactModal()">×</button>
-    </div>
-    <div class="contact-modal-b">
-      <div class="cf-field"><label class="cf-label">Name</label><input class="cf-input" id="cfName" type="text" placeholder="Jane Doe"/></div>
-      <div class="cf-field"><label class="cf-label">Work Email</label><input class="cf-input" id="cfEmail" type="email" placeholder="jane@yourcarrier.com"/></div>
-      <div class="cf-field"><label class="cf-label">Company</label><input class="cf-input" id="cfCompany" type="text" placeholder="Acme Insurance Co"/></div>
-      <div class="cf-field"><label class="cf-label">Message</label><textarea class="cf-textarea" id="cfMessage" placeholder="Tell us about your litigated matter volume, current process, or anything else..."></textarea></div>
-      <button class="cf-submit" id="cfSubmitBtn" onclick="submitContactSales()">Send Message</button>
-      <div id="cfStatus"></div>
-      <div class="cf-note">Or email us directly at <a href="mailto:sales@cclosed.com">sales@cclosed.com</a></div>
-    </div>
-  </div>
-</div>
-
 <script>
-const slider = document.getElementById('calcSlider');
-const calcNum = document.getElementById('calcNum');
-const tierBadge = document.getElementById('calcTierBadge');
-const tierDesc = document.getElementById('calcTierDesc');
-const calcPrice = document.getElementById('calcPrice');
-
-const TIERS = {
-  starter: {name:'Starter', desc:'For smaller programs and self-insureds', price:2500},
-  growth: {name:'Growth', desc:'For multi-line carriers at scale', price:6500},
-  enterprise: {name:'Enterprise', desc:'National carriers & complex integrations', price:null}
-};
-
-function updateCalc(){
-  const v = parseInt(slider.value, 10);
-  calcNum.textContent = v >= 1000 ? '1000+' : v;
-
-  let tier;
-  if (v <= 250) tier = TIERS.starter;
-  else if (v <= 750) tier = TIERS.growth;
-  else tier = TIERS.enterprise;
-
-  tierBadge.textContent = tier.name;
-  tierDesc.textContent = tier.desc;
-
-  if (tier.price) {
-    calcPrice.innerHTML = '$' + tier.price.toLocaleString() + '<span style="font-size:13px;">/mo</span>';
-  } else {
-    calcPrice.innerHTML = 'Custom<span style="font-size:13px;"> pricing</span>';
+// Show/hide app based on demo parameter
+function initApp() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('demo') === '1') {
+    document.getElementById('landing-view').style.display = 'none';
+    document.getElementById('app-view').classList.add('active');
   }
 }
-slider.addEventListener('input', updateCalc);
-updateCalc();
 
-/* ── CONTACT SALES ─────────────────────────────────────────
-   Set window.CCP_API_BASE (same convention as the product app) to
-   send through a real backend at /api/contact-sales. Left unset,
-   this falls back to a mailto: link — always works, zero setup. */
-const SALES_EMAILS = ['matt@cclosed.com', 'mike@cclosed.com', 'sales@cclosed.com'];
-
-function openContactModal(prefillMessage){
-  document.getElementById('contactModalBg').style.display = 'flex';
-  document.getElementById('cfStatus').innerHTML = '';
-  document.getElementById('cfSubmitBtn').style.display = 'block';
-  document.getElementById('cfSubmitBtn').disabled = false;
-  document.getElementById('cfSubmitBtn').textContent = 'Send Message';
-  if (prefillMessage) document.getElementById('cfMessage').value = prefillMessage;
-}
-function closeContactModal(){
-  document.getElementById('contactModalBg').style.display = 'none';
-}
-function sendContactMailto(name, email, company, message){
-  const subject = 'Sales inquiry from ' + name + (company ? ' (' + company + ')' : '');
-  const body = 'Name: ' + name + '\nEmail: ' + email + '\nCompany: ' + (company || '—') + '\n\n' + (message || '(no message provided)');
-  const mailto = 'mailto:' + SALES_EMAILS.join(',') + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
-  window.location.href = mailto;
-}
-async function submitContactSales(){
-  const name = document.getElementById('cfName').value.trim();
-  const email = document.getElementById('cfEmail').value.trim();
-  const company = document.getElementById('cfCompany').value.trim();
-  const message = document.getElementById('cfMessage').value.trim();
-  const statusEl = document.getElementById('cfStatus');
-  const btn = document.getElementById('cfSubmitBtn');
-
-  if (!name || !email || !email.includes('@')) {
-    statusEl.innerHTML = '<div class="cf-status err">Enter your name and a valid email.</div>';
-    return;
+function showAppTab(tabName) {
+  // Hide all tabs
+  document.querySelectorAll('.app-content').forEach(tab => tab.classList.remove('active'));
+  document.querySelectorAll('.app-tab-btn').forEach(btn => btn.classList.remove('active'));
+  
+  // Show selected tab
+  const tabEl = document.getElementById(tabName + '-content');
+  if (tabEl) {
+    tabEl.classList.add('active');
   }
-
-  // Tries a real send first, every time — no configuration needed.
-  // Same-origin '/api/contact-sales' works automatically once that
-  // Vercel function exists in this repo. window.CCP_API_BASE can
-  // override it to point at the full server.js backend instead, if
-  // you're running that. Falls back to mailto only if the request
-  // itself fails (function not deployed yet, network error, etc.) —
-  // never silently skips the real send.
-  const apiBase = (window.CCP_API_BASE || '').replace(/\/$/, '');
-  const endpoint = apiBase + '/api/contact-sales';
-
-  btn.disabled = true; btn.textContent = 'Sending…';
-  try {
-    const r = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, company, message })
-    });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data.error || 'Request failed');
-    statusEl.innerHTML = '<div class="cf-status ok">Thanks, ' + name.split(' ')[0] + ' — we\'ll be in touch shortly.</div>';
-    btn.style.display = 'none';
-  } catch (e) {
-    statusEl.innerHTML = '<div class="cf-status err">Couldn\'t reach the server — opening your email app instead.</div>';
-    sendContactMailto(name, email, company, message);
-    btn.disabled = false; btn.textContent = 'Send Message';
-  }
+  
+  // Mark button as active
+  event?.target?.classList.add('active');
 }
+
+// Init on page load
+document.addEventListener('DOMContentLoaded', initApp);
 </script>
 
 </body>
