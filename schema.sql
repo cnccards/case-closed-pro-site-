@@ -81,6 +81,28 @@ CREATE INDEX idx_password_resets_user ON password_resets(user_id);
 CREATE INDEX idx_password_resets_token ON password_resets(token_hash);
 
 -- ---------------------------------------------------------------
+-- Team invites — the missing piece that lets a customer's own
+-- owner/admin add colleagues into THEIR org, instead of every new
+-- user self-registering into a brand new separate organization.
+-- Same shape as password_resets: token is only ever stored hashed,
+-- single-use, short expiry.
+-- ---------------------------------------------------------------
+CREATE TABLE team_invites (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id          UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  email           TEXT NOT NULL,
+  role            TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('admin','member')), -- owner is never invited, only transferred
+  invited_by      UUID NOT NULL REFERENCES users(id),
+  token_hash      TEXT NOT NULL,
+  expires_at      TIMESTAMPTZ NOT NULL,
+  used_at         TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_team_invites_org ON team_invites(org_id);
+CREATE INDEX idx_team_invites_token ON team_invites(token_hash);
+CREATE INDEX idx_team_invites_email ON team_invites(email);
+
+-- ---------------------------------------------------------------
 -- Cases (matters). org_id = the CARRIER that owns the matter.
 -- Core fields are real columns (filtering/sorting/billing-relevant).
 -- Everything else lives in `data` as JSONB — same shape the
