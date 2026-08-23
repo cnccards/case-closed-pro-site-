@@ -168,6 +168,19 @@ input[type=range].calc-slider::-moz-range-thumb{width:22px;height:22px;border-ra
   .modal-h,.modal-b,.modal-f{padding-left:14px;padding-right:14px;}
   .wrap{padding:12px;}
 }
+
+/* Print / "Export PDF" — no library added; this is the browser's
+   own print dialog with "Save as PDF" as one of its destinations.
+   Hides nav chrome and buttons, lets cards/tables flow across pages
+   cleanly instead of being clipped by the app's normal scroll areas. */
+@media print{
+  body{background:#fff;}
+  nav, .role-tab, .btn, .exec-subnav, [class*="btn-"], .no-print{display:none !important;}
+  .wrap{max-width:100%;padding:0;}
+  .card, .kpi{break-inside:avoid;box-shadow:none;border:1px solid #ccc;}
+  .hero{background:#fff !important;color:#000 !important;padding:10px 0;}
+  .hero-title, .hero-sub, .hero-eyebrow{color:#000 !important;}
+}
 </style>
 </head>
 <body>
@@ -753,6 +766,7 @@ let S = {
   resetStatus: '', resetSuccess: false,
   showSecurityModal: false, securityLoading: false, securityError: '', security2FASetup: null, security2FABackupCodes: null,
   scorecardDetail: null,
+  execTab: 'glance', execSearch: '', execSort: 'value', execSortDir: 'desc',
   loginError: '', loginLoading: false,
   search: '', fSt: 'All', fAt: 'All', fTy: 'All', fCarrier: 'All',
   caseId: null, tab: 'overview',
@@ -1945,87 +1959,309 @@ function partV(){
   return h;
 }
 
-/* ── EXECUTIVE VIEW ────────────────────────────────────── */
+/* ── EXECUTIVE DASHBOARD ───────────────────────────────────
+   6 sections behind an internal sub-nav, same single-file pattern
+   as every other view in this app. Attorney Performance reuses the
+   LES scorecard engine directly (attorneyScorecard/firmAverages)
+   instead of recomputing anything — one source of truth for
+   attorney metrics across the whole app, not two. */
+const EXEC_TABS = [
+  ['glance','Firm at a Glance'],
+  ['financial','Financial'],
+  ['portfolio','Portfolio'],
+  ['attorneys','Attorney Performance'],
+  ['risk','Risk & Alerts'],
+  ['reports','Detailed Reports']
+];
+function execSubNav(){
+  let h = '<div class="exec-subnav" style="display:flex;gap:4px;background:var(--surf2);border:1px solid var(--line);border-radius:9px;padding:4px;margin-bottom:18px;flex-wrap:wrap;">';
+  EXEC_TABS.forEach(([k,l]) => {
+    h += '<button onclick="st({execTab:\''+k+'\'})" style="flex:1;min-width:120px;padding:9px 12px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:'+(S.execTab===k?'#fff':'transparent')+';color:'+(S.execTab===k?'var(--pri)':'var(--muted)')+';box-shadow:'+(S.execTab===k?'0 1px 3px rgba(0,0,0,.1)':'none')+';">'+l+'</button>';
+  });
+  h += '</div>';
+  return h;
+}
 function execV(){
+  let h = '<div class="wrap">';
+  h += '<div class="hero"><div class="hero-l"><div class="hero-eyebrow">Executive Dashboard</div>';
+  h += '<h1 class="hero-title">'+(EXEC_TABS.find(([k])=>k===S.execTab)||[])[1]+'</h1>';
+  h += '<p class="hero-sub">'+CASES.length+' total matters across the firm</p></div>';
+  h += '<div class="hero-r"><button class="btn btn-out" onclick="window.print()">🖨 Export PDF</button></div></div>';
+  h += execSubNav();
+
+  if (S.execTab === 'financial') h += execFinancialV();
+  else if (S.execTab === 'portfolio') h += execPortfolioV();
+  else if (S.execTab === 'attorneys') h += execAttorneyPerfV();
+  else if (S.execTab === 'risk') h += execRiskV();
+  else if (S.execTab === 'reports') h += execReportsV();
+  else h += execGlanceV();
+
+  h += '</div>';
+  return h;
+}
+
+/* ── 1. FIRM AT A GLANCE ──────────────────────────────────── */
+function execGlanceV(){
   const totVal = CASES.reduce((s,c) => s + c.value, 0);
   const totRev = CASES.reduce((s,c) => s + (c.billing.totalBilled||0), 0);
   const totRes = CASES.reduce((s,c) => s + (c.insurance.reserveAmount||0), 0);
   const open = CASES.filter(c => c.status !== 'Closed').length;
-  const reserveRisk = CASES.filter(c => c.billing.totalBilled > (c.insurance.reserveAmount||0)*0.7).length;
-  const trial = CASES.filter(c => c.status === 'Trial').length;
+  const closed = CASES.filter(c => c.status === 'Closed');
+  const wins = closed.filter(c => (c.exposure.settlementAmount || 0) < (c.exposure.demandAmount || c.value));
+  const winRate = closed.length ? Math.round(wins.length/closed.length*100) : 0;
 
-  let h = '<div class="wrap">';
-  h += '<div class="hero">';
-  h += '<div class="hero-l"><div class="hero-eyebrow">Executive Dashboard</div>';
-  h += '<h1 class="hero-title">Firm at a Glance</h1>';
-  h += '<p class="hero-sub">'+CASES.length+' total matters · '+fV(totVal)+' aggregate value · '+fV(totRes)+' under management</p></div></div>';
-
-  h += '<div class="kpi-grid">';
+  let h = '<div class="kpi-grid">';
+  h += '<div class="kpi"><div class="kpi-l">Portfolio Value</div><div class="kpi-v">'+fV(totVal)+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Revenue</div><div class="kpi-v" style="color:var(--green);">'+fV(totRev)+'</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Total Matters</div><div class="kpi-v">'+CASES.length+'</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Open</div><div class="kpi-v">'+open+'</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">In Trial</div><div class="kpi-v" style="color:var(--red);">'+trial+'</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">Revenue</div><div class="kpi-v" style="color:var(--green);">'+fV(totRev)+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Win Rate</div><div class="kpi-v" style="color:var(--green);">'+winRate+'%</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Reserves</div><div class="kpi-v" style="color:var(--gold);">'+fV(totRes)+'</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">Reserve Risk</div><div class="kpi-v" style="color:var(--red);">'+reserveRisk+'</div></div>';
   h += '</div>';
 
-  /* High-stakes matrix */
-  h += '<div class="card">';
-  h += '<div class="sh"><span>High-Stakes Matter Watchlist</span></div>';
-  const watch = CASES.filter(c => c.status !== 'Closed' && (c.priority === 'High' || c.value > 1e6 || c.potentialTrialCandidate)).sort((a,b) => b.value - a.value);
-  h += '<div style="overflow-x:auto;"><table>';
-  h += '<thead><tr><th>Matter</th><th>Client</th><th>Type</th><th>Atty</th><th>Stage</th><th>Exposure</th><th>Reserve</th><th>CCI</th><th>Fav</th></tr></thead><tbody>';
-  watch.slice(0,12).forEach(c => {
-    const idx = cci(c);
-    h += '<tr class="row-link" onclick="stCase(\''+c.id+'\')">';
-    h += '<td style="font-weight:700;color:var(--pri2);">'+esc(c.matterNo||c.id)+'</td>';
-    h += '<td style="font-weight:600;">'+esc(c.client)+'</td>';
-    h += '<td style="font-size:11px;color:var(--muted);">'+esc(c.type)+'</td>';
-    h += '<td style="font-size:11px;">'+esc(c.attorney.split(' ')[0])+'</td>';
-    h += '<td style="font-size:11px;">'+esc(c.litigationStage||'—')+'</td>';
-    h += '<td style="color:var(--red);font-weight:600;">'+fV(c.exposure.likelyExposure||c.value)+'</td>';
-    h += '<td style="color:var(--gold);">'+fV(c.insurance.reserveAmount)+'</td>';
-    h += '<td><span class="cci-pill" style="background:'+cciColor(idx)+'22;color:'+cciColor(idx)+';">'+idx+'</span></td>';
-    h += '<td>'+fav(c.favorability||3)+'</td>';
+  h += '<div class="grid-2">';
+  // New-matters-filed trend — uses c.filed, which is populated on
+  // every case, unlike billing.totalBilled (real in this seed data
+  // on only 1 of 15 cases — too sparse to ever show a meaningful
+  // revenue-by-month line, so this tracks real filing volume instead).
+  h += '<div class="card"><div class="sh"><span>New Matters Filed</span><span style="color:var(--dim);font-weight:500;">Last 12 months</span></div>';
+  const filedDates = CASES.map(c=>new Date(c.filed).getTime()).filter(t=>!isNaN(t));
+  const nowRef = new Date(Math.max(...filedDates));
+  const months = []; for (let i=11;i>=0;i--){ const d=new Date(nowRef.getFullYear(),nowRef.getMonth()-i,1); months.push(d); }
+  const monthlyFilings = months.map(d => CASES.filter(c=>{ const f=new Date(c.filed); return !isNaN(f) && f.getFullYear()===d.getFullYear() && f.getMonth()===d.getMonth(); }).length);
+  const maxFilings = Math.max(...monthlyFilings, 1);
+  h += '<svg viewBox="0 0 400 140" style="width:100%;height:150px;">';
+  let path = '';
+  monthlyFilings.forEach((v,i) => { const x=20+i*(360/11); const y=120-(v/maxFilings)*100; path += (i===0?'M':'L')+x+' '+y; });
+  h += '<path d="'+path+'" stroke="var(--pri2)" stroke-width="2.5" fill="none"/>';
+  monthlyFilings.forEach((v,i) => { const x=20+i*(360/11); const y=120-(v/maxFilings)*100; h += '<circle cx="'+x+'" cy="'+y+'" r="3" fill="var(--pri2)"/><text x="'+x+'" y="'+(y-8)+'" text-anchor="middle" font-size="9" fill="var(--muted)">'+(v||'')+'</text>'; });
+  h += '</svg>';
+  h += '<div style="display:flex;justify-content:space-between;font-size:9.5px;color:var(--dim);"><span>'+months[0].toLocaleDateString('en-US',{month:'short',year:'2-digit'})+'</span><span>'+months[11].toLocaleDateString('en-US',{month:'short',year:'2-digit'})+'</span></div></div>';
+
+  h += '<div class="card"><div class="sh"><span>Cases by Status</span></div>';
+  const statusCounts = {};
+  CASES.forEach(c => { statusCounts[c.status] = (statusCounts[c.status]||0)+1; });
+  const statusColors = {Active:'var(--pri2)', Closed:'var(--green)', Trial:'var(--red)', Discovery:'var(--gold)', Settlement:'#6D28D9'};
+  Object.entries(statusCounts).sort((a,b)=>b[1]-a[1]).forEach(([s,ct]) => {
+    const pct = Math.round(ct/CASES.length*100);
+    h += '<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;"><span style="color:var(--muted);">'+esc(s)+'</span><span style="font-weight:700;">'+ct+' ('+pct+'%)</span></div>';
+    h += '<div style="background:var(--surf3);height:6px;border-radius:3px;overflow:hidden;"><div style="width:'+pct+'%;height:100%;background:'+(statusColors[s]||'var(--pri2)')+';"></div></div></div>';
+  });
+  h += '</div></div>';
+
+  h += '<div class="card"><div class="sh"><span>Top Performers</span><span style="color:var(--dim);font-weight:500;">By LES</span></div>';
+  const ranked = ATTY.map(a => attorneyScorecard(a)).sort((x,y)=>y.les-x.les).slice(0,3);
+  h += '<div class="grid-3" style="margin-bottom:0;">';
+  ranked.forEach((sc,i) => {
+    h += '<div style="text-align:center;padding:14px;background:var(--surf2);border-radius:9px;cursor:pointer;" onclick="st({role:\'scorecard\',scorecardDetail:\''+sc.name+'\'})">';
+    h += '<div style="font-size:20px;">'+(i===0?'🥇':i===1?'🥈':'🥉')+'</div>';
+    h += '<div style="font-weight:700;font-size:13px;margin-top:4px;">'+esc(sc.name)+'</div>';
+    h += '<div class="serif" style="font-size:22px;font-weight:700;color:'+lesGradeColor(sc.les)+';">'+lesGrade(sc.les)+'</div>';
+    h += '<div style="font-size:10px;color:var(--muted);">LES '+sc.les+'</div></div>';
+  });
+  h += '</div></div>';
+  return h;
+}
+
+/* ── 2. FINANCIAL DASHBOARD ───────────────────────────────── */
+function execFinancialV(){
+  const totalBilled = CASES.reduce((s,c)=>s+(c.billing.totalBilled||0),0);
+  const totalPaid = CASES.reduce((s,c)=>s+(c.billing.totalPaid||0),0);
+  const realization = totalBilled>0 ? Math.round(totalPaid/totalBilled*100) : 0;
+
+  let h = '<div class="kpi-grid">';
+  h += '<div class="kpi"><div class="kpi-l">Total Billed</div><div class="kpi-v">'+fV(totalBilled)+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Total Collected</div><div class="kpi-v" style="color:var(--green);">'+fV(totalPaid)+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Realization Rate</div><div class="kpi-v" style="color:'+(realization>=90?'var(--green)':'var(--gold)')+';">'+realization+'%</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Revenue / Matter</div><div class="kpi-v">'+fV(CASES.length?totalBilled/CASES.length:0)+'</div></div>';
+  h += '</div>';
+
+  h += '<div class="grid-2">';
+  h += '<div class="card"><div class="sh"><span>Revenue by Attorney</span></div>';
+  const byAtty = ATTY.map(a => attorneyScorecard(a)).sort((x,y)=>y.totalBilled-x.totalBilled);
+  const maxBilled = Math.max(...byAtty.map(x=>x.totalBilled),1);
+  byAtty.forEach(sc => {
+    const pct = Math.round(sc.totalBilled/maxBilled*100);
+    h += '<div style="margin-bottom:9px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;"><span>'+esc(sc.name)+'</span><span style="font-weight:700;">'+fV(sc.totalBilled)+'</span></div>';
+    h += '<div style="background:var(--surf3);height:6px;border-radius:3px;overflow:hidden;"><div style="width:'+pct+'%;height:100%;background:var(--pri2);"></div></div></div>';
+  });
+  h += '</div>';
+
+  h += '<div class="card"><div class="sh"><span>Margin &amp; Rate Snapshot</span></div>';
+  h += '<div style="overflow-x:auto;"><table><thead><tr><th>Attorney</th><th>Realization</th><th>Bill Rate</th><th>Margin<sup>*</sup></th></tr></thead><tbody>';
+  byAtty.forEach(sc => {
+    h += '<tr><td style="font-weight:600;">'+esc(sc.name)+'</td><td>'+sc.realizationRate+'%</td><td>'+fM(sc.billingRate)+'/hr</td><td>'+sc.profitMargin+'%</td></tr>';
+  });
+  h += '</tbody></table></div><div style="font-size:9.5px;color:var(--dim);margin-top:8px;">*Estimated — no cost-basis tracked yet</div></div>';
+  h += '</div>';
+
+  h += '<div class="card"><div class="sh"><span>Billing Pipeline</span></div>';
+  const payStatus = {};
+  CASES.forEach(c => { const s = c.billing.paymentStatus||'Current'; payStatus[s]=(payStatus[s]||0)+1; });
+  const payColors = {Current:'var(--green)', Overdue:'var(--red)', Pending:'var(--gold)', Disputed:'#B45309'};
+  h += '<div style="display:flex;gap:16px;flex-wrap:wrap;">';
+  Object.entries(payStatus).forEach(([s,ct]) => {
+    h += '<div style="text-align:center;padding:12px 18px;background:var(--surf2);border-radius:9px;"><div class="serif" style="font-size:24px;font-weight:700;color:'+(payColors[s]||'var(--ink)')+';">'+ct+'</div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;">'+esc(s)+'</div></div>';
+  });
+  h += '</div></div>';
+  return h;
+}
+
+/* ── 3. PORTFOLIO OVERVIEW ────────────────────────────────── */
+function execPortfolioV(){
+  let h = '<div class="grid-2">';
+
+  h += '<div class="card"><div class="sh"><span>Matters by Type</span></div>';
+  const typeCounts = {};
+  CASES.forEach(c => { typeCounts[c.type]=(typeCounts[c.type]||0)+1; });
+  Object.entries(typeCounts).sort((a,b)=>b[1]-a[1]).forEach(([t,ct]) => {
+    const pct = Math.round(ct/CASES.length*100);
+    h += '<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;"><span style="color:var(--muted);">'+esc(t)+'</span><span style="font-weight:700;">'+pct+'%</span></div>';
+    h += '<div style="background:var(--surf3);height:6px;border-radius:3px;overflow:hidden;"><div style="width:'+pct+'%;height:100%;background:var(--pri2);"></div></div></div>';
+  });
+  h += '</div>';
+
+  h += '<div class="card"><div class="sh"><span>Value Distribution</span></div>';
+  const buckets = [['Under $100K',0,100000],['$100K–$500K',100000,500000],['$500K–$1M',500000,1000000],['$1M+',1000000,Infinity]];
+  buckets.forEach(([label,lo,hi]) => {
+    const ct = CASES.filter(c=>c.value>=lo && c.value<hi).length;
+    const pct = Math.round(ct/CASES.length*100);
+    h += '<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;"><span style="color:var(--muted);">'+label+'</span><span style="font-weight:700;">'+ct+' matters</span></div>';
+    h += '<div style="background:var(--surf3);height:6px;border-radius:3px;overflow:hidden;"><div style="width:'+pct+'%;height:100%;background:var(--gold);"></div></div></div>';
+  });
+  h += '</div></div>';
+
+  h += '<div class="card"><div class="sh"><span>Pipeline by Stage</span></div>';
+  const stageCounts = {};
+  CASES.filter(c=>c.status!=='Closed').forEach(c => { const s=c.litigationStage||'Unassigned'; stageCounts[s]=(stageCounts[s]||0)+1; });
+  h += '<div style="display:flex;gap:14px;flex-wrap:wrap;">';
+  Object.entries(stageCounts).forEach(([s,ct]) => {
+    h += '<div style="text-align:center;padding:12px 16px;background:var(--surf2);border-radius:9px;"><div class="serif" style="font-size:22px;font-weight:700;">'+ct+'</div><div style="font-size:10px;color:var(--muted);">'+esc(s)+'</div></div>';
+  });
+  h += '</div></div>';
+
+  h += '<div class="card"><div class="sh"><span>Top Clients by Value</span></div>';
+  const byClient = {};
+  CASES.forEach(c => { byClient[c.client]=(byClient[c.client]||0)+c.value; });
+  Object.entries(byClient).sort((a,b)=>b[1]-a[1]).slice(0,8).forEach(([client,val]) => {
+    h += '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--surf2);font-size:12px;"><span>'+esc(client)+'</span><span style="font-weight:700;">'+fV(val)+'</span></div>';
+  });
+  h += '</div>';
+  return h;
+}
+
+/* ── 4. ATTORNEY PERFORMANCE ──────────────────────────────── */
+function execAttorneyPerfV(){
+  const ranked = ATTY.map(a => attorneyScorecard(a)).sort((x,y)=>y.les-x.les);
+  let h = '<div class="card"><div class="sh"><span>LES Leaderboard</span><span style="color:var(--dim);font-weight:500;">Click a row for the full scorecard</span></div>';
+  h += '<div style="overflow-x:auto;"><table><thead><tr><th>Rank</th><th>Attorney</th><th>Grade</th><th>LES</th><th>Win Rate</th><th>Avg. Days</th><th>New Matters</th></tr></thead><tbody>';
+  ranked.forEach((sc,i) => {
+    h += '<tr class="row-link" onclick="st({role:\'scorecard\',scorecardDetail:\''+sc.name+'\'})">';
+    h += '<td style="font-weight:700;color:var(--dim);">#'+(i+1)+'</td>';
+    h += '<td style="font-weight:700;">'+esc(sc.name)+'</td>';
+    h += '<td><span class="serif" style="font-weight:700;color:'+lesGradeColor(sc.les)+';">'+lesGrade(sc.les)+'</span></td>';
+    h += '<td>'+sc.les+'</td>';
+    h += '<td>'+(sc.winPct)+'%</td>';
+    h += '<td>'+sc.avgCycleTime+'</td>';
+    h += '<td>'+sc.goals[3].actual+'</td>';
     h += '</tr>';
   });
   h += '</tbody></table></div></div>';
 
-  /* Risk Flags Big */
   h += '<div class="grid-2">';
-  h += '<div class="card"><div class="sh"><span>Strategic Risk Indicators</span></div>';
-  const riskFlags = [
-    ['Trial Candidates', CASES.filter(c => c.potentialTrialCandidate).length, 'var(--red)'],
-    ['Reserve Burn >70%', reserveRisk, 'var(--red)'],
-    ['SOL <180 days', CASES.filter(c => c.keyDates.sol && new Date(c.keyDates.sol) < new Date(Date.now()+180*864e5)).length, 'var(--gold)'],
-    ['CAT Matters', CASES.filter(c => c.catastrophe === 'Yes').length, 'var(--gold)'],
-    ['AOB Matters', CASES.filter(c => c.aob === 'Yes').length, 'var(--purple)'],
-    ['Aged 24+ Months', CASES.filter(c => daysOpen(c) > 730).length, 'var(--red)']
-  ];
-  riskFlags.forEach(([l,v,c]) => {
-    h += '<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid var(--surf3);">';
-    h += '<span style="font-size:12px;color:var(--ink);font-weight:500;">'+l+'</span>';
-    h += '<span class="serif" style="font-size:22px;font-weight:700;color:'+c+';">'+v+'</span>';
-    h += '</div>';
+  h += '<div class="card"><div class="sh"><span>Win Rate Comparison</span></div>';
+  ranked.forEach(sc => {
+    h += '<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;"><span>'+esc(sc.name)+'</span><span style="font-weight:700;">'+sc.winPct+'%</span></div>';
+    h += '<div style="background:var(--surf3);height:6px;border-radius:3px;overflow:hidden;"><div style="width:'+sc.winPct+'%;height:100%;background:var(--green);"></div></div></div>';
   });
   h += '</div>';
 
-  h += '<div class="card"><div class="sh"><span>Outcomes — Closed Matters</span></div>';
-  const closed = CASES.filter(c => c.status === 'Closed');
-  const settlements = closed.filter(c => c.exposure.settlementAmount > 0);
-  const avgSet = settlements.length ? settlements.reduce((s,c)=>s+c.exposure.settlementAmount,0)/settlements.length : 0;
-  const wins = closed.filter(c => (c.exposure.settlementAmount || 0) < (c.exposure.demandAmount || c.value));
-  h += '<div style="text-align:center;padding:14px 0;">';
-  h += '<div class="serif" style="font-size:38px;font-weight:700;color:var(--green);line-height:1;">'+(closed.length?Math.round((wins.length/closed.length)*100):0)+'%</div>';
-  h += '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1.3px;font-weight:700;margin-top:4px;">Win Rate</div>';
-  h += '</div>';
-  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;">';
-  h += '<div style="text-align:center;padding:10px;background:var(--surf);border-radius:6px;"><div class="serif" style="font-size:18px;font-weight:700;color:var(--ink);">'+closed.length+'</div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Closed</div></div>';
-  h += '<div style="text-align:center;padding:10px;background:var(--surf);border-radius:6px;"><div class="serif" style="font-size:18px;font-weight:700;color:var(--gold);">'+fV(avgSet)+'</div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Avg Settlement</div></div>';
+  h += '<div class="card"><div class="sh"><span>New Business Generation</span><span style="color:var(--dim);font-weight:500;">This quarter</span></div>';
+  ranked.forEach(sc => {
+    const g = sc.goals[3];
+    const pct = Math.min(100, Math.round(g.actual/Math.max(g.target,1)*100));
+    h += '<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;"><span>'+esc(sc.name)+'</span><span style="font-weight:700;">'+g.actual+' / '+g.target+'</span></div>';
+    h += '<div style="background:var(--surf3);height:6px;border-radius:3px;overflow:hidden;"><div style="width:'+pct+'%;height:100%;background:var(--pri2);"></div></div></div>';
+  });
   h += '</div></div>';
+  return h;
+}
+
+/* ── 5. RISK & ALERTS ─────────────────────────────────────── */
+function execRiskV(){
+  const reserveRisk = CASES.filter(c => c.billing.totalBilled > (c.insurance.reserveAmount||0)*0.7);
+  const trial = CASES.filter(c => c.status === 'Trial' || c.potentialTrialCandidate);
+  const aging = CASES.filter(c => c.status !== 'Closed' && daysOpen(c) > 730).sort((a,b)=>daysOpen(b)-daysOpen(a));
+  const solRisk = CASES.filter(c => c.keyDates.sol && new Date(c.keyDates.sol) < new Date(Date.now()+180*864e5) && c.status!=='Closed');
+  const poorReserveAttys = ATTY.map(a=>attorneyScorecard(a)).filter(sc=>sc.reserveAccuracy < 90);
+
+  let h = '<div class="kpi-grid">';
+  h += '<div class="kpi"><div class="kpi-l">Trial Candidates</div><div class="kpi-v" style="color:var(--red);">'+trial.length+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Reserve Burn &gt;70%</div><div class="kpi-v" style="color:var(--red);">'+reserveRisk.length+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">SOL &lt;180 Days</div><div class="kpi-v" style="color:var(--gold);">'+solRisk.length+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Aged 24+ Months</div><div class="kpi-v" style="color:var(--red);">'+aging.length+'</div></div>';
   h += '</div>';
 
+  h += '<div class="card"><div class="sh"><span>⚠ Critical Alerts — Trial Dates &amp; High Stakes</span></div>';
+  const watch = CASES.filter(c => c.status !== 'Closed' && (c.priority === 'High' || c.value > 1e6 || c.potentialTrialCandidate)).sort((a,b) => b.value - a.value);
+  if (watch.length) {
+    h += '<div style="overflow-x:auto;"><table><thead><tr><th>Matter</th><th>Client</th><th>Attorney</th><th>Exposure</th><th>CCI</th></tr></thead><tbody>';
+    watch.slice(0,10).forEach(c => {
+      h += '<tr class="row-link" onclick="stCase(\''+c.id+'\')"><td style="font-weight:700;color:var(--pri2);">'+esc(c.matterNo||c.id)+'</td><td>'+esc(c.client)+'</td><td>'+esc(c.attorney.split(' ')[0])+'</td><td style="color:var(--red);font-weight:600;">'+fV(c.exposure.likelyExposure||c.value)+'</td><td><span class="cci-pill" style="background:'+cciColor(cci(c))+'22;color:'+cciColor(cci(c))+';">'+cci(c)+'</span></td></tr>';
+    });
+    h += '</tbody></table></div>';
+  } else { h += '<div style="color:var(--muted);font-size:12px;">No high-stakes matters flagged right now.</div>'; }
   h += '</div>';
+
+  h += '<div class="grid-2">';
+  h += '<div class="card"><div class="sh"><span>Aging Cases Watchlist</span></div>';
+  if (aging.length) {
+    aging.slice(0,6).forEach(c => {
+      h += '<div class="row-link" onclick="stCase(\''+c.id+'\')" style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--surf2);font-size:12px;"><span>'+esc(c.client)+'</span><span style="font-weight:700;color:var(--red);">'+daysOpen(c)+' days</span></div>';
+    });
+  } else { h += '<div style="color:var(--green);font-size:12.5px;font-weight:600;">✓ No matters aged past 24 months</div>'; }
+  h += '</div>';
+
+  h += '<div class="card"><div class="sh"><span>Reserve Accuracy Issues</span></div>';
+  if (poorReserveAttys.length) {
+    poorReserveAttys.forEach(sc => {
+      h += '<div class="row-link" onclick="st({role:\'scorecard\',scorecardDetail:\''+sc.name+'\'})" style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--surf2);font-size:12px;"><span>'+esc(sc.name)+'</span><span style="font-weight:700;color:var(--gold);">'+sc.reserveAccuracy+'% accuracy</span></div>';
+    });
+  } else { h += '<div style="color:var(--green);font-size:12.5px;font-weight:600;">✓ All attorneys above 90% reserve accuracy</div>'; }
+  h += '</div></div>';
+  return h;
+}
+
+/* ── 6. DETAILED REPORTS ──────────────────────────────────── */
+function execReportsExportCSV(){
+  const cols = ['Matter','Client','Type','Attorney','Status','Stage','Value','Reserve','CCI'];
+  const rows = CASES.map(c => [c.matterNo||c.id, c.client, c.type, c.attorney, c.status, c.litigationStage||'', c.value, c.insurance.reserveAmount||0, cci(c)]);
+  downloadCSV('executive_matter_report_'+td()+'.csv', cols, rows);
+}
+function execReportsV(){
+  let list = CASES.filter(c => !S.execSearch || (c.client+c.attorney+c.type+(c.matterNo||'')).toLowerCase().includes(S.execSearch.toLowerCase()));
+  const dir = S.execSortDir === 'asc' ? 1 : -1;
+  list = list.slice().sort((a,b) => {
+    if (S.execSort === 'value') return (a.value-b.value)*dir;
+    if (S.execSort === 'client') return a.client.localeCompare(b.client)*dir;
+    if (S.execSort === 'attorney') return a.attorney.localeCompare(b.attorney)*dir;
+    if (S.execSort === 'cci') return (cci(a)-cci(b))*dir;
+    return 0;
+  });
+
+  let h = '<div class="card">';
+  h += '<div class="sh"><span>All Matters ('+list.length+')</span>';
+  h += '<span><button class="btn btn-ghost" style="font-size:11px;" onclick="execReportsExportCSV()">⬇ Export CSV</button></span></div>';
+  h += '<div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">';
+  h += '<input type="text" placeholder="Search client, attorney, type, matter #..." value="'+escAttr(S.execSearch)+'" oninput="st({execSearch:this.value})" style="flex:1;min-width:220px;padding:8px 12px;border:1px solid var(--line);border-radius:7px;font-size:12px;"/>';
+  h += sel('Sort by','st({execSort:this.value})',['value','client','attorney','cci'],S.execSort);
+  h += '<button class="btn btn-out" style="font-size:11px;" onclick="st({execSortDir:S.execSortDir===\'asc\'?\'desc\':\'asc\'})">'+(S.execSortDir==='asc'?'↑ Asc':'↓ Desc')+'</button>';
+  h += '</div>';
+  h += '<div style="overflow-x:auto;"><table><thead><tr><th>Matter</th><th>Client</th><th>Type</th><th>Attorney</th><th>Status</th><th>Value</th><th>CCI</th></tr></thead><tbody>';
+  list.forEach(c => {
+    h += '<tr class="row-link" onclick="stCase(\''+c.id+'\')"><td style="font-weight:700;color:var(--pri2);">'+esc(c.matterNo||c.id)+'</td><td>'+esc(c.client)+'</td><td style="font-size:11px;color:var(--muted);">'+esc(c.type)+'</td><td>'+esc(c.attorney.split(' ')[0])+'</td><td><span class="tag">'+esc(c.status)+'</span></td><td style="font-weight:600;">'+fV(c.value)+'</td><td><span class="cci-pill" style="background:'+cciColor(cci(c))+'22;color:'+cciColor(cci(c))+';">'+cci(c)+'</span></td></tr>';
+  });
+  h += '</tbody></table></div></div>';
   return h;
 }
 
