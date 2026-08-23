@@ -72,7 +72,10 @@ tr.row-link{cursor:pointer;}
 .bar-bg{flex:1;height:6px;background:var(--surf3);border-radius:3px;overflow:hidden;}
 .bar-fill{height:100%;border-radius:3px;}
 .brand-mark{width:34px;height:34px;background:linear-gradient(135deg,#001C41 0%,#0056D2 100%);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;box-shadow:0 1px 3px rgba(0,28,65,.4);}
-.role-tab{background:transparent;border:none;border-radius:6px;padding:6px 11px;font-size:11.5px;font-weight:600;cursor:pointer;color:var(--muted);transition:all .12s;}
+.section-label{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1.6px;margin:4px 0 -2px 2px;}
+.nav-divider{width:1px;align-self:stretch;background:var(--line2);margin:3px 5px;flex-shrink:0;}
+.nav-group-label{font-size:9px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:1px;padding:0 6px 0 2px;flex-shrink:0;white-space:nowrap;align-self:center;}
+.role-tab{background:transparent;border:none;border-radius:6px;padding:6px 11px;font-size:11.5px;font-weight:600;cursor:pointer;color:var(--muted);transition:all .12s;flex-shrink:0;white-space:nowrap;}
 .role-tab.admin-tab{color:#B45309;}
 .role-tab.admin-tab:hover:not(.on){background:#FFFBEB;color:#B45309;}
 .role-tab.admin-tab.on{background:#B45309;color:#fff;}
@@ -170,6 +173,26 @@ input[type=range].calc-slider::-moz-range-thumb{width:22px;height:22px;border-ra
   .modal{max-height:96vh;}
   .modal-h,.modal-b,.modal-f{padding-left:14px;padding-right:14px;}
   .wrap{padding:12px;}
+  /* Collapse every fixed-fraction grid (g2–g5 classes and inline
+     "grid-template-columns:...fr...fr" styles) to a single column.
+     Catches all ~20 call sites without touching each one individually. */
+  .g2,.g3,.g4,.g5,
+  [style*="grid-template-columns"]{
+    grid-template-columns:1fr !important;
+  }
+  /* Nav: was wrapping into 4-6 rows of chrome before any page content
+     showed. Instead, keep it one row and let it scroll horizontally —
+     same tabs, same order, just swipeable instead of stacked. */
+  .nav-scroll{
+    flex-wrap:nowrap !important;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+    flex:1 1 auto;
+    min-width:0;
+  }
+  .nav-scroll::-webkit-scrollbar{display:none;}
+  .nav-side-btn{padding:7px 10px;font-size:11px;}
 }
 
 /* Print / "Export PDF" — no library added; this is the browser's
@@ -767,6 +790,8 @@ let S = {
   showForgotPassword: false, forgotStatus: '',
   _resetTokenFromUrl: (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('resetToken')) || '',
   _inviteTokenFromUrl: (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('inviteToken')) || '',
+  _verifyTokenFromUrl: (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('verifyToken')) || '',
+  verifyEmailResult: null, resendVerifyLoading: false, resendVerifySent: false,
   showTeamModal: false, teamLoading: false, teamError: '', teamMembers: null, teamPendingInvites: null,
   showInviteForm: false, inviteLoading: false, inviteError: '', inviteResult: null,
   acceptInviteStatus: '', acceptInviteSuccess: false,
@@ -783,6 +808,7 @@ let S = {
   bTab: 'time', auditFilter: 'All',
   reportCat: 'All',
   activityFilter: 'All', activityRange: '7d',
+  filterAtty: 'all', filterStat: 'all',
   rptFields: ['id','client','type','status','attorney','value','claimNo','carrier','reserve','billed','progress','sol'],
   rptAt: 'All', rptSt: 'All',
   addForm: {client:'',type:'Insurance Defense',status:'Active',priority:'Medium',attorney:'Sarah Chen',filed:'',deadline:'',value:'',claimNo:'',carrier:'',reserve:'',adjuster:'',notes:'',aob:'No',catastrophe:'No',coverageType:'General Liability',claimCategory:'Bodily Injury'}
@@ -869,6 +895,29 @@ async function apiFetch(path, opts = {}) {
   return data;
 }
 
+/* ── ERROR REPORTING ────────────────────────────────────────
+   A lightweight, self-hosted stand-in for a real error-monitoring
+   service (Sentry, etc). Only reports when a real backend is
+   connected — there's nowhere useful to send these from pure demo
+   mode, and it would just be noise. Best-effort: a failure to REPORT
+   an error must never itself throw or interrupt anything. */
+function reportClientError(message, stack){
+  if (!API_BASE) return;
+  try {
+    fetch(API_BASE + '/api/errors', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: String(message).slice(0,2000), stack: stack ? String(stack).slice(0,5000) : null, url: window.location.href })
+    }).catch(() => {}); // fire-and-forget, genuinely don't care if this fails
+  } catch (e) { /* never let error reporting itself throw */ }
+}
+window.addEventListener('error', (e) => {
+  reportClientError(e.message, e.error?.stack);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  reportClientError('Unhandled promise rejection: ' + (e.reason?.message || e.reason), e.reason?.stack);
+});
+
 /* Replaces the seeded demo CASES with the signed-in org's real
    matters. Called right after a successful real login. Failure is
    non-fatal — falls back to whatever demo data was already loaded
@@ -942,6 +991,42 @@ function demoModeBannerV(){
   '</div>';
 }
 
+/* Shown to a logged-in user whose email hasn't been verified yet —
+   not a hard block on using the product, just a persistent nudge.
+   Hard-blocking login on email delivery succeeding is a real way to
+   lock out a legitimate user over something outside their control. */
+function unverifiedEmailBannerV(){
+  let h = '<div style="background:var(--surf2);border-bottom:1px solid var(--line);color:var(--ink);padding:8px 18px;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;font-size:12px;font-weight:500;text-align:center;">';
+  h += '<span>📧 Please verify your email (' + esc(S.currentUser.email) + ') — check your inbox for the link.</span>';
+  if (S.resendVerifySent) {
+    h += '<span style="color:var(--green);font-weight:700;">Sent!</span>';
+  } else {
+    h += '<button onclick="resendVerificationEmail()" style="background:transparent;border:1px solid var(--line2);color:var(--pri2);padding:3px 10px;border-radius:14px;font-size:11px;font-weight:700;cursor:pointer;" '+(S.resendVerifyLoading?'disabled':'')+'>'+(S.resendVerifyLoading?'Sending…':'Resend Link')+'</button>';
+  }
+  h += '</div>';
+  return h;
+}
+async function resendVerificationEmail(){
+  st({resendVerifyLoading:true});
+  try {
+    await apiFetch('/api/auth/resend-verification', { method:'POST' });
+    st({resendVerifyLoading:false, resendVerifySent:true});
+  } catch (e) {
+    st({resendVerifyLoading:false});
+    alert('Could not resend: ' + e.message);
+  }
+}
+
+/* One-time banner shown after a ?verifyToken= link was clicked —
+   works whether the person is currently logged in or not. */
+function verifyResultBannerV(){
+  const ok = S.verifyEmailResult.success;
+  return '<div style="background:'+(ok?'#ECFDF5':'#FEF2F2')+';border-bottom:1px solid '+(ok?'#A7F3D0':'#FECACA')+';color:'+(ok?'#065F46':'#991B1B')+';padding:9px 18px;display:flex;align-items:center;justify-content:center;gap:12px;font-size:12.5px;font-weight:600;text-align:center;">' +
+    '<span>'+(ok?'✓ ':'⚠ ')+esc(S.verifyEmailResult.message)+'</span>' +
+    '<button onclick="st({verifyEmailResult:null})" style="background:transparent;border:none;color:inherit;cursor:pointer;font-weight:700;">Dismiss</button>' +
+  '</div>';
+}
+
 /* ── RENDER ────────────────────────────────────────────────── */
 function render(){
   if (S._resetTokenFromUrl && !S.isAuthenticated) {
@@ -961,7 +1046,7 @@ function render(){
       document.getElementById('app').innerHTML = forgotPasswordScreenV();
       return;
     }
-    document.getElementById('app').innerHTML = loginScreenV();
+    document.getElementById('app').innerHTML = (S.verifyEmailResult ? verifyResultBannerV() : '') + loginScreenV();
     return;
   }
   if (S.showWelcome) {
@@ -969,7 +1054,9 @@ function render(){
     return;
   }
   let html = '';
+  if (S.verifyEmailResult) html += verifyResultBannerV();
   if (S.isDemoMode) html += demoModeBannerV();
+  else if (API_BASE && S.currentUser && S.currentUser.emailVerified === false) html += unverifiedEmailBannerV();
   html += hdr();
   html += '<div id="ct">';
   if (S.role === 'litigation') html += litigationDashV();
@@ -998,22 +1085,39 @@ function render(){
 
 /* ── HEADER ────────────────────────────────────────────────── */
 function hdr(){
-  const roles = [
-    ['litigation','Litigation'],
-    ['attorney','My Cases'],
-    ['activity','Activity Hub'],
-    ['billing','Invoice Hub'],
-    ['tpa','TPA / Carrier'],
-    ['partner','Partner View'],
-    ['executive','Executive'],
-    ['scorecard','Scorecards'],
-    ['reports','Reports Hub'],
-    ['api','API & Import'],
-    ['subscription','Plan & Billing']
+  /* Grouped by how the role is actually used day to day, same clustering
+     approach used for the case-detail tabs: Daily Work (open every day),
+     Insights (analysis/reporting, opened less often), Admin (setup/ops).
+     Same items, same click behavior — just organized instead of 11 equal-
+     weight buttons in a row. */
+  const groups = [
+    { label:'', items:[
+      ['litigation','Litigation'],
+      ['attorney','My Cases'],
+      ['activity','Activity Hub'],
+      ['billing','Invoice Hub']
+    ]},
+    { label:'Insights', items:[
+      ['executive','Executive'],
+      ['scorecard','Scorecards'],
+      ['reports','Reports Hub']
+    ]},
+    { label:'Admin', items:[
+      ['tpa','TPA / Carrier'],
+      ['partner','Partner View'],
+      ['api','API & Import'],
+      ['subscription','Plan & Billing']
+    ]}
   ];
-  if (S.currentUser?.platformAdmin) roles.push(['admin','⚙ Admin']);
-  const roleBtns = roles.map(([r, l]) => 
-    '<button onclick="'+(r==='subscription' ? 'goToBilling()' : r==='admin' ? 'goToAdmin()' : r==='scorecard' ? "st({role:'scorecard',caseId:null,scorecardDetail:null})" : "st({role:'"+r+"',caseId:null})")+'" class="role-tab'+(S.role===r?' on':'')+(r==='admin'?' admin-tab':'')+'">'+l+'</button>'
+  if (S.currentUser?.platformAdmin) groups[groups.length-1].items.push(['admin','⚙ Admin']);
+
+  const btn = ([r, l]) =>
+    '<button onclick="'+(r==='subscription' ? 'goToBilling()' : r==='admin' ? 'goToAdmin()' : r==='scorecard' ? "st({role:'scorecard',caseId:null,scorecardDetail:null})" : "st({role:'"+r+"',caseId:null})")+'" class="role-tab'+(S.role===r?' on':'')+(r==='admin'?' admin-tab':'')+'">'+l+'</button>';
+
+  const roleBtns = groups.map((g,gi) =>
+    (gi>0 ? '<div class="nav-divider"></div>' : '') +
+    (g.label ? '<span class="nav-group-label">'+g.label+'</span>' : '') +
+    g.items.map(btn).join('')
   ).join('');
 
   return '<div style="background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50;">'+
@@ -1036,10 +1140,10 @@ function hdr(){
       '</div>'+
       userMenuHtml()+
     '</div>'+
-    '<div style="padding:0 18px 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'+
-      '<div style="background:var(--surf2);border:1px solid var(--line);border-radius:8px;display:flex;padding:3px;gap:1px;flex-wrap:wrap;">'+roleBtns+'</div>'+
-      (S.role !== 'attorney' && S.role !== 'reports' ? '<button onclick="st({showRpt:true})" class="btn btn-out">Report Builder</button>' : '')+
-      '<button onclick="st({showAdd:true})" class="btn btn-pri">+ New Matter</button>'+
+    '<div style="padding:0 18px 10px;display:flex;gap:8px;align-items:center;">'+
+      '<div class="nav-scroll" style="background:var(--surf2);border:1px solid var(--line);border-radius:8px;display:flex;padding:3px;gap:1px;align-items:center;flex-wrap:wrap;">'+roleBtns+'</div>'+
+      (S.role !== 'attorney' && S.role !== 'reports' ? '<button onclick="st({showRpt:true})" class="btn btn-out nav-side-btn">Report Builder</button>' : '')+
+      '<button onclick="st({showAdd:true})" class="btn btn-pri nav-side-btn">+ New Matter</button>'+
     '</div>'+
   '</div>';
 }
@@ -1136,7 +1240,7 @@ function loginScreenV(){
 
 function completeLoginSession(data){
   authToken = data.token;
-  S.currentUser = { name: data.user.name, email: data.user.email, persona: data.user.persona, orgId: data.user.orgId, role: data.user.role, totpEnabled: !!data.user.totpEnabled, platformAdmin: !!data.user.platformAdmin };
+  S.currentUser = { name: data.user.name, email: data.user.email, persona: data.user.persona, orgId: data.user.orgId, role: data.user.role, totpEnabled: !!data.user.totpEnabled, platformAdmin: !!data.user.platformAdmin, emailVerified: !!data.user.emailVerified };
   S.isAuthenticated = true;
   S.loginLoading = false;
   S.showWelcome = true;
@@ -1415,7 +1519,7 @@ function litigationDashV(){
   const noNextStep = open.filter(c => !c.nextStep).length;
   const trialCandidates = open.filter(c => c.potentialTrialCandidate).length;
 
-  let h = '<div style="padding:18px 22px;max-width:1500px;margin:0 auto;">';
+  let h = '<div style="padding:18px 22px;max-width:1500px;margin:0 auto;display:flex;flex-direction:column;">';
 
   /* Hero header */
   h += '<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px;flex-wrap:wrap;gap:12px;">';
@@ -1438,7 +1542,7 @@ function litigationDashV(){
     {l:'Total Reserves', v:fV(totRes), c:'var(--gold)', sub:fV(totBl)+' billed'},
     {l:'CCI Avg', v:avgIdx, c:cciColor(avgIdx), sub:cciLabel(avgIdx)+' portfolio'}
   ];
-  h += '<div class="g6" style="margin-bottom:14px;">';
+  h += '<div class="kpi-grid" style="margin-bottom:14px;order:1;">';
   kpis.forEach(k => {
     h += '<div class="kpi"><div class="kpi-bar" style="background:'+k.c+'"></div>';
     h += '<div class="kpi-l">'+k.l+'</div>';
@@ -1447,8 +1551,13 @@ function litigationDashV(){
   });
   h += '</div>';
 
+  /* Section label — everything below this point is reference/analytics,
+     not something that needs action today. Grouped and pushed below the
+     "needs attention" widgets via CSS order (same data, just reprioritized). */
+  h += '<div class="section-label" style="order:5;">Portfolio Analytics</div>';
+
   /* Row 1: Top Law Firms (donut) | Upcoming Mediation/Trial | Top Plaintiff Firms (bars) */
-  h += '<div style="display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:14px;margin-bottom:14px;">';
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:14px;margin-bottom:14px;order:6;">';
 
   /* Top 10 Law Firms - donut */
   h += '<div class="card">';
@@ -1529,7 +1638,7 @@ function litigationDashV(){
   h += '</div>';
 
   /* Row 2: Total Litigation chart | Closed Case Data | Settlement Standouts */
-  h += '<div style="display:grid;grid-template-columns:1.4fr 1.1fr 1fr;gap:14px;margin-bottom:14px;">';
+  h += '<div style="display:grid;grid-template-columns:1.4fr 1.1fr 1fr;gap:14px;margin-bottom:14px;order:7;">';
 
   /* Total Litigation chart */
   h += '<div class="card">';
@@ -1600,9 +1709,14 @@ function litigationDashV(){
   h += '</div>';
   h += '</div>';
 
+  /* Section label — these two widgets (readiness + risk flags) are the
+     things that actually need a human to do something today, so they're
+     ordered right after the KPI strip instead of near the bottom. */
+  h += '<div class="section-label" style="order:2;">Needs Attention</div>';
+
   /* Row 2b: Pending Closures — Readiness (what's blocking claims handoff) */
   const pendingCloseCandidates = CASES.filter(c => c.status !== 'Closed' && (c.status === 'Closing' || (c.closing && c.closing.dispositionType)));
-  h += '<div class="card" style="margin-bottom:14px;">';
+  h += '<div class="card" style="margin-bottom:14px;order:4;">';
   h += '<div class="sh"><span>Pending Closures — Readiness for Claims Handoff</span><span style="color:var(--dim);font-weight:500;">'+pendingCloseCandidates.length+' in the pipeline</span></div>';
   if (pendingCloseCandidates.length === 0) {
     h += '<div style="padding:16px;text-align:center;color:var(--muted);font-size:12px;">No matters currently in the closing pipeline.</div>';
@@ -1628,7 +1742,7 @@ function litigationDashV(){
   h += '</div>';
 
   /* Row 3: Risk flags + Stage breakdown + CCI distribution */
-  h += '<div style="display:grid;grid-template-columns:1fr 1.5fr 1fr;gap:14px;margin-bottom:14px;">';
+  h += '<div style="display:grid;grid-template-columns:1fr 1.5fr 1fr;gap:14px;margin-bottom:14px;order:3;">';
 
   /* Risk flags */
   h += '<div class="card">';
@@ -1683,7 +1797,7 @@ function litigationDashV(){
   h += '</div>';
 
   /* Open Matters Table */
-  h += '<div class="card">';
+  h += '<div class="card" style="order:8;">';
   h += '<div class="sh"><span>All Open Matters — '+open.length+' active</span><span style="display:flex;gap:8px;"><span class="muted-link" onclick="st({role:\'reports\'})">Generate Report →</span></span></div>';
   h += '<div style="overflow-x:auto;"><table>';
   h += '<thead><tr><th>Matter #</th><th>Client</th><th>Type</th><th>Carrier</th><th>Stage</th><th>Track</th><th>Fav</th><th>CCI</th><th>Reserve</th><th>Exposure</th><th>SOL</th><th>Atty</th></tr></thead><tbody>';
@@ -3997,11 +4111,12 @@ function runApiConsole(){
 /* ── CASE WORKSPACE ────────────────────────────────────── */
 function ws(){
   const c = gc(); if (!c) return '';
-  const tabs = [
-    ['overview','Overview'],['claimfacts','Claim Facts'],['court','Court'],['insurance','Insurance'],
-    ['dates','Key Dates'],['exposure','Exposure'],['evidence','Evidence'],['experts','Experts'],
-    ['settlement','Settlement'],['closing','Closing & Handoff'],['billing','Billing'],['tasks','Tasks'],['documents','Documents'],
-    ['audit','Audit Trail'],['ai','AI Assistant']
+  const tabGroups = [
+    { label:'Matter Info', tabs:[['overview','Overview'],['claimfacts','Claim Facts'],['court','Court'],['insurance','Insurance'],['dates','Key Dates']] },
+    { label:'Financials', tabs:[['exposure','Exposure'],['billing','Billing']] },
+    { label:'Evidence', tabs:[['evidence','Evidence'],['experts','Experts']] },
+    { label:'Resolution', tabs:[['settlement','Settlement'],['closing','Closing & Handoff']] },
+    { label:'Records', tabs:[['tasks','Tasks'],['documents','Documents'],['audit','Audit Trail'],['ai','AI Assistant']] }
   ];
   const idx = cci(c);
   let h = '<div class="modal-bg" onclick="if(event.target===this)st({caseId:null})">';
@@ -4021,8 +4136,14 @@ function ws(){
   h += '<div style="font-size:12px;color:var(--muted);margin-top:3px;">'+esc(c.type)+' · '+esc(c.attorney)+' · '+esc(c.litigationStage||c.status)+' · Filed '+esc(c.filed)+' · '+daysOpen(c)+' days open</div>';
   h += '</div>';
   h += '<button class="x" onclick="st({caseId:null})">×</button></div>';
-  h += '<div class="tab-bar">';
-  tabs.forEach(([k,l]) => h += '<button class="tab-btn '+(S.tab===k?'on':'')+'" onclick="st({tab:\''+k+'\'})">'+l+'</button>');
+  h += '<div class="tab-bar" style="align-items:flex-start;">';
+  tabGroups.forEach((g, gi) => {
+    h += '<div style="display:flex;flex-direction:column;gap:4px;'+(gi>0?'border-left:1px solid var(--line);padding-left:11px;margin-left:5px;':'')+'">';
+    h += '<div style="font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--dim);padding-left:1px;white-space:nowrap;">'+g.label+'</div>';
+    h += '<div style="display:flex;gap:4px;flex-wrap:wrap;">';
+    g.tabs.forEach(([k,l]) => h += '<button class="tab-btn '+(S.tab===k?'on':'')+'" onclick="st({tab:\''+k+'\'})">'+l+'</button>');
+    h += '</div></div>';
+  });
   h += '</div></div>';
   h += '<div class="modal-b">';
   if (S.tab === 'overview') h += tabOverview(c);
@@ -5148,6 +5269,23 @@ function randomizeDemoData(){
 
 /* ── INITIALIZE ────────────────────────────────────────── */
 if (!API_BASE) randomizeDemoData(); // hard gate — never runs against a real connected backend
+
+// One-time check: if this page load came from a "?verifyToken=..."
+// email link, confirm it against the backend immediately, whether
+// or not the person happens to be logged in right now.
+if (API_BASE && S._verifyTokenFromUrl) {
+  fetch(API_BASE + '/api/auth/verify-email?token=' + encodeURIComponent(S._verifyTokenFromUrl))
+    .then(r => r.json().then(data => ({ ok: r.ok, data })))
+    .then(({ ok, data }) => {
+      S.verifyEmailResult = { success: ok, message: ok ? (data.message || 'Email verified.') : (data.error || 'Verification failed.') };
+      if (ok && S.currentUser) S.currentUser.emailVerified = true;
+      render();
+    })
+    .catch(() => {
+      S.verifyEmailResult = { success: false, message: 'Could not reach the server to verify your email.' };
+      render();
+    });
+}
 render();
 
 </script>
