@@ -763,6 +763,10 @@ let S = {
   show2FAPrompt: false, _pending2FAToken: '',
   showForgotPassword: false, forgotStatus: '',
   _resetTokenFromUrl: (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('resetToken')) || '',
+  _inviteTokenFromUrl: (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('inviteToken')) || '',
+  showTeamModal: false, teamLoading: false, teamError: '', teamMembers: null, teamPendingInvites: null,
+  showInviteForm: false, inviteLoading: false, inviteError: '', inviteResult: null,
+  acceptInviteStatus: '', acceptInviteSuccess: false,
   resetStatus: '', resetSuccess: false,
   showSecurityModal: false, securityLoading: false, securityError: '', security2FASetup: null, security2FABackupCodes: null,
   scorecardDetail: null,
@@ -941,6 +945,10 @@ function render(){
     document.getElementById('app').innerHTML = resetPasswordScreenV();
     return;
   }
+  if (S._inviteTokenFromUrl && !S.isAuthenticated) {
+    document.getElementById('app').innerHTML = acceptInviteScreenV();
+    return;
+  }
   if (!S.isAuthenticated) {
     if (S.show2FAPrompt) {
       document.getElementById('app').innerHTML = twoFactorPromptV();
@@ -980,6 +988,7 @@ function render(){
   if (S.showReportPreview) html += reportPreviewModal();
   if (S.showEmailModal) html += emailReportModal();
   if (S.showSecurityModal) html += securityModalV();
+  if (S.showTeamModal) html += teamModalV();
   if (S.showCreateOrgModal) html += createOrgModalV();
   document.getElementById('app').innerHTML = html;
 }
@@ -1051,6 +1060,7 @@ function userMenuHtml(){
         '</div>'+
         '<div onclick="goToBilling()" style="padding:10px 14px;font-size:12.5px;cursor:pointer;color:var(--ink);">Plan &amp; Billing</div>'+
         '<div onclick="st({showSecurityModal:true,showUserMenu:false,securityError:\'\'})" style="padding:10px 14px;font-size:12.5px;cursor:pointer;color:var(--ink);">Security &amp; 2FA</div>'+
+        '<div onclick="openTeamModal()" style="padding:10px 14px;font-size:12.5px;cursor:pointer;color:var(--ink);">Team Members</div>'+
         '<div onclick="logout()" style="padding:10px 14px;font-size:12.5px;cursor:pointer;color:var(--red);border-top:1px solid var(--surf3);">Sign Out</div>'+
       '</div>'
     ) : '')+
@@ -2891,6 +2901,173 @@ async function disable2FA(){
     st({securityLoading:false, showSecurityModal:false});
   } catch (e) {
     st({securityLoading:false, securityError:e.message});
+  }
+}
+
+/* ── TEAM MEMBERS ───────────────────────────────────────────
+   Closes the gap where the only ways to get an account were
+   self-registering into a brand new org, or being provisioned by a
+   platform admin. Any signed-in member can view their own team;
+   inviting/removing requires admin or owner (enforced server-side —
+   these buttons just don't render for a plain member, they're not
+   the actual security boundary). */
+function canManageTeam(){
+  return S.currentUser?.platformAdmin || ['owner','admin'].includes(S.currentUser?.role);
+}
+function isOwner(){
+  return S.currentUser?.platformAdmin || S.currentUser?.role === 'owner';
+}
+function openTeamModal(){
+  st({showTeamModal:true, showUserMenu:false, teamError:'', showInviteForm:false, inviteResult:null});
+  if (API_BASE && authToken) fetchTeamMembers();
+}
+async function fetchTeamMembers(){
+  st({teamLoading:true, teamError:''});
+  try {
+    const data = await apiFetch('/api/team/members');
+    st({teamMembers:data.members, teamPendingInvites:data.pendingInvites, teamLoading:false});
+  } catch (e) {
+    st({teamError:e.message, teamLoading:false});
+  }
+}
+async function submitInvite(){
+  const email = (window._inviteEmail||'').trim();
+  const role = window._inviteRole || 'member';
+  if (!email || !email.includes('@')) { st({inviteError:'Enter a valid email address.'}); return; }
+  st({inviteLoading:true, inviteError:''});
+  try {
+    const data = await apiFetch('/api/team/invite', { method:'POST', body: JSON.stringify({ email, role }) });
+    st({inviteLoading:false, inviteResult:data, showInviteForm:false});
+    window._inviteEmail = '';
+    fetchTeamMembers();
+  } catch (e) {
+    st({inviteLoading:false, inviteError:e.message});
+  }
+}
+async function removeMember(id, name){
+  if (!confirm('Remove '+name+' from your team? They\'ll lose access immediately.')) return;
+  try {
+    await apiFetch('/api/team/members/'+id+'/remove', { method:'POST' });
+    fetchTeamMembers();
+  } catch (e) {
+    alert('Could not remove: ' + e.message);
+  }
+}
+async function changeRole(id, role){
+  try {
+    await apiFetch('/api/team/members/'+id+'/role', { method:'POST', body: JSON.stringify({ role }) });
+    fetchTeamMembers();
+  } catch (e) {
+    alert('Could not update role: ' + e.message);
+  }
+}
+
+function teamModalV(){
+  let h = '<div class="modal-bg" onclick="if(event.target===this)st({showTeamModal:false})">';
+  h += '<div class="modal" style="max-width:560px;">';
+  h += '<div class="modal-h"><div class="serif" style="font-size:18px;font-weight:700;">👥 Team Members</div>';
+  h += '<button class="x" onclick="st({showTeamModal:false})">×</button></div>';
+  h += '<div class="modal-b">';
+
+  if (!API_BASE) {
+    h += '<div class="alert-warn">This demo isn\'t connected to a real backend, so there\'s no real team to show. Connect <code>window.CCP_API_BASE</code> — see SETUP.md.</div></div></div></div>';
+    return h;
+  }
+
+  if (S.inviteResult) {
+    h += '<div class="alert-good" style="margin-bottom:14px;">Invite sent to '+esc(S.inviteResult.email)+'.</div>';
+    h += '<div style="font-size:11px;color:var(--muted);margin-bottom:6px;">If email isn\'t configured on the server yet, share this link directly:</div>';
+    h += '<div style="background:var(--surf2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:11px;font-family:monospace;word-break:break-all;margin-bottom:14px;">'+esc(S.inviteResult.inviteUrl)+'</div>';
+    h += '<button class="btn btn-out" style="width:100%;justify-content:center;" onclick="st({inviteResult:null})">Done</button>';
+    h += '</div></div></div>';
+    return h;
+  }
+
+  if (canManageTeam()) {
+    if (!S.showInviteForm) {
+      h += '<button class="btn btn-pri" style="width:100%;justify-content:center;margin-bottom:16px;" onclick="st({showInviteForm:true,inviteError:\'\'})">+ Invite Teammate</button>';
+    } else {
+      h += '<div style="background:var(--surf2);border-radius:9px;padding:14px;margin-bottom:16px;">';
+      h += inp('Email', '', 'window._inviteEmail=this.value', 'email', 'placeholder="colleague@yourcompany.com"');
+      h += sel('Role', 'window._inviteRole=this.value', ['member','admin'], 'member');
+      if (S.inviteError) h += '<div class="alert-bad" style="margin-top:8px;">'+esc(S.inviteError)+'</div>';
+      h += '<div style="display:flex;gap:8px;margin-top:10px;">';
+      h += '<button class="btn btn-out" onclick="st({showInviteForm:false})">Cancel</button>';
+      h += '<button class="btn btn-pri" style="flex:1;" onclick="submitInvite()" '+(S.inviteLoading?'disabled':'')+'>'+(S.inviteLoading?'Sending…':'Send Invite')+'</button>';
+      h += '</div></div>';
+    }
+  }
+
+  if (S.teamLoading && !S.teamMembers) {
+    h += '<div style="text-align:center;padding:20px;color:var(--muted);">Loading team…</div>';
+  } else if (S.teamError) {
+    h += '<div class="alert-bad">'+esc(S.teamError)+'</div>';
+  } else {
+    const members = S.teamMembers || [];
+    h += '<div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px;">'+members.length+' Member'+(members.length!==1?'s':'')+'</div>';
+    members.forEach(m => {
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--surf2);">';
+      h += '<div><div style="font-weight:700;font-size:12.5px;">'+esc(m.name)+(m.email===S.currentUser?.email?' <span style="color:var(--dim);font-weight:500;">(you)</span>':'')+'</div>';
+      h += '<div style="font-size:11px;color:var(--muted);">'+esc(m.email)+'</div></div>';
+      h += '<div style="display:flex;align-items:center;gap:8px;">';
+      h += '<span class="tag" style="background:'+(m.role==='owner'?'var(--gold)':m.role==='admin'?'var(--pri2)':'var(--surf3)')+'18;color:'+(m.role==='owner'?'var(--gold)':m.role==='admin'?'var(--pri2)':'var(--muted)')+';text-transform:capitalize;">'+esc(m.role)+'</span>';
+      if (isOwner() && m.role !== 'owner' && m.email !== S.currentUser?.email) {
+        h += '<button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;" onclick="changeRole(\''+m.id+'\',\''+(m.role==='admin'?'member':'admin')+'\')">'+(m.role==='admin'?'Make Member':'Make Admin')+'</button>';
+      }
+      if (canManageTeam() && m.role !== 'owner' && m.email !== S.currentUser?.email) {
+        h += '<button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;color:var(--red);" onclick="removeMember(\''+m.id+'\',\''+escAttr(m.name)+'\')">Remove</button>';
+      }
+      h += '</div></div>';
+    });
+
+    const pending = S.teamPendingInvites || [];
+    if (pending.length) {
+      h += '<div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:16px 0 8px;">Pending Invites</div>';
+      pending.forEach(p => {
+        h += '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--surf2);font-size:12px;"><span>'+esc(p.email)+'</span><span class="tag" style="background:var(--surf3);">Invited</span></div>';
+      });
+    }
+  }
+  h += '</div></div></div>';
+  return h;
+}
+
+/* ── ACCEPT TEAM INVITE ─────────────────────────────────────
+   Reached via ?inviteToken=... in the URL — mirrors the reset-
+   password screen's shape, but on success logs the new user
+   straight in rather than sending them back to a plain sign-in form. */
+function acceptInviteScreenV(){
+  let h = '<div style="min-height:100vh;background:linear-gradient(160deg,#001C41 0%,#012a5e 45%,#0056D2 130%);display:flex;align-items:center;justify-content:center;padding:24px;">';
+  h += '<div style="width:100%;max-width:400px;">';
+  h += '<div class="card" style="padding:30px 28px;">';
+  h += '<div class="serif" style="font-size:20px;font-weight:700;color:var(--ink);margin-bottom:6px;">You\'ve been invited</div>';
+  h += '<div style="font-size:12.5px;color:var(--muted);margin-bottom:22px;">Set your name and a password to join your team\'s workspace.</div>';
+  if (S.acceptInviteStatus) {
+    h += '<div class="'+(S.acceptInviteSuccess?'alert-good':'alert-bad')+'" style="margin-bottom:16px;">'+esc(S.acceptInviteStatus)+'</div>';
+  }
+  if (!S.acceptInviteSuccess) {
+    h += inp('Your Name', '', 'window._acceptName=this.value', 'text', 'placeholder="Jane Doe"');
+    h += inp('Password', '', 'window._acceptPassword=this.value', 'password', 'placeholder="At least 8 characters"');
+    h += '<button onclick="submitAcceptInvite()" class="btn btn-pri" style="width:100%;justify-content:center;padding:11px;margin-top:6px;" '+(S.loginLoading?'disabled':'')+'>'+(S.loginLoading?'Joining…':'Accept Invite &amp; Sign In')+'</button>';
+  }
+  h += '</div></div></div>';
+  return h;
+}
+async function submitAcceptInvite(){
+  const name = (window._acceptName||'').trim();
+  const password = window._acceptPassword || '';
+  if (!name) { st({acceptInviteStatus:'Enter your name.', acceptInviteSuccess:false}); return; }
+  if (!password || password.length < 8) { st({acceptInviteStatus:'Password must be at least 8 characters.', acceptInviteSuccess:false}); return; }
+  if (!API_BASE) { st({acceptInviteStatus:'This demo isn\'t connected to a real backend, so there\'s no invite to accept.', acceptInviteSuccess:false}); return; }
+  st({loginLoading:true});
+  try {
+    const data = await apiFetch('/api/team/accept-invite', { method:'POST', body: JSON.stringify({ token:S._inviteTokenFromUrl, name, password }) });
+    completeLoginSession(data);
+    S._inviteTokenFromUrl = '';
+    await loadCasesFromApi();
+    render();
+  } catch (e) {
+    st({loginLoading:false, acceptInviteStatus:e.message, acceptInviteSuccess:false});
   }
 }
 
