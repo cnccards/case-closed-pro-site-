@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Attorney Scorecards V3 — Case Closed Pro</title>
+  <link rel="stylesheet" href="/css/enhanced_scorecard_styles.css">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    html{scroll-behavior:smooth;}
+    body{background:#F3F5FA;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#0F172A;line-height:1.5;}
+    
+    nav{position:sticky;top:0;z-index:40;background:rgba(255,255,255,0.95);backdrop-filter:blur(10px);border-bottom:1px solid #E5E7EB;padding:14px 32px;}
+    .nav-in{max-width:1180px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;}
+    .brand{display:flex;align-items:center;gap:11px;font-weight:700;font-size:16px;}
+    .brand-mark{width:32px;height:32px;background:linear-gradient(135deg,#001C41,#0056D2);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;}
+    .nav-links{display:flex;gap:28px;font-size:13.5px;font-weight:500;color:#6B7280;}
+    .nav-links a{text-decoration:none;color:inherit;cursor:pointer;}
+    .nav-links a:hover{color:#001C41;}
+    .nav-links a.active{color:#001C41;font-weight:700;}
+    
+    .container{max-width:1180px;margin:0 auto;padding:40px 32px;}
+    .page-head{margin-bottom:40px;}
+    .page-head h1{font-size:32px;font-weight:700;margin-bottom:8px;}
+    .page-head p{color:#6B7280;font-size:15px;line-height:1.6;}
+    
+    .demo-notice{background:#FFF3CD;border:1px solid #FFC107;color:#856404;padding:14px 16px;border-radius:8px;margin-bottom:30px;font-size:13px;line-height:1.5;}
+    
+    .tabs-container{display:flex;gap:8px;margin-bottom:32px;flex-wrap:wrap;border-bottom:2px solid #E5E7EB;padding-bottom:0;}
+    .tab-btn{padding:12px 18px;background:transparent;border:none;font-size:13px;font-weight:600;color:#6B7280;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all 0.2s;}
+    .tab-btn:hover{color:#001C41;}
+    .tab-btn.active{color:#0056D2;border-bottom-color:#0056D2;}
+    
+    .tab-content{display:none;}
+    .tab-content.active{display:block;}
+    
+    .loading{text-align:center;padding:60px 20px;color:#6B7280;font-size:14px;}
+    .error{background:#FEE2E2;border:1px solid #FCA5A5;color:#991B1B;padding:16px;border-radius:8px;margin:20px 0;}
+    
+    .scorecards-container{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:24px;margin-top:24px;}
+    
+    @media(max-width:720px){
+      nav{padding:14px 20px;}
+      .container{padding:24px 20px;}
+      .tabs-container{gap:4px;padding-bottom:8px;}
+      .tab-btn{padding:10px 12px;font-size:12px;}
+      .scorecards-container{grid-template-columns:1fr;}
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAVIGATION -->
+<nav>
+  <div class="nav-in">
+    <div class="brand">
+      <div class="brand-mark">CC</div>
+      <span>Case Closed Pro</span>
+    </div>
+    <div class="nav-links">
+      <a href="case-closed-pro.html">Litigation</a>
+      <a href="case-closed-pro.html">My Cases</a>
+      <a href="case-closed-pro.html">Reports</a>
+      <a href="dashboard.html">Executive</a>
+      <a href="scorecards-v3.html" class="active">Scorecards</a>
+    </div>
+  </div>
+</nav>
+
+<!-- MAIN CONTENT -->
+<div class="container">
+  
+  <!-- PAGE HEADER -->
+  <div class="page-head">
+    <h1>Attorney Scorecards — V3</h1>
+    <p>Litigation Excellence Score (LES) with 14 enhancements: historical trends, specialization detection, risk indicators, goal tracking, mentor network, billing metrics, adjuster satisfaction, and comprehensive performance analytics.</p>
+  </div>
+  
+  <!-- DEMO NOTICE -->
+  <div class="demo-notice">
+    ℹ️ You're viewing a live demo with sample data — nothing here is a real customer's.
+  </div>
+  
+  <!-- TABS -->
+  <div class="tabs-container">
+    <button class="tab-btn active" onclick="switchTab('overview')">📊 Overview</button>
+    <button class="tab-btn" onclick="switchTab('table')">📋 Table View</button>
+    <button class="tab-btn" onclick="switchTab('analytics')">📈 Analytics</button>
+    <button class="tab-btn" onclick="switchTab('specialization')">🏆 Specialization</button>
+    <button class="tab-btn" onclick="switchTab('risk')">⚠️ Risk Indicators</button>
+  </div>
+  
+  <!-- TAB CONTENT: OVERVIEW -->
+  <div id="overview" class="tab-content active">
+    <div id="scorecards-overview" class="loading">Loading scorecards...</div>
+  </div>
+  
+  <!-- TAB CONTENT: TABLE -->
+  <div id="table" class="tab-content">
+    <div id="scorecards-table" class="loading">Loading table view...</div>
+  </div>
+  
+  <!-- TAB CONTENT: ANALYTICS -->
+  <div id="analytics" class="tab-content">
+    <div id="scorecards-analytics" class="loading">Loading analytics...</div>
+  </div>
+  
+  <!-- TAB CONTENT: SPECIALIZATION -->
+  <div id="specialization" class="tab-content">
+    <div id="scorecards-specialization" class="loading">Loading specialization data...</div>
+  </div>
+  
+  <!-- TAB CONTENT: RISK -->
+  <div id="risk" class="tab-content">
+    <div id="scorecards-risk" class="loading">Loading risk indicators...</div>
+  </div>
+  
+</div>
+
+<!-- LOAD SCRIPTS -->
+<script src="/js/scorecard_helpers.js"></script>
+<script src="/js/enhanced_scorecard_ui_v3.js"></script>
+<script src="/js/frontend_permission_check.js"></script>
+
+<script>
+// Sample V3 Demo Data - Structured for full 14-enhancement system
+const V3_DEMO_DATA = {
+  ATTY: [
+    { 
+      id: 1,
+      name: 'Marcus Richardson', 
+      title: 'Senior Litigation Counsel',
+      specialty: 'Medical Malpractice',
+      email: 'marcus.richardson@firm.com',
+      hourlyRate: 350
+    },
+    { 
+      id: 2,
+      name: 'Elena Patel', 
+      title: 'Attorney',
+      specialty: 'Products Liability',
+      email: 'elena.patel@firm.com',
+      hourlyRate: 340
+    },
+    { 
+      id: 3,
+      name: 'Sophia Chen', 
+      title: 'Attorney',
+      specialty: 'Business Litigation',
+      email: 'sophia.chen@firm.com',
+      hourlyRate: 335
+    },
+    { 
+      id: 4,
+      name: 'David Martinez', 
+      title: 'Junior Attorney',
+      specialty: 'Premises Liability',
+      email: 'david.martinez@firm.com',
+      hourlyRate: 280
+    },
+    { 
+      id: 5,
+      name: 'James Wilson', 
+      title: 'Senior Attorney',
+      specialty: 'Employment Law',
+      email: 'james.wilson@firm.com',
+      hourlyRate: 425
+    }
+  ],
+  
+  CASES: [
+    // Marcus Richardson cases
+    { id: 'C-001', attorney: 'Marcus Richardson', type: 'Medical Malpractice', value: 850000, status: 'Trial', filed: new Date('2024-01-15'), outcome: 'Won', cci: 65, clientSatisfaction: 9, daysOpen: 220, reserve: 750000, billed: 82500, collected: 78375, matterType: 'Medical Malpractice', claimsAdjuster: 'Sarah Morrison' },
+    { id: 'C-002', attorney: 'Marcus Richardson', type: 'Medical Malpractice', value: 450000, status: 'Closed', filed: new Date('2023-06-01'), outcome: 'Won', cci: 72, clientSatisfaction: 9, daysOpen: 195, reserve: 420000, billed: 45000, collected: 43200, matterType: 'Medical Malpractice', claimsAdjuster: 'Sarah Morrison' },
+    { id: 'C-003', attorney: 'Marcus Richardson', type: 'Medical Malpractice', value: 620000, status: 'Settlement', filed: new Date('2023-10-10'), outcome: 'Settled', cci: 58, clientSatisfaction: 8, daysOpen: 182, reserve: 580000, billed: 61000, collected: 58160, matterType: 'Medical Malpractice', claimsAdjuster: 'Sarah Morrison' },
+    
+    // Elena Patel cases
+    { id: 'C-004', attorney: 'Elena Patel', type: 'Product Liability', value: 620000, status: 'Discovery', filed: new Date('2024-02-20'), outcome: null, cci: 58, clientSatisfaction: 8, daysOpen: 183, reserve: 600000, billed: 45000, collected: 42750, matterType: 'Products Liability', claimsAdjuster: 'John Chen' },
+    { id: 'C-005', attorney: 'Elena Patel', type: 'Product Liability', value: 380000, status: 'Closed', filed: new Date('2023-08-15'), outcome: 'Won', cci: 68, clientSatisfaction: 8, daysOpen: 156, reserve: 350000, billed: 38000, collected: 36100, matterType: 'Products Liability', claimsAdjuster: 'John Chen' },
+    { id: 'C-006', attorney: 'Elena Patel', type: 'Product Liability', value: 520000, status: 'Motion', filed: new Date('2023-11-01'), outcome: null, cci: 72, clientSatisfaction: 8, daysOpen: 134, reserve: 480000, billed: 40000, collected: 38000, matterType: 'Products Liability', claimsAdjuster: 'John Chen' },
+    
+    // Sophia Chen cases
+    { id: 'C-007', attorney: 'Sophia Chen', type: 'Business Litigation', value: 440000, status: 'Motion', filed: new Date('2024-03-10'), outcome: null, cci: 45, clientSatisfaction: 8, daysOpen: 165, reserve: 400000, billed: 35000, collected: 33250, matterType: 'Business Litigation', claimsAdjuster: 'Michelle Johnson' },
+    { id: 'C-008', attorney: 'Sophia Chen', type: 'Business Litigation', value: 360000, status: 'Closed', filed: new Date('2023-09-20'), outcome: 'Won', cci: 61, clientSatisfaction: 8, daysOpen: 168, reserve: 340000, billed: 36000, collected: 34560, matterType: 'Business Litigation', claimsAdjuster: 'Michelle Johnson' },
+    { id: 'C-009', attorney: 'Sophia Chen', type: 'Contract Dispute', value: 290000, status: 'Settlement', filed: new Date('2023-10-05'), outcome: 'Settled', cci: 52, clientSatisfaction: 7, daysOpen: 145, reserve: 270000, billed: 29000, collected: 26100, matterType: 'Business Litigation', claimsAdjuster: 'Michelle Johnson' },
+    
+    // David Martinez cases
+    { id: 'C-010', attorney: 'David Martinez', type: 'Premises Liability', value: 1200000, status: 'Trial', filed: new Date('2024-01-05'), outcome: null, cci: 70, clientSatisfaction: 7, daysOpen: 240, reserve: 1100000, billed: 85000, collected: 80750, matterType: 'Premises Liability', claimsAdjuster: 'Thomas Williams' },
+    { id: 'C-011', attorney: 'David Martinez', type: 'Premises Liability', value: 310000, status: 'Closed', filed: new Date('2023-07-10'), outcome: 'Won', cci: 74, clientSatisfaction: 7, daysOpen: 189, reserve: 300000, billed: 31000, collected: 29450, matterType: 'Premises Liability', claimsAdjuster: 'Thomas Williams' },
+    { id: 'C-012', attorney: 'David Martinez', type: 'Slip & Fall', value: 185000, status: 'Settlement', filed: new Date('2023-11-15'), outcome: 'Settled', cci: 68, clientSatisfaction: 6, daysOpen: 127, reserve: 175000, billed: 18500, collected: 16650, matterType: 'Premises Liability', claimsAdjuster: 'Thomas Williams' },
+    
+    // James Wilson cases
+    { id: 'C-013', attorney: 'James Wilson', type: 'Employment', value: 320000, status: 'Closed', filed: new Date('2023-12-01'), outcome: 'Settled', cci: 52, clientSatisfaction: 6, daysOpen: 245, reserve: 300000, billed: 32000, collected: 28160, matterType: 'Employment Law', claimsAdjuster: 'Patricia Davis' },
+    { id: 'C-014', attorney: 'James Wilson', type: 'Employment', value: 480000, status: 'Discovery', filed: new Date('2024-02-01'), outcome: null, cci: 58, clientSatisfaction: 5, daysOpen: 202, reserve: 450000, billed: 35000, collected: 29750, matterType: 'Employment Law', claimsAdjuster: 'Patricia Davis' },
+    { id: 'C-015', attorney: 'James Wilson', type: 'Wrongful Termination', value: 550000, status: 'Motion', filed: new Date('2023-10-20'), outcome: null, cci: 48, clientSatisfaction: 6, daysOpen: 275, reserve: 520000, billed: 42000, collected: 35700, matterType: 'Employment Law', claimsAdjuster: 'Patricia Davis' }
+  ],
+  
+  RATINGS: {
+    'Marcus Richardson': 88,
+    'Elena Patel': 85,
+    'Sophia Chen': 83,
+    'David Martinez': 78,
+    'James Wilson': 72
+  },
+  
+  // Enhancement data
+  MENTOR_PAIRS: [
+    { mentor: 'Marcus Richardson', mentee: 'David Martinez' },
+    { mentor: 'Elena Patel', mentee: 'Ryan Chen' }
+  ],
+  
+  ADJUSTERS: {
+    'Marcus Richardson': { preferences: ['Sarah Morrison', 'John Chen'], satisfaction: 4.7 },
+    'Elena Patel': { preferences: ['John Chen', 'Michelle Johnson'], satisfaction: 4.5 },
+    'Sophia Chen': { preferences: ['Michelle Johnson', 'Thomas Williams'], satisfaction: 4.3 },
+    'David Martinez': { preferences: ['Thomas Williams', 'Patricia Davis'], satisfaction: 4.1 },
+    'James Wilson': { preferences: ['Patricia Davis', 'Sarah Morrison'], satisfaction: 3.8 }
+  },
+  
+  HISTORICAL_SCORES: {
+    'Marcus Richardson': [72, 74, 76, 78, 80, 82, 84, 86, 87, 88],
+    'Elena Patel': [76, 77, 78, 80, 81, 82, 83, 84, 85],
+    'Sophia Chen': [70, 71, 72, 74, 76, 78, 80, 82, 83],
+    'David Martinez': [68, 69, 71, 72, 74, 75, 76, 77, 78],
+    'James Wilson': [65, 65, 66, 67, 68, 69, 70, 71, 72]
+  }
+};
+
+// Initialize when DOM loads
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('✅ V3 Scorecard page loaded');
+  console.log('V3_DEMO_DATA:', V3_DEMO_DATA);
+  
+  // Try to load V3 component
+  if (typeof scorecardV === 'function') {
+    console.log('✅ Enhanced Scorecard V3 component loaded');
+    renderV3Scorecards();
+  } else {
+    console.warn('⚠️ V3 component not found, showing fallback');
+    renderFallbackUI();
+  }
+});
+
+function renderV3Scorecards() {
+  try {
+    // Render Overview tab with V3 component
+    const overviewHtml = scorecardV(
+      V3_DEMO_DATA.ATTY, 
+      V3_DEMO_DATA.CASES, 
+      V3_DEMO_DATA.RATINGS,
+      V3_DEMO_DATA
+    );
+    
+    if (overviewHtml) {
+      document.getElementById('scorecards-overview').innerHTML = overviewHtml;
+      console.log('✅ V3 scorecards rendered');
+    } else {
+      renderFallbackUI();
+    }
+  } catch (e) {
+    console.error('❌ Error rendering V3:', e);
+    renderFallbackUI();
+  }
+  
+  // Populate other tabs with explanatory content for now
+  document.getElementById('scorecards-table').innerHTML = `
+    <div style="padding: 40px 20px; background: #fff; border-radius: 8px; border: 1px solid #E5E7EB;">
+      <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 12px;">📋 Attorney Comparison Table</h3>
+      <p style="color: #6B7280; line-height: 1.6;">
+        Sortable table view showing all attorneys with key metrics:<br/>
+        LES Score, Grade, Cases, Win Rate, Revenue, Specialization, and Status
+      </p>
+    </div>
+  `;
+  
+  document.getElementById('scorecards-analytics').innerHTML = `
+    <div style="padding: 40px 20px; background: #fff; border-radius: 8px; border: 1px solid #E5E7EB;">
+      <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 12px;">📈 Performance Analytics</h3>
+      <p style="color: #6B7280; line-height: 1.6;">
+        Historical trends, performance distribution, outcome analysis, and tier breakdown<br/>
+        Shows 12-month LES trajectory, win rate trends, case outcomes, and portfolio composition
+      </p>
+    </div>
+  `;
+  
+  document.getElementById('scorecards-specialization').innerHTML = `
+    <div style="padding: 40px 20px; background: #fff; border-radius: 8px; border: 1px solid #E5E7EB;">
+      <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 12px;">🏆 Specialization & Expertise</h3>
+      <p style="color: #6B7280; line-height: 1.6;">
+        Auto-detected specializations based on case history and performance<br/>
+        Medical Malpractice, Products Liability, Business Litigation, Premises Liability, Employment Law
+      </p>
+    </div>
+  `;
+  
+  document.getElementById('scorecards-risk').innerHTML = `
+    <div style="padding: 40px 20px; background: #fff; border-radius: 8px; border: 1px solid #E5E7EB;">
+      <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 12px;">⚠️ Risk Indicators & Alerts</h3>
+      <p style="color: #6B7280; line-height: 1.6;">
+        Early warning system for performance issues:<br/>
+        Aging cases (180+ days), low win rates, reserve accuracy issues, declining satisfaction scores
+      </p>
+    </div>
+  `;
+}
+
+function renderFallbackUI() {
+  const html = `
+    <div style="padding: 40px 20px; background: #fff; border-radius: 8px; border: 1px solid #E5E7EB;">
+      <div style="text-align: center; color: #6B7280;">
+        <p style="font-size: 14px; margin-bottom: 20px;">V3 component not loaded yet. Showing scorecard data:</p>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; text-align: left;">
+          ${V3_DEMO_DATA.ATTY.map(atty => {
+            const score = V3_DEMO_DATA.RATINGS[atty.name];
+            const grade = score >= 90 ? 'A+' : score >= 85 ? 'A' : score >= 80 ? 'A-' : score >= 75 ? 'B+' : 'B';
+            const cases = V3_DEMO_DATA.CASES.filter(c => c.attorney === atty.name);
+            const wins = cases.filter(c => c.outcome === 'Won').length;
+            const winRate = cases.length > 0 ? Math.round((wins / cases.length) * 100) : 0;
+            
+            return `
+              <div style="background: #F9FAFB; padding: 16px; border-radius: 8px; border: 1px solid #E5E7EB;">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+                  <div>
+                    <h4 style="font-size: 14px; font-weight: 700; margin-bottom: 2px;">${atty.name}</h4>
+                    <p style="font-size: 11px; color: #9CA3AF;">${atty.specialty}</p>
+                  </div>
+                  <div style="text-align: right;">
+                    <div style="font-size: 24px; font-weight: 700; color: #0056D2;">${score}</div>
+                    <div style="font-size: 12px; font-weight: 700; color: #059669;">${grade}</div>
+                  </div>
+                </div>
+                <div style="font-size: 11px; color: #6B7280; line-height: 1.6;">
+                  Cases: ${cases.length} • Win Rate: ${winRate}% • Portfolio: $${(cases.reduce((sum, c) => sum + c.value, 0) / 1000000).toFixed(2)}M
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+  
+  document.getElementById('scorecards-overview').innerHTML = html;
+}
+
+function switchTab(tabName) {
+  // Hide all tabs
+  document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+  
+  // Remove active class from buttons
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+  
+  // Show selected tab
+  document.getElementById(tabName).classList.add('active');
+  
+  // Mark button as active
+  event.target.classList.add('active');
+}
+</script>
+
+</body>
+</html>
