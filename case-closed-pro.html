@@ -97,7 +97,7 @@ tr.row-link{cursor:pointer;}
 .report-row{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--surf3);transition:background .12s;}
 .report-row:hover{background:var(--surf2);}
 .report-icon{width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;}
-.activity-item{display:flex;gap:11px;padding:12px 0;border-bottom:1px solid var(--surf3);}
+.activity-item{display:flex;flex-direction:column;gap:2px;padding:12px 0;border-bottom:1px solid var(--surf3);}
 .activity-dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex-shrink:0;}
 .party-card{background:var(--surf2);border:1px solid var(--line);border-radius:9px;padding:11px;margin-bottom:9px;}
 .party-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;}
@@ -143,30 +143,14 @@ textarea{min-height:60px;resize:vertical;}
 label{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:1.1px;margin-bottom:4px;display:block;font-weight:700;}
 .act-icn{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
 
-/* ── Plan & Billing calculator ───────────────────────────── */
-.calc-card{background:linear-gradient(160deg,#001C41 0%,#012a5e 45%,#0056D2 130%);border-radius:14px;padding:0;overflow:hidden;color:#fff;margin-bottom:18px;}
-.calc-card-in{padding:24px 26px;}
-.calc-live-badge{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#7FD4E8;margin-bottom:10px;}
-.calc-live-dot{width:6px;height:6px;border-radius:50%;background:#22D3EE;animation:calcPulse 1.6s infinite;}
-@keyframes calcPulse{0%,100%{opacity:1;}50%{opacity:.35;}}
-.calc-q{font-family:var(--serif);font-size:18px;font-weight:600;margin-bottom:20px;}
-.calc-row{display:flex;align-items:baseline;gap:12px;margin-bottom:4px;}
-.calc-num{font-family:var(--serif);font-size:38px;font-weight:700;letter-spacing:-1px;min-width:56px;}
-.calc-num-label{font-size:12.5px;color:#C3D4EE;}
-input[type=range].calc-slider{width:100%;height:6px;border-radius:3px;background:rgba(255,255,255,.25);appearance:none;outline:none;margin:16px 0 8px;}
-input[type=range].calc-slider::-webkit-slider-thumb{appearance:none;width:22px;height:22px;border-radius:50%;background:#00C9DB;border:4px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3);cursor:pointer;}
-input[type=range].calc-slider::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:#00C9DB;border:4px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3);cursor:pointer;border:none;}
-.calc-ticks{display:flex;justify-content:space-between;font-size:10px;color:#8FA8CC;font-weight:600;text-transform:uppercase;letter-spacing:.5px;}
-.calc-card-bottom{background:rgba(255,255,255,.08);padding:20px 26px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-top:1px solid rgba(255,255,255,.15);}
-.calc-tier-badge{padding:5px 13px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;background:#00C9DB;color:#001C41;}
-.calc-price{font-family:var(--serif);font-size:26px;font-weight:700;letter-spacing:-.5px;}
-.calc-price span{font-size:13px;font-weight:500;color:#C3D4EE;font-family:var(--sans);}
-.tier-card{background:var(--surf);border:1.5px solid var(--line);border-radius:11px;padding:20px;transition:border-color .15s,box-shadow .15s;position:relative;}
-.tier-card.active{border-color:var(--pri2);box-shadow:0 10px 26px rgba(0,86,210,.14);}
-.tier-card .tn{font-family:var(--serif);font-size:16px;font-weight:700;margin-bottom:2px;}
-.tier-card .tr{font-size:11px;color:var(--muted);margin-bottom:12px;}
-.tier-card .tp{font-family:var(--serif);font-size:22px;font-weight:700;color:var(--pri);}
-.tier-card .tp span{font-size:11px;font-weight:500;color:var(--muted);font-family:var(--sans);}
+.gsearch-wrap{position:relative;width:260px;flex:0 0 auto;}
+.gsearch-input{width:100%;padding:7px 11px 7px 30px;border:1px solid var(--line2);border-radius:20px;font-size:12px;background:var(--surf2) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="%235B6B85" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>') no-repeat 9px center;}
+.gsearch-input:focus{background-color:#fff;border-color:var(--pri2);}
+.gsearch-dropdown{position:absolute;top:36px;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 10px 30px rgba(0,10,30,.15);max-height:360px;overflow-y:auto;z-index:70;}
+.gsearch-row{padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--surf3);display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.gsearch-row:last-child{border-bottom:none;}
+.gsearch-row:hover{background:var(--surf2);}
+.gsearch-empty{padding:16px 14px;font-size:12px;color:var(--muted);text-align:center;}
 
 @media (max-width:720px){
   .hero-title{font-size:24px;}
@@ -193,6 +177,13 @@ input[type=range].calc-slider::-moz-range-thumb{width:22px;height:22px;border-ra
   }
   .nav-scroll::-webkit-scrollbar{display:none;}
   .nav-side-btn{padding:7px 10px;font-size:11px;}
+  /* Search box: fixed 260px width would force the header row to overflow
+     next to the brand mark and user avatar on a phone. Give it its own
+     full-width row underneath instead of squeezing it into the top row. */
+  .hdr-top-row{flex-wrap:wrap;}
+  .gsearch-wrap{flex:1 1 100%;width:100%;order:3;}
+  .gsearch-input{font-size:12px;padding:8px 12px 8px 30px;}
+  .notif-panel{position:fixed !important;left:12px !important;right:12px !important;top:56px !important;width:auto !important;max-width:none !important;}
 }
 
 /* Print / "Export PDF" — no library added; this is the browser's
@@ -485,6 +476,17 @@ const REPORT_TEMPLATES = [
 /* ── HELPERS ───────────────────────────────────────────────── */
 const fM = v => '$' + Number(v||0).toLocaleString();
 const fV = v => !v && v!==0 ? '—' : (v >= 1e6 ? '$' + (v/1e6).toFixed(1) + 'M' : v >= 1000 ? '$' + (v/1000).toFixed(0) + 'K' : '$' + v);
+/* Billed vs. paid can go negative (retainer, overpayment, or — in this
+   demo — synthetic data landing paid > billed for a given case). A literal
+   "$-1,000" AR figure and a "108%" collection rate both read as bugs, not
+   as "fully collected." Clamp what's shown; the raw numbers are still in
+   the data if someone needs to reconcile a credit balance. */
+const fAR = v => v < 0 ? {text:'$0', note:'credit '+fV(Math.abs(v))} : {text:fV(v), note:null};
+const fCollRate = (paid, billed) => {
+  if (!billed) return {text:'—', over:false};
+  const pct = Math.round((paid/billed)*100);
+  return pct > 100 ? {text:'100%', over:true} : {text:pct+'%', over:false};
+};
 const td = () => new Date().toISOString().slice(0,10);
 const daysOpen = c => {
   const s = new Date(c.openedDate || c.filed);
@@ -563,9 +565,49 @@ const sel = (lbl, onch, opts, cur) => {
   const o = opts.map(x => '<option'+(x===cur?' selected':'')+'>'+esc(x)+'</option>').join('');
   return '<div class="fld"><label class="lbl">'+lbl+'</label><select onchange="'+onch+'" class="inp">'+o+'</select></div>';
 };
+/* Plain type="number" inputs can't show "1,506,000" — browsers reject
+   commas in a number field. Large dollar amounts (exposure, reserves)
+   were rendering as raw unformatted digits as a result. This renders as
+   text with commas, and strips them back out on save so the stored value
+   stays a clean number. */
+const moneyVal = s => parseFloat(String(s||'').replace(/[^0-9.-]/g,'')) || 0;
+const inpMoney = (lbl, val, onchExpr) => {
+  const formatted = val || val === 0 ? Number(val).toLocaleString() : '';
+  return '<div class="fld"><label class="lbl">'+lbl+'</label><input type="text" inputmode="decimal" value="'+esc(formatted)+'" onchange="'+onchExpr+'" onblur="this.value=this.value?Number(moneyVal(this.value)).toLocaleString():\'\';" class="inp"></div>';
+};
+
 const ta = (lbl, val, onch, ph) => {
   return '<div class="fld"><label class="lbl">'+lbl+'</label><textarea onchange="'+onch+'" class="inp" placeholder="'+esc(ph||'')+'">'+esc(val||'')+'</textarea></div>';
 };
+
+/* Who does a legal-fee invoice actually get sent to? Never the platform's
+   own subscription price (that lives entirely under Plan & Billing) —
+   always a real payer on the matter: the carrier's claims adjuster (the
+   normal payer in insurance defense work), the client directly, or a
+   one-off custom contact (co-counsel, a TPA, etc). */
+function billToOptionsFor(c){
+  const opts = [];
+  if (c.insurance && (c.insurance.carrier || c.insurance.adjuster)) {
+    opts.push({
+      key:'carrier',
+      label:'Carrier / Claims Adjuster'+(c.insurance.carrier?' — '+c.insurance.carrier:''),
+      name:(c.insurance.adjuster || c.insurance.carrier || 'Claims Department'),
+      org:c.insurance.carrier||'',
+      email:c.insurance.adjusterEmail||''
+    });
+  }
+  opts.push({key:'client', label:'Client — '+(c.client||'—'), name:c.client||'', org:c.client||'', email:''});
+  opts.push({key:'custom', label:'Custom recipient…', name:'', org:'', email:''});
+  return opts;
+}
+function billToResolve(c, type){
+  const opts = billToOptionsFor(c);
+  if (type === 'custom') {
+    return {type:'custom', name:S.invBillToCustomName||'(unnamed)', org:'', email:S.invBillToCustomEmail||''};
+  }
+  const found = opts.find(o => o.key === type) || opts[0];
+  return {type:found.key, name:found.name, org:found.org, email:found.email};
+}
 
 /* ── SEED DATA ─────────────────────────────────────────────── */
 function mkC(id, cl, ty, st, pr, at, fi, dl, va, pg, cn, ca, re, adj) {
@@ -661,15 +703,15 @@ CASES[0].parties.insureds = [{id:'i1',type:'Business',first:'',last:'',business:
 CASES[0].parties.plaintiffs = [{id:'pl1',type:'Business',first:'',last:'',business:'Westside Manufacturing LLC',role:'Plaintiff'}];
 CASES[0].experts = [{id:'e1',name:'Dr. Robert Chen',type:'Damages Expert',firm:'Economic Analysis Group',phone:'212-555-0201',email:'rchen@eag.com',retained:'2025-01-15',reportDue:'2026-01-15',reportStatus:'Pending',fees:45000,notes:'Lost profits and business interruption.'}];
 CASES[0].settlements = [
-  {id:'s1',date:'2025-02-10',demand:5000000,offer:500000,mediator:'',result:'Rejected',notes:'Initial demand rejected.'},
-  {id:'s2',date:'2025-06-15',demand:3500000,offer:800000,mediator:'ADR Services',result:'Pending',notes:'Mediation scheduled September 2025.'}
+  {id:'s1',date:'2025-02-10',from:'Plaintiff',amount:5000000,notes:'Initial demand — rejected.'},
+  {id:'s2',date:'2025-06-15',from:'Defense',amount:800000,notes:'Countered via mediator (ADR Services); mediation scheduled September 2025.'}
 ];
 CASES[0].billing.timeEntries = [
-  {id:'te1',date:'2025-04-01',attorney:'Sarah Chen',hours:3.5,rate:450,code:'L310 - Written Discovery',description:'Drafted interrogatories re contract performance',amount:1575,billed:true,invoiceId:'INV-001'},
-  {id:'te2',date:'2025-04-03',attorney:'Sarah Chen',hours:2.0,rate:450,code:'L120 - Analysis/Strategy',description:'Strategy call with client re expert witnesses',amount:900,billed:true,invoiceId:'INV-001'},
-  {id:'te3',date:'2025-04-08',attorney:'Sarah Chen',hours:4.5,rate:450,code:'L330 - Depositions',description:'Deposition prep — Harmon witnesses',amount:2025,billed:false,invoiceId:''}
+  {id:'te1',date:'2025-04-01',atty:'Sarah Chen',hours:3.5,rate:450,code:'L310 - Written Discovery',desc:'Drafted interrogatories re contract performance',amount:1575,billed:true,invoiceId:'INV-001'},
+  {id:'te2',date:'2025-04-03',atty:'Sarah Chen',hours:2.0,rate:450,code:'L120 - Analysis/Strategy',desc:'Strategy call with client re expert witnesses',amount:900,billed:true,invoiceId:'INV-001'},
+  {id:'te3',date:'2025-04-08',atty:'Sarah Chen',hours:4.5,rate:450,code:'L330 - Depositions',desc:'Deposition prep — Harmon witnesses',amount:2025,billed:false,invoiceId:''}
 ];
-CASES[0].billing.invoices = [{id:'INV-001',date:'2025-04-15',period:'March 2025',fees:12600,expenses:1800,total:14400,status:'Paid',paidDate:'2025-05-01',ledesFile:'LEDES_INV001.txt'}];
+CASES[0].billing.invoices = [{number:'INV-001',date:'2025-04-15',amount:14400,entryCount:2,status:'Paid',billTo:{type:'carrier',name:CASES[0].insurance.adjuster||CASES[0].insurance.carrier||'Claims Department',org:CASES[0].insurance.carrier||'',email:CASES[0].insurance.adjusterEmail||''}}];
 CASES[0].billing.totalBilled = 14400;
 CASES[0].billing.totalPaid = 14400;
 CASES[0].billing.budget = 250000;
@@ -771,6 +813,54 @@ nextSteps.forEach((step, i) => {
   }
 });
 
+/* Every case's Documents tab was empty ("No documents indexed") since
+   the seed data never populated c.documents. Generate a realistic
+   document set per case based on what stage it's actually at — a case
+   in Trial should have expert reports and an MSJ on file, a Closed
+   case should have a settlement agreement, a Pre-Suit case shouldn't
+   have deposition transcripts that haven't happened yet. */
+function addDaysStr(dateStr, days){
+  const d = new Date(dateStr || '2024-01-01');
+  if (isNaN(d.getTime())) return '';
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0,10);
+}
+const STAGE_ORDER = ['Pre-Suit','Pleadings','Initial Discovery','Discovery','Expert Discovery','Mediation','Trial Preparation','Trial','Post-Trial Motions','Appeal','Closed'];
+CASES.forEach(c => {
+  const filed = c.filed;
+  const stageIdx = STAGE_ORDER.indexOf(c.litigationStage);
+  const atOrPast = s => stageIdx >= STAGE_ORDER.indexOf(s);
+  const docs = [];
+  docs.push({title:'Complaint', type:'Pleading', filed:filed, added:filed});
+  docs.push({title:'Reservation of Rights Letter', type:'Reservation of Rights', filed:addDaysStr(filed,10), added:addDaysStr(filed,10)});
+  docs.push({title:'Answer to Complaint', type:'Pleading', filed:addDaysStr(filed,21), added:addDaysStr(filed,21)});
+  if (atOrPast('Initial Discovery')) {
+    docs.push({title:'Initial Disclosures', type:'Other', filed:addDaysStr(filed,45), added:addDaysStr(filed,45)});
+  }
+  if (atOrPast('Discovery')) {
+    docs.push({title:'First Set of Interrogatories', type:'Motion', filed:addDaysStr(filed,60), added:addDaysStr(filed,60)});
+    docs.push({title:'Request for Production of Documents', type:'Motion', filed:addDaysStr(filed,65), added:addDaysStr(filed,65)});
+  }
+  if (atOrPast('Expert Discovery')) {
+    docs.push({title:'Deposition Transcript — Plaintiff', type:'Deposition', filed:addDaysStr(filed,120), added:addDaysStr(filed,120)});
+  }
+  if (c.litigationStage === 'Mediation' || (atOrPast('Mediation') && c.keyDates.mediationDate)) {
+    docs.push({title:'Mediation Statement', type:'Brief', filed:addDaysStr(filed,150), added:addDaysStr(filed,150)});
+  }
+  if (atOrPast('Trial Preparation')) {
+    docs.push({title:'Expert Report — Damages Analysis', type:'Expert Report', filed:addDaysStr(filed,180), added:addDaysStr(filed,180)});
+    docs.push({title:'Motion for Summary Judgment', type:'Motion', filed:addDaysStr(filed,200), added:addDaysStr(filed,200)});
+  }
+  if (atOrPast('Trial')) {
+    docs.push({title:'Trial Exhibit List', type:'Other', filed:addDaysStr(filed,220), added:addDaysStr(filed,220)});
+  }
+  if (c.litigationStage === 'Closed') {
+    docs.push({title:'Settlement Agreement', type:'Agreement', filed:addDaysStr(filed,250), added:addDaysStr(filed,250)});
+    docs.push({title:'Stipulation of Dismissal', type:'Order', filed:addDaysStr(filed,260), added:addDaysStr(filed,260)});
+  }
+  if (!c.documents || c.documents.length === 0) c.documents = docs;
+});
+
 /* ── STATE ─────────────────────────────────────────────────── */
 // ?demo=1 in the URL skips the login screen entirely and drops the
 // visitor straight into the seeded demo data — built for sales calls
@@ -809,6 +899,8 @@ let S = {
   reportCat: 'All',
   activityFilter: 'All', activityRange: '7d',
   filterAtty: 'all', filterStat: 'all',
+  invBillToType: 'carrier', invBillToCustomName: '', invBillToCustomEmail: '',
+  globalSearchQuery: '', showNotifPanel: false,
   rptFields: ['id','client','type','status','attorney','value','claimNo','carrier','reserve','billed','progress','sol'],
   rptAt: 'All', rptSt: 'All',
   addForm: {client:'',type:'Insurance Defense',status:'Active',priority:'Medium',attorney:'Sarah Chen',filed:'',deadline:'',value:'',claimNo:'',carrier:'',reserve:'',adjuster:'',notes:'',aob:'No',catastrophe:'No',coverageType:'General Liability',claimCategory:'Bodily Injury'}
@@ -962,6 +1054,119 @@ const sc = c => {
 };
 function st(u){ Object.assign(S, u); render(); }
 function stCase(id, tab){ st({caseId:id, tab:tab||'overview', aiText:'', aiLoad:false, closingSummary:''}); }
+function jumpFromSearch(id){ st({caseId:id, tab:'overview', aiText:'', aiLoad:false, closingSummary:'', globalSearchQuery:''}); }
+/* Deadline notifications: SOL Watch used to be a static list buried on
+   one page. This pulls every real deadline already in the data model —
+   SOL dates, trial dates, mediation dates, next-step due dates, open
+   task due dates — across the whole portfolio into one sorted feed,
+   overdue items first, so nothing needs a human to remember to go look
+   for it on the right tab. */
+function getDeadlineAlerts(){
+  const now = Date.now();
+  const alerts = [];
+  const daysUntil = d => Math.ceil((new Date(d) - now) / 864e5);
+  CASES.filter(c => c.status !== 'Closed').forEach(c => {
+    const label = c.matterNo || c.id;
+    if (c.keyDates.sol) {
+      const d = daysUntil(c.keyDates.sol);
+      if (d <= 180) alerts.push({caseId:c.id, matterNo:label, client:c.client, kind:'SOL', tab:'dates', date:c.keyDates.sol, days:d, text:'Statute of limitations'});
+    }
+    if (c.keyDates.trialDate) {
+      const d = daysUntil(c.keyDates.trialDate);
+      if (d <= 90) alerts.push({caseId:c.id, matterNo:label, client:c.client, kind:'Trial', tab:'dates', date:c.keyDates.trialDate, days:d, text:'Trial date'});
+    }
+    if (c.keyDates.mediationDate) {
+      const d = daysUntil(c.keyDates.mediationDate);
+      if (d <= 90) alerts.push({caseId:c.id, matterNo:label, client:c.client, kind:'Mediation', tab:'dates', date:c.keyDates.mediationDate, days:d, text:'Mediation date'});
+    }
+    if (c.nextStep && c.nextStepDue) {
+      const d = daysUntil(c.nextStepDue);
+      if (d <= 30) alerts.push({caseId:c.id, matterNo:label, client:c.client, kind:'Next Step', tab:'overview', date:c.nextStepDue, days:d, text:c.nextStep});
+    }
+    (c.tasks||[]).forEach(t => {
+      if (t.done || !t.due) return;
+      const d = daysUntil(t.due);
+      if (d <= 14) alerts.push({caseId:c.id, matterNo:label, client:c.client, kind:'Task', tab:'tasks', date:t.due, days:d, text:t.title});
+    });
+  });
+  return alerts.sort((a,b) => a.days - b.days);
+}
+function jumpFromAlert(caseId, tab){ st({caseId:caseId, tab:tab, aiText:'', aiLoad:false, closingSummary:'', showNotifPanel:false}); }
+function notifBellHtml(){
+  const alerts = getDeadlineAlerts();
+  const overdue = alerts.filter(a => a.days < 0).length;
+  const urgent = alerts.filter(a => a.days >= 0 && a.days <= 7).length;
+  const badgeCount = overdue + urgent;
+  const badgeColor = overdue > 0 ? 'var(--red)' : 'var(--gold)';
+  let h = '<div style="position:relative;">';
+  h += '<button onclick="st({showNotifPanel:!S.showNotifPanel})" style="position:relative;background:transparent;border:1px solid var(--line);border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;">';
+  h += '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="'+(badgeCount>0?'var(--ink)':'var(--muted)')+'" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
+  if (badgeCount > 0) h += '<span style="position:absolute;top:-3px;right:-3px;background:'+badgeColor+';color:#fff;font-size:9.5px;font-weight:700;border-radius:9px;min-width:16px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 3px;">'+(badgeCount>99?'99+':badgeCount)+'</span>';
+  h += '</button>';
+  if (S.showNotifPanel) {
+    h += '<div class="notif-panel" style="position:absolute;right:0;top:40px;background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 10px 30px rgba(0,10,30,.15);width:340px;max-height:420px;overflow-y:auto;z-index:65;">';
+    h += '<div style="padding:11px 14px;border-bottom:1px solid var(--surf3);font-size:11.5px;font-weight:700;color:var(--ink);display:flex;justify-content:space-between;align-items:center;">Deadlines &amp; Alerts<span style="font-size:10px;color:var(--muted);font-weight:500;">'+alerts.length+' upcoming</span></div>';
+    if (alerts.length === 0) {
+      h += '<div style="padding:20px 14px;text-align:center;color:var(--muted);font-size:12px;">Nothing due across the portfolio right now.</div>';
+    } else {
+      alerts.slice(0, 25).forEach(a => {
+        const isOverdue = a.days < 0;
+        const dCol = isOverdue ? 'var(--red)' : a.days <= 7 ? 'var(--gold)' : 'var(--muted)';
+        const dLabel = isOverdue ? Math.abs(a.days)+'d overdue' : a.days===0 ? 'today' : 'in '+a.days+'d';
+        h += '<div onmousedown="jumpFromAlert(\''+a.caseId+'\',\''+a.tab+'\')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--surf3);">';
+        h += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;">';
+        h += '<span style="font-size:11px;font-weight:700;color:var(--pri2);">'+esc(a.matterNo)+'</span>';
+        h += '<span style="font-size:10.5px;font-weight:700;color:'+dCol+';white-space:nowrap;">'+dLabel+'</span>';
+        h += '</div>';
+        h += '<div style="font-size:11.5px;color:var(--ink);font-weight:600;margin-top:1px;">'+esc(a.kind)+' — '+esc(a.client)+'</div>';
+        h += '<div style="font-size:10.5px;color:var(--muted);margin-top:1px;">'+esc(a.text)+'</div>';
+        h += '</div>';
+      });
+    }
+    h += '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+/* Global search: find a matter from anywhere in the app by matter #,
+   client, attorney, carrier, or claim #, instead of needing to already
+   be on the right tab first. */
+function globalSearchMatches(q){
+  if (!q || q.trim().length < 1) return [];
+  const needle = q.trim().toLowerCase();
+  return CASES.filter(c => {
+    const hay = [c.matterNo, c.id, c.client, c.attorney, c.type,
+      c.insurance && c.insurance.carrier, c.insurance && c.insurance.claimNo]
+      .filter(Boolean).join(' ').toLowerCase();
+    return hay.includes(needle);
+  }).slice(0, 8);
+}
+function globalSearchBox(){
+  const q = S.globalSearchQuery || '';
+  const matches = globalSearchMatches(q);
+  let h = '<div class="gsearch-wrap">';
+  h += '<input class="gsearch-input" type="text" placeholder="Search matter #, client, attorney, carrier…" value="'+escAttr(q)+'" '+
+    'oninput="st({globalSearchQuery:this.value})" '+
+    'onkeydown="if(event.key===\'Escape\'){st({globalSearchQuery:\'\'});this.blur();} else if(event.key===\'Enter\'){const m=globalSearchMatches(this.value); if(m.length) jumpFromSearch(m[0].id);}"/>';
+  if (q.trim().length > 0) {
+    h += '<div class="gsearch-dropdown">';
+    if (matches.length === 0) {
+      h += '<div class="gsearch-empty">No matters match "'+esc(q)+'"</div>';
+    } else {
+      matches.forEach(c => {
+        h += '<div class="gsearch-row" onmousedown="jumpFromSearch(\''+c.id+'\')">';
+        h += '<div><span style="font-weight:700;color:var(--pri2);font-size:11.5px;">'+esc(c.matterNo||c.id)+'</span> ';
+        h += '<span style="font-weight:600;font-size:12px;">'+esc(c.client)+'</span>';
+        h += '<div style="font-size:10.5px;color:var(--muted);">'+esc(c.type)+' · '+esc(c.attorney)+'</div></div>';
+        h += pill(c.status);
+        h += '</div>';
+      });
+    }
+    h += '</div>';
+  }
+  h += '</div>';
+  return h;
+}
 function uf(f, v){
   const c = gc(); if (!c) return;
   if (f === 'status' && v !== c[f]) {
@@ -1069,7 +1274,6 @@ function render(){
   else if (S.role === 'activity') html += activityHubV();
   else if (S.role === 'billing') html += invoiceHubV();
   else if (S.role === 'api') html += apiHubV();
-  else if (S.role === 'subscription') html += subscriptionV();
   else if (S.role === 'admin') html += adminPanelV();
   html += '</div>';
   if (S.caseId) html += ws();
@@ -1088,8 +1292,10 @@ function hdr(){
   /* Grouped by how the role is actually used day to day, same clustering
      approach used for the case-detail tabs: Daily Work (open every day),
      Insights (analysis/reporting, opened less often), Admin (setup/ops).
-     Same items, same click behavior — just organized instead of 11 equal-
-     weight buttons in a row. */
+     Note: no subscription/pricing tab here on purpose — the vendor's own
+     billing relationship with the customer is handled outside this
+     product entirely. Everything in here is the customer's own data and
+     workflows, full stop. */
   const groups = [
     { label:'', items:[
       ['litigation','Litigation'],
@@ -1105,14 +1311,13 @@ function hdr(){
     { label:'Admin', items:[
       ['tpa','TPA / Carrier'],
       ['partner','Partner View'],
-      ['api','API & Import'],
-      ['subscription','Plan & Billing']
+      ['api','API & Import']
     ]}
   ];
   if (S.currentUser?.platformAdmin) groups[groups.length-1].items.push(['admin','⚙ Admin']);
 
   const btn = ([r, l]) =>
-    '<button onclick="'+(r==='subscription' ? 'goToBilling()' : r==='admin' ? 'goToAdmin()' : r==='scorecard' ? "st({role:'scorecard',caseId:null,scorecardDetail:null})" : "st({role:'"+r+"',caseId:null})")+'" class="role-tab'+(S.role===r?' on':'')+(r==='admin'?' admin-tab':'')+'">'+l+'</button>';
+    '<button onclick="'+(r==='admin' ? 'goToAdmin()' : r==='scorecard' ? "st({role:'scorecard',caseId:null,scorecardDetail:null})" : "st({role:'"+r+"',caseId:null})")+'" class="role-tab'+(S.role===r?' on':'')+(r==='admin'?' admin-tab':'')+'">'+l+'</button>';
 
   const roleBtns = groups.map((g,gi) =>
     (gi>0 ? '<div class="nav-divider"></div>' : '') +
@@ -1121,7 +1326,7 @@ function hdr(){
   ).join('');
 
   return '<div style="background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50;">'+
-    '<div style="padding:10px 18px 8px;display:flex;align-items:center;justify-content:space-between;gap:12px;">'+
+    '<div class="hdr-top-row" style="padding:10px 18px 8px;display:flex;align-items:center;justify-content:space-between;gap:12px;">'+
       '<div style="display:flex;align-items:center;gap:11px;">'+
         '<div class="brand-mark"><svg viewBox="0 0 300 160" width="30" height="16" fill="none">'+
           '<circle cx="80" cy="55" r="21" stroke-width="12" stroke="#F5B700"/>'+
@@ -1138,7 +1343,8 @@ function hdr(){
           '<div style="font-size:9px;color:var(--dim);letter-spacing:1.8px;text-transform:uppercase;font-weight:600;margin-top:2px;">Carrier-Grade Litigation Intelligence</div>'+
         '</div>'+
       '</div>'+
-      userMenuHtml()+
+      globalSearchBox()+
+      '<div style="display:flex;align-items:center;gap:10px;">'+notifBellHtml()+userMenuHtml()+'</div>'+
     '</div>'+
     '<div style="padding:0 18px 10px;display:flex;gap:8px;align-items:center;">'+
       '<div class="nav-scroll" style="background:var(--surf2);border:1px solid var(--line);border-radius:8px;display:flex;padding:3px;gap:1px;align-items:center;flex-wrap:wrap;">'+roleBtns+'</div>'+
@@ -1165,7 +1371,6 @@ function userMenuHtml(){
           '<div style="font-size:11px;color:var(--muted);margin-top:1px;">'+esc(u.email)+'</div>'+
           '<span class="tag" style="margin-top:6px;background:var(--surf3);color:var(--pri2);">'+personaLabel+'</span>'+
         '</div>'+
-        '<div onclick="goToBilling()" style="padding:10px 14px;font-size:12.5px;cursor:pointer;color:var(--ink);">Plan &amp; Billing</div>'+
         '<div onclick="st({showSecurityModal:true,showUserMenu:false,securityError:\'\'})" style="padding:10px 14px;font-size:12.5px;cursor:pointer;color:var(--ink);">Security &amp; 2FA</div>'+
         '<div onclick="openTeamModal()" style="padding:10px 14px;font-size:12.5px;cursor:pointer;color:var(--ink);">Team Members</div>'+
         '<div onclick="logout()" style="padding:10px 14px;font-size:12.5px;cursor:pointer;color:var(--red);border-top:1px solid var(--surf3);">Sign Out</div>'+
@@ -1231,8 +1436,6 @@ function loginScreenV(){
     ? (mode==='register' ? '<span onclick="st({_authMode:\'signin\',loginError:\'\'})" style="cursor:pointer;text-decoration:underline;">Already have an account? Sign in</span>' : '<span onclick="st({_authMode:\'register\',loginError:\'\'})" style="cursor:pointer;text-decoration:underline;">New organization? Create one</span>')
     : 'Demo mode — any email + password signs you in.')+'</div>';
   h += '</div>';
-
-  h += '<div style="text-align:center;margin-top:20px;font-size:12.5px;color:#C3D4EE;">New carrier? <a href="pricing.html" target="_blank" style="color:#7FD4E8;font-weight:600;text-decoration:none;">See plans &amp; pricing →</a></div>';
 
   h += '</div></div>';
   return h;
@@ -2017,19 +2220,19 @@ function partV(){
   const open = CASES.filter(c => c.status !== 'Closed');
   const totRev = CASES.reduce((s,c) => s + (c.billing.totalBilled||0), 0);
   const totColl = CASES.reduce((s,c) => s + (c.billing.totalPaid||0), 0);
-  const collRate = totRev ? Math.round((totColl/totRev)*100) : 0;
+  const collDisplay = fCollRate(totColl, totRev);
 
   let h = '<div class="wrap">';
   h += '<div class="hero">';
   h += '<div class="hero-l"><div class="hero-eyebrow">Partner View · Firm Operations</div>';
   h += '<h1 class="hero-title">Practice Performance</h1>';
-  h += '<p class="hero-sub">'+open.length+' active matters · '+fM(totRev)+' billed · '+collRate+'% collected</p></div></div>';
+  h += '<p class="hero-sub">'+open.length+' active matters · '+fM(totRev)+' billed · '+collDisplay.text+' collected</p></div></div>';
 
   h += '<div class="kpi-grid">';
   h += '<div class="kpi"><div class="kpi-l">Active Matters</div><div class="kpi-v">'+open.length+'</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Revenue YTD</div><div class="kpi-v" style="color:var(--green);">'+fV(totRev)+'</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Collected</div><div class="kpi-v">'+fV(totColl)+'</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">Collection Rate</div><div class="kpi-v">'+collRate+'%</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Collection Rate</div><div class="kpi-v">'+collDisplay.text+'</div></div>';
   h += '</div>';
 
   /* Attorney performance */
@@ -2050,7 +2253,7 @@ function partV(){
     h += '<td style="font-weight:700;color:'+(ATTY_COLOR[a]||'var(--ink)')+';">'+esc(a)+'</td>';
     h += '<td>'+aOpen.length+'</td>';
     h += '<td>'+aClosed.length+'</td>';
-    h += '<td style="color:var(--green);font-weight:600;">'+winRate+'%</td>';
+    h += '<td style="color:'+(aClosed.length?'var(--green)':'var(--dim)')+';font-weight:600;">'+(aClosed.length?winRate+'%':'—')+'</td>';
     h += '<td>'+fV(aBilled)+'</td>';
     h += '<td><span class="cci-pill" style="background:'+cciColor(aIdx)+'22;color:'+cciColor(aIdx)+';">'+aIdx+'</span></td>';
     h += '<td><div style="background:var(--surf3);height:6px;border-radius:3px;overflow:hidden;width:80px;"><div style="width:'+wlPct+'%;height:100%;background:'+(wlPct>80?'var(--red)':wlPct>60?'var(--gold)':'var(--green)')+';"></div></div></td>';
@@ -3316,6 +3519,8 @@ function invoiceHubV(){
   });
   const outstanding = totalBilled - totalPaid;
   const collRate = totalBilled ? Math.round((totalPaid/totalBilled)*100) : 0;
+  const arDisplay = fAR(outstanding);
+  const collDisplay = fCollRate(totalPaid, totalBilled);
 
   /* AR aging buckets */
   const now = Date.now();
@@ -3360,7 +3565,7 @@ function invoiceHubV(){
   h += '<div class="hero">';
   h += '<div class="hero-l"><div class="hero-eyebrow">Invoice Hub · Firm Billing</div>';
   h += '<h1 class="hero-title">Billing & Revenue Operations</h1>';
-  h += '<p class="hero-sub">'+allInvoices.length+' invoices · '+allTimeEntries.length+' time entries · '+collRate+'% collection rate</p></div>';
+  h += '<p class="hero-sub">'+allInvoices.length+' invoices · '+allTimeEntries.length+' time entries · '+collDisplay.text+' collection rate</p></div>';
   h += '<div class="hero-r">';
   h += '<button class="btn btn-out" onclick="exportAllLEDES()">Export LEDES (All)</button>';
   h += '<button class="btn btn-pri" onclick="runBillingAI()">★ AI Billing Review</button>';
@@ -3370,8 +3575,8 @@ function invoiceHubV(){
   h += '<div class="kpi-grid">';
   h += '<div class="kpi"><div class="kpi-l">Total Billed</div><div class="kpi-v">'+fV(totalBilled)+'</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Collected</div><div class="kpi-v" style="color:var(--green);">'+fV(totalPaid)+'</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">Outstanding AR</div><div class="kpi-v" style="color:var(--gold);">'+fV(outstanding)+'</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">Collection Rate</div><div class="kpi-v">'+collRate+'%</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Outstanding AR</div><div class="kpi-v" style="color:var(--gold);">'+arDisplay.text+'</div>'+(arDisplay.note?'<div class="kpi-sub" style="color:var(--green);">'+arDisplay.note+'</div>':'')+'</div>';
+  h += '<div class="kpi"><div class="kpi-l">Collection Rate</div><div class="kpi-v">'+collDisplay.text+'</div>'+(collDisplay.over?'<div class="kpi-sub" style="color:var(--green);">overpaid</div>':'')+'</div>';
   h += '<div class="kpi"><div class="kpi-l">Budget Allocated</div><div class="kpi-v">'+fV(totalBudget)+'</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Over Budget</div><div class="kpi-v" style="color:var(--red);">'+overBudget.length+'</div></div>';
   h += '</div>';
@@ -3392,7 +3597,7 @@ function invoiceHubV(){
   });
   h += '<div style="margin-top:14px;padding-top:11px;border-top:1px solid var(--surf3);display:flex;justify-content:space-between;align-items:center;">';
   h += '<span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1.1px;font-weight:700;">Total AR</span>';
-  h += '<span class="serif" style="font-size:20px;font-weight:700;color:var(--gold);">'+fV(outstanding)+'</span></div>';
+  h += '<span class="serif" style="font-size:20px;font-weight:700;color:var(--gold);">'+arDisplay.text+'</span></div>';
   h += '</div>';
 
   /* Budget Watch */
@@ -3420,6 +3625,7 @@ function invoiceHubV(){
   h += '<thead><tr><th>Matter</th><th>Client</th><th>Atty</th><th>Billed</th><th>Paid</th><th>Outstanding</th><th>Budget</th><th>Burn %</th></tr></thead><tbody>';
   topRev.forEach(c => {
     const out = (c.billing.totalBilled||0) - (c.billing.totalPaid||0);
+    const outDisp = fAR(out);
     const burn = c.billing.budget ? Math.round((c.billing.totalBilled/c.billing.budget)*100) : 0;
     const burnCol = burn > 100 ? 'var(--red)' : burn > 80 ? 'var(--gold)' : 'var(--green)';
     h += '<tr class="row-link" onclick="stCase(\''+c.id+'\',\'billing\')">';
@@ -3428,7 +3634,7 @@ function invoiceHubV(){
     h += '<td style="font-size:11px;">'+esc(c.attorney.split(' ')[0])+'</td>';
     h += '<td>'+fM(c.billing.totalBilled||0)+'</td>';
     h += '<td style="color:var(--green);">'+fM(c.billing.totalPaid||0)+'</td>';
-    h += '<td style="color:var(--gold);font-weight:600;">'+fM(out)+'</td>';
+    h += '<td style="color:'+(outDisp.note?'var(--green)':'var(--gold)')+';font-weight:600;" title="'+(outDisp.note||'')+'">'+outDisp.text+(outDisp.note?' *':'')+'</td>';
     h += '<td>'+fM(c.billing.budget||0)+'</td>';
     h += '<td style="color:'+burnCol+';font-weight:700;">'+(c.billing.budget?burn+'%':'—')+'</td>';
     h += '</tr>';
@@ -3474,14 +3680,16 @@ function invoiceHubV(){
     h += '<div style="padding:18px;text-align:center;color:var(--muted);font-size:12px;">No invoices generated yet. Generate one from any case → Billing tab.</div>';
   } else {
     h += '<div style="overflow-x:auto;"><table>';
-    h += '<thead><tr><th>Invoice #</th><th>Date</th><th>Matter</th><th>Client</th><th>Amount</th><th>Entries</th><th>Status</th></tr></thead><tbody>';
+    h += '<thead><tr><th>Invoice #</th><th>Date</th><th>Matter</th><th>Client</th><th>Bill To</th><th>Amount</th><th>Entries</th><th>Status</th></tr></thead><tbody>';
     allInvoices.slice().reverse().slice(0,20).forEach(inv => {
       const sCol = inv.status === 'Paid' ? 'var(--green)' : inv.status === 'Sent' ? 'var(--pri2)' : 'var(--gold)';
+      const bt = inv.billTo || {name:'—'};
       h += '<tr class="row-link" onclick="stCase(\''+inv.case.id+'\',\'billing\')">';
       h += '<td style="font-weight:700;color:var(--pri2);">'+esc(inv.number)+'</td>';
       h += '<td>'+esc(inv.date)+'</td>';
       h += '<td>'+esc(inv.case.matterNo||inv.case.id)+'</td>';
       h += '<td>'+esc(inv.case.client)+'</td>';
+      h += '<td style="font-size:11px;color:var(--muted);">'+esc(bt.name||'—')+'</td>';
       h += '<td style="font-weight:700;color:var(--green);">'+fM(inv.amount)+'</td>';
       h += '<td>'+inv.entryCount+'</td>';
       h += '<td><span class="tag" style="background:'+sCol+'18;color:'+sCol+';">'+esc(inv.status||'Sent')+'</span></td>';
@@ -3630,138 +3838,6 @@ function apiHubV(){
 
   h += '</div>';
   return h;
-}
-
-/* ── PLAN & BILLING (live matter-volume calculator) ─────────
-   Same pricing model as pricing.html, but the slider starts from
-   this portfolio's actual open matter count instead of a guess —
-   dragging it lets the team model "what if we grew" without
-   losing sight of where they really stand today. */
-function subTierFor(matters){
-  if (matters <= 250) return {key:'starter', name:'Starter', price:2500};
-  if (matters <= 750) return {key:'growth', name:'Growth', price:6500};
-  return {key:'enterprise', name:'Enterprise', price:null};
-}
-function tierCardHtml(key, name, range, price, active){
-  const idKey = key.charAt(0).toUpperCase() + key.slice(1);
-  let h = '<div class="tier-card'+(active?' active':'')+'" id="subTier'+idKey+'">';
-  h += '<div class="tn">'+name+'</div><div class="tr">'+range+'</div>';
-  h += '<div class="tp">'+(price ? '$'+price.toLocaleString()+'<span>/mo</span>' : 'Custom<span> pricing</span>')+'</div>';
-  h += '</div>';
-  return h;
-}
-function subscriptionV(){
-  const openCount = CASES.filter(c => c.status !== 'Closed').length;
-  const initial = (typeof S.calcMatters === 'number') ? S.calcMatters : openCount;
-  const currentTier = subTierFor(openCount);
-  const modelTier = subTierFor(initial);
-
-  let h = '<div class="wrap">';
-  h += '<div class="hero">';
-  h += '<div class="hero-l"><div class="hero-eyebrow">Plan &amp; Billing</div>';
-  h += '<h1 class="hero-title">Your Subscription</h1>';
-  h += '<p class="hero-sub">Priced by open litigated matters, not seats — every defense firm on your panel gets unlimited free access.</p></div></div>';
-
-  h += '<div class="kpi-grid">';
-  h += '<div class="kpi"><div class="kpi-l">Open Litigated Matters</div><div class="kpi-v">'+openCount+'</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">Current Tier</div><div class="kpi-v" style="font-size:18px;">'+currentTier.name+'</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">Current Monthly Price</div><div class="kpi-v" style="color:var(--pri2);">'+(currentTier.price?fM(currentTier.price):'Custom')+'</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">Defense Firm Seats</div><div class="kpi-v" style="color:var(--green);">$0</div></div>';
-  h += '</div>';
-
-  h += '<div class="calc-card">';
-  h += '<div class="calc-card-in">';
-  h += '<div class="calc-live-badge"><span class="calc-live-dot"></span>Starts from your live portfolio — drag to model growth</div>';
-  h += '<div class="calc-q">How many litigated matters would you have open?</div>';
-  h += '<div class="calc-row"><div class="calc-num" id="subCalcNum">'+initial+'</div><div class="calc-num-label">active matters<br/>across your program</div></div>';
-  h += '<input type="range" class="calc-slider" min="1" max="1000" step="1" value="'+initial+'" oninput="updateSubCalc(this.value)" aria-label="Model open litigated matters"/>';
-  h += '<div class="calc-ticks"><span>1</span><span>250</span><span>750</span><span>1000+</span></div>';
-  h += '</div>';
-  h += '<div class="calc-card-bottom">';
-  h += '<span class="calc-tier-badge" id="subCalcTierBadge">'+modelTier.name+'</span>';
-  h += '<div class="calc-price" id="subCalcPrice">'+(modelTier.price ? '$'+modelTier.price.toLocaleString()+'<span>/mo</span>' : 'Custom<span> pricing</span>')+'</div>';
-  h += '</div></div>';
-
-  h += '<div class="grid-3" style="margin-top:4px;">';
-  h += tierCardHtml('starter','Starter','0 – 250 matters',2500, modelTier.key==='starter');
-  h += tierCardHtml('growth','Growth','251 – 750 matters',6500, modelTier.key==='growth');
-  h += tierCardHtml('enterprise','Enterprise','750+ matters',null, modelTier.key==='enterprise');
-  h += '</div>';
-
-  if (API_BASE) {
-    h += '<div class="card" style="margin-top:18px;">';
-    h += '<div class="sh"><span>Billing Status</span></div>';
-    if (S.billingLoading) {
-      h += '<div style="padding:14px;color:var(--muted);font-size:12.5px;">Checking billing status…</div>';
-    } else if (S.billingStatus?.error) {
-      h += '<div class="alert-bad">Could not load billing status: '+esc(S.billingStatus.error)+'</div>';
-    } else if (S.billingStatus) {
-      const st_ = S.billingStatus.subscriptionStatus || 'trialing';
-      const stColor = st_==='active' ? 'var(--green)' : st_==='past_due' ? 'var(--red)' : st_==='canceled' ? 'var(--dim)' : 'var(--gold)';
-      h += '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;">';
-      h += '<div><span class="tag" style="background:'+stColor+'18;color:'+stColor+';font-weight:700;">'+esc(st_.toUpperCase())+'</span>';
-      h += '<div style="font-size:11.5px;color:var(--muted);margin-top:8px;">Suggested tier from live matter count: <strong>'+esc(S.billingStatus.suggestedTier||'—')+'</strong></div></div>';
-      h += '<button class="btn btn-pri" onclick="startCheckout()" '+(S.checkoutLoading?'disabled':'')+'>'+(S.checkoutLoading?'Starting checkout…':'Upgrade / Manage Billing')+'</button>';
-      h += '</div>';
-      if (!S.billingStatus.billingConfigured) h += '<div class="alert-warn" style="margin-top:12px;">Stripe isn\'t configured on the server yet — set STRIPE_SECRET_KEY, STRIPE_PRICE_STARTER, and STRIPE_PRICE_GROWTH. See SETUP.md.</div>';
-    }
-    h += '</div>';
-  }
-
-  h += '<div class="card" style="margin-top:18px;">';
-  h += '<div class="sh"><span>Why matter volume, not seats</span></div>';
-  h += '<div style="font-size:12.5px;color:var(--muted);line-height:1.7;">Per-seat pricing rewards under-adoption — adjusters share logins, supervisors stay logged out. Pricing by open litigated matters tracks what actually drives your litigation spend, so full adoption across your claims team <em>and</em> every defense firm on your panel never adds to your bill. Full plan details and FAQ at <a href="pricing.html" target="_blank" style="color:var(--pri2);font-weight:600;">pricing.html</a>.</div>';
-  h += '</div>';
-
-  h += '</div>';
-  return h;
-}
-function updateSubCalc(v){
-  const matters = parseInt(v, 10);
-  S.calcMatters = matters;
-  const tier = subTierFor(matters);
-  const numEl = document.getElementById('subCalcNum');
-  const badgeEl = document.getElementById('subCalcTierBadge');
-  const priceEl = document.getElementById('subCalcPrice');
-  if (numEl) numEl.textContent = matters >= 1000 ? '1000+' : matters;
-  if (badgeEl) badgeEl.textContent = tier.name;
-  if (priceEl) priceEl.innerHTML = tier.price ? ('$'+tier.price.toLocaleString()+'<span>/mo</span>') : 'Custom<span> pricing</span>';
-  ['starter','growth','enterprise'].forEach(k => {
-    const el = document.getElementById('subTier'+k.charAt(0).toUpperCase()+k.slice(1));
-    if (el) el.classList.toggle('active', tier.key === k);
-  });
-}
-
-/* Real billing wiring — no-ops gracefully when no backend is
-   connected, so the calculator-only demo experience is untouched. */
-function goToBilling(){
-  st({role:'subscription', caseId:null, showUserMenu:false});
-  if (API_BASE && authToken) fetchBillingStatus();
-}
-async function fetchBillingStatus(){
-  st({billingLoading:true});
-  try {
-    const data = await apiFetch('/api/billing/status');
-    st({billingStatus:data, billingLoading:false});
-  } catch (e) {
-    st({billingStatus:{error:e.message}, billingLoading:false});
-  }
-}
-async function startCheckout(){
-  if (!API_BASE) { alert('Connect a backend (window.CCP_API_BASE) to enable real checkout. Plan details: pricing.html'); return; }
-  st({checkoutLoading:true});
-  try {
-    const data = await apiFetch('/api/billing/create-checkout-session', { method:'POST' });
-    if (data.contactSalesRequired) {
-      st({checkoutLoading:false});
-      alert('Your portfolio (' + data.matterCount + ' matters) is in the Enterprise band — checkout is handled by sales, not self-serve. See the Talk to Sales link on pricing.html.');
-      return;
-    }
-    window.location.href = data.url; // hand off to Stripe Checkout
-  } catch (e) {
-    st({checkoutLoading:false});
-    alert('Could not start checkout: ' + e.message);
-  }
 }
 
 /* ── PLATFORM ADMIN PANEL ──────────────────────────────────
@@ -4316,7 +4392,7 @@ function tabInsurance(c){
   h += '<div>'+inp('Deductible', c.insurance.deductible, 'un(\'insurance\',\'deductible\',this.value)')+'</div>';
   h += '</div>';
   h += '<div class="grid-3">';
-  h += '<div>'+inp('Reserve Amount', c.insurance.reserveAmount, 'un(\'insurance\',\'reserveAmount\',parseFloat(this.value)||0)','number')+'</div>';
+  h += '<div>'+inpMoney('Reserve Amount', c.insurance.reserveAmount, 'un(\'insurance\',\'reserveAmount\',moneyVal(this.value))')+'</div>';
   h += '<div>'+sel('Primary / Excess', 'un(\'insurance\',\'primaryExcess\',this.value)', ['Primary','Excess','Umbrella','Self-Insured Retention'], c.insurance.primaryExcess)+'</div>';
   h += '<div>'+inp('Adjuster Name', c.insurance.adjuster, 'un(\'insurance\',\'adjuster\',this.value)')+'</div>';
   h += '</div>';
@@ -4357,13 +4433,13 @@ function tabDates(c){
 function tabExposure(c){
   let h = '<div class="section-band">Financial Exposure</div>';
   h += '<div class="grid-3">';
-  h += '<div>'+inp('Demand Amount', c.exposure.demandAmount, 'un(\'exposure\',\'demandAmount\',parseFloat(this.value)||0)','number')+'</div>';
-  h += '<div>'+inp('Last Offer', c.exposure.offerAmount, 'un(\'exposure\',\'offerAmount\',parseFloat(this.value)||0)','number')+'</div>';
-  h += '<div>'+inp('Likely Exposure', c.exposure.likelyExposure, 'un(\'exposure\',\'likelyExposure\',parseFloat(this.value)||0)','number')+'</div>';
+  h += '<div>'+inpMoney('Demand Amount', c.exposure.demandAmount, 'un(\'exposure\',\'demandAmount\',moneyVal(this.value))')+'</div>';
+  h += '<div>'+inpMoney('Last Offer', c.exposure.offerAmount, 'un(\'exposure\',\'offerAmount\',moneyVal(this.value))')+'</div>';
+  h += '<div>'+inpMoney('Likely Exposure', c.exposure.likelyExposure, 'un(\'exposure\',\'likelyExposure\',moneyVal(this.value))')+'</div>';
   h += '</div>';
   h += '<div class="grid-2">';
-  h += '<div>'+inp('Best Case', c.exposure.bestCase, 'un(\'exposure\',\'bestCase\',parseFloat(this.value)||0)','number')+'</div>';
-  h += '<div>'+inp('Worst Case', c.exposure.worstCase, 'un(\'exposure\',\'worstCase\',parseFloat(this.value)||0)','number')+'</div>';
+  h += '<div>'+inpMoney('Best Case', c.exposure.bestCase, 'un(\'exposure\',\'bestCase\',moneyVal(this.value))')+'</div>';
+  h += '<div>'+inpMoney('Worst Case', c.exposure.worstCase, 'un(\'exposure\',\'worstCase\',moneyVal(this.value))')+'</div>';
   h += '</div>';
   h += '<div>'+ta('Exposure Notes', c.exposure.notes, 'un(\'exposure\',\'notes\',this.value)','Reasoning behind exposure assessment')+'</div>';
   return h;
@@ -4595,7 +4671,40 @@ function tabBilling(c){
     h += '</tbody></table>';
   }
 
+  h += '<div class="section-band">Bill To — Who Pays This Invoice</div>';
+  const btOpts = billToOptionsFor(c);
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;align-items:end;margin-bottom:6px;">';
+  h += '<div class="fld"><label class="lbl">Recipient</label><select onchange="st({invBillToType:this.value})" class="inp">'+
+    btOpts.map(o => '<option value="'+esc(o.key)+'"'+(S.invBillToType===o.key?' selected':'')+'>'+esc(o.label)+'</option>').join('')+
+    '</select></div>';
+  if (S.invBillToType === 'custom') {
+    h += inp('Recipient Name', S.invBillToCustomName, 'st({invBillToCustomName:this.value})');
+    h += inp('Recipient Email', S.invBillToCustomEmail, 'st({invBillToCustomEmail:this.value})', 'email');
+  } else {
+    const preview = billToResolve(c, S.invBillToType);
+    h += '<div class="fld"><label class="lbl">Contact</label><div class="inp" style="background:var(--surf2);color:var(--muted);">'+esc(preview.name||'—')+'</div></div>';
+    h += '<div class="fld"><label class="lbl">Email on file</label><div class="inp" style="background:var(--surf2);color:var(--muted);">'+esc(preview.email||'Not on file — add one below')+'</div></div>';
+  }
+  h += '</div>';
+
   h += '<div style="display:flex;gap:8px;margin-top:14px;"><button class="btn btn-out" onclick="genInv()">Generate Invoice</button><button class="btn btn-out" onclick="exportLEDES()">Export LEDES 1998B</button></div>';
+
+  if ((c.billing.invoices||[]).length > 0) {
+    h += '<div class="section-band">Invoices Sent ('+c.billing.invoices.length+')</div>';
+    h += '<table><thead><tr><th>Invoice #</th><th>Date</th><th>Amount</th><th>Bill To</th><th>Status</th><th></th></tr></thead><tbody>';
+    c.billing.invoices.slice().reverse().forEach(inv => {
+      const bt = inv.billTo || {name:'—',email:''};
+      const mailLink = bt.email ? 'mailto:'+encodeURIComponent(bt.email)+'?subject='+encodeURIComponent('Invoice '+inv.number+' — '+(c.matterNo||c.id))+'&body='+encodeURIComponent('Please find invoice '+inv.number+' for '+fM(inv.amount)+' attached.') : '';
+      h += '<tr><td style="font-weight:700;color:var(--pri2);">'+esc(inv.number)+'</td><td>'+esc(inv.date)+'</td>';
+      h += '<td style="font-weight:700;color:var(--green);">'+fM(inv.amount)+'</td>';
+      h += '<td style="font-size:11px;">'+esc(bt.name||'—')+(bt.org?' <span style="color:var(--dim);">('+esc(bt.org)+')</span>':'')+'</td>';
+      h += '<td><span class="tag">'+esc(inv.status||'Sent')+'</span></td>';
+      h += '<td>'+(mailLink?'<a href="'+mailLink+'" class="muted-link" style="font-size:11px;">Email →</a>':'<span style="font-size:11px;color:var(--dim);">no email on file</span>')+'</td>';
+      h += '</tr>';
+    });
+    h += '</tbody></table>';
+  }
+
   return h;
 }
 
@@ -5003,10 +5112,11 @@ function genInv(){
   if (newEntries.length === 0) { alert('No new time entries to invoice'); return; }
   const total = newEntries.reduce((s,t) => s + t.hours*t.rate, 0);
   const invNo = 'INV-' + Date.now().toString().slice(-6);
+  const billTo = billToResolve(c, S.invBillToType);
   c.billing.invoices = c.billing.invoices || [];
-  c.billing.invoices.push({number:invNo, date:td(), amount:total, entryCount:newEntries.length, status:'Sent'});
+  c.billing.invoices.push({number:invNo, date:td(), amount:total, entryCount:newEntries.length, status:'Sent', billTo:billTo});
   newEntries.forEach(t => t._invoiced = true);
-  c.updates.push({date:td(), author:'System', type:'Billing', text:'Invoice '+invNo+' generated for '+fM(total)+' ('+newEntries.length+' time entries)'});
+  c.updates.push({date:td(), author:'System', type:'Billing', text:'Invoice '+invNo+' generated for '+fM(total)+' ('+newEntries.length+' time entries) — billed to '+(billTo.name||'—')});
   sc(c); render();
 }
 
@@ -5256,7 +5366,7 @@ function randomizeDemoData(){
       c.tasks.forEach(t => { if (nameMap[t.assignee]) t.assignee = nameMap[t.assignee]; });
     }
     if (Array.isArray(c.billing?.timeEntries)) {
-      c.billing.timeEntries.forEach(te => { if (nameMap[te.attorney]) te.attorney = nameMap[te.attorney]; });
+      c.billing.timeEntries.forEach(te => { if (nameMap[te.atty]) te.atty = nameMap[te.atty]; });
     }
   });
 
