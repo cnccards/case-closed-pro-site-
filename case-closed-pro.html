@@ -685,8 +685,173 @@ let CASES = [
   mkC('CC-015','Lighthouse Aerospace','Product Liability','Trial','High','David Park','2023-12-12','2026-05-20',12500000,85,'CLM-2023-9971','AIG',5500000,'Tom Whitfield')
 ];
 
+
+/* ══════════════════════════════════════════════════════════════════════
+   CARRIER INTELLIGENCE SCORECARD SYSTEM
+   Defense firm scoring, panel analytics, trends & reporting
+   (Carrier/TPA View Only — Hidden from attorneys)
+   ══════════════════════════════════════════════════════════════════════ */
+
+const DEFENSE_FIRMS = [
+  {id:'df1', name:'Morgan & Morgan', specialties:['Commercial','Product Liability','Employment']},
+  {id:'df2', name:'Seyfarth Shaw', specialties:['Employment','Commercial','IP']},
+  {id:'df3', name:'Dinsmore & Shohl', specialties:['Commercial','Insurance Coverage','PI']},
+  {id:'df4', name:'Greenberg Traurig', specialties:['Product Liability','Commercial','IP']},
+  {id:'df5', name:'DLA Piper', specialties:['Product Liability','Commercial']},
+  {id:'df6', name:'Sedgwick', specialties:['Insurance Defense','Medical Malpractice']},
+];
+
+function addScorecardFields(c) {
+  if (!c.scorecard) {
+    c.scorecard = {
+      complexity: {
+        score: estimateComplexity(c),
+        caseType: c.type,
+        claimAmount: c.value,
+      },
+      assignedFirm: { firmId: null, firmName: null, assignedDate: c.openedDate },
+      outcome: {
+        status: c.status === 'Closed' ? 'closed' : 'open',
+        finalSettlement: null,
+        reserveAtClose: null,
+      }
+    };
+  }
+}
+
+function estimateComplexity(c) {
+  let score = 3;
+  if (c.value > 5000000) score += 3;
+  else if (c.value > 1000000) score += 2;
+  if (['Product Liability', 'IP Litigation', 'Malpractice'].includes(c.type)) score += 2;
+  if (c.litigationStage === 'Trial') score += 2;
+  return Math.min(score, 10);
+}
+
+function getAllFirmScores(cases) {
+  const firmIds = [...new Set(cases.map(c => c.scorecard?.assignedFirm?.firmId).filter(Boolean))];
+  const scores = [];
+  
+  firmIds.forEach(firmId => {
+    const firmCases = cases.filter(c => c.scorecard?.assignedFirm?.firmId === firmId);
+    const closedCases = firmCases.filter(c => c.scorecard?.outcome?.status === 'closed');
+    
+    if (closedCases.length < 2) return;
+    
+    const accuracyVals = closedCases.map(c => {
+      const settlement = c.scorecard.outcome.finalSettlement || 0;
+      const reserve = c.scorecard.outcome.reserveAtClose || 0;
+      return reserve > 0 ? settlement / reserve : null;
+    }).filter(x => x !== null);
+    
+    const reserveAccuracy = accuracyVals.length > 0 ? accuracyVals.reduce((a,b) => a+b) / accuracyVals.length : null;
+    
+    const velocityVals = closedCases.map(c => {
+      if (!c.openedDate || !c.scorecard.outcome.closedDate) return null;
+      const d1 = new Date(c.openedDate), d2 = new Date(c.scorecard.outcome.closedDate);
+      return Math.ceil((d2 - d1) / (1000*60*60*24));
+    }).filter(x => x !== null);
+    
+    const avgVelocity = velocityVals.length > 0 ? Math.round(velocityVals.reduce((a,b) => a+b) / velocityVals.length) : null;
+    
+    const costVals = closedCases.map(c => {
+      const billed = c.billing?.totalBilled || 0;
+      const settlement = c.scorecard.outcome.finalSettlement || 0;
+      return settlement > 0 ? billed / settlement : null;
+    }).filter(x => x !== null);
+    
+    const avgCostRatio = costVals.length > 0 ? costVals.reduce((a,b) => a+b) / costVals.length : null;
+    
+    // Composite score
+    const score = Math.round([
+      reserveAccuracy ? (reserveAccuracy < 1.2 ? 85 : 60) : null,
+      avgVelocity ? (avgVelocity < 400 ? 85 : 60) : null,
+      avgCostRatio ? (avgCostRatio < 0.15 ? 85 : 60) : null
+    ].filter(x => x !== null).reduce((a,b) => a+b, 0) / 3);
+    
+    scores.push({
+      firmId,
+      firmName: DEFENSE_FIRMS.find(f => f.id === firmId)?.name || 'Unknown',
+      totalCases: firmCases.length,
+      closedCases: closedCases.length,
+      compositeScore: score,
+      reserveAccuracy: reserveAccuracy ? (reserveAccuracy * 100).toFixed(1) : '—',
+      avgVelocity: avgVelocity || '—',
+      avgCostRatio: avgCostRatio ? avgCostRatio.toFixed(2) : '—',
+    });
+  });
+  
+  return scores.sort((a,b) => b.compositeScore - a.compositeScore);
+}
+
+/* Carrier Intelligence Dashboard */
+function carrierIntelligenceV() {
+  const tab = S.ciTab || 'panel';
+  let h = '<div style="padding:20px;">';
+  
+  h += '<div class="sh">CARRIER INTELLIGENCE — PANEL ANALYTICS</div>';
+  
+  h += '<div style="display:flex;gap:10px;margin:20px 0;border-bottom:1px solid var(--line);padding-bottom:10px;">';
+  [{id:'panel',label:'Panel Performance'},{id:'assignment',label:'Case Assignment'},{id:'trends',label:'Trends'}].forEach(t => {
+    h += '<button onclick="st({ciTab:\''+t.id+'\'})" style="'+(tab===t.id?'border-bottom:3px solid var(--pri2);':'')+'background:none;border:none;padding:8px 14px;font-weight:600;cursor:pointer;color:'+(tab===t.id?'var(--pri2)':'var(--muted)')+';">'+t.label+'</button>';
+  });
+  h += '</div>';
+  
+  if (tab === 'panel') {
+    const scores = getAllFirmScores(CASES);
+    
+    h += '<div class="g4" style="margin-bottom:20px;">';
+    h += '<div class="card"><div class="sh">Total Firms</div><div style="font-size:24px;font-weight:700;">'+DEFENSE_FIRMS.length+'</div></div>';
+    h += '<div class="card"><div class="sh">Active Cases</div><div style="font-size:24px;font-weight:700;">'+CASES.filter(c => c.status !== 'Closed').length+'</div></div>';
+    h += '<div class="card"><div class="sh">Top Performer</div><div style="font-size:14px;font-weight:700;">'+(scores[0]?.firmName || '—')+'</div><div style="font-size:11px;color:var(--good);">Score: '+(scores[0]?.compositeScore || '—')+'</div></div>';
+    h += '<div class="card"><div class="sh">Portfolio Metrics</div><div style="font-size:14px;font-weight:700;">85% Accuracy</div><div style="font-size:11px;color:var(--muted);">Reserve accuracy</div></div>';
+    h += '</div>';
+    
+    h += '<div class="card" style="margin-bottom:20px;"><div class="sh">Firm Rankings</div>';
+    h += '<div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Scored on reserve accuracy, velocity, and cost efficiency</div>';
+    h += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    h += '<tr style="border-bottom:2px solid var(--line);"><th style="text-align:left;padding:10px;font-weight:700;">Firm</th><th style="text-align:center;padding:10px;font-weight:700;">Cases</th><th style="text-align:center;padding:10px;font-weight:700;">Score</th><th style="text-align:center;padding:10px;font-weight:700;">Reserve Acc.</th><th style="text-align:center;padding:10px;font-weight:700;">Velocity</th><th style="text-align:center;padding:10px;font-weight:700;">Cost Ratio</th></tr>';
+    
+    scores.forEach(s => {
+      h += '<tr style="border-bottom:1px solid var(--line2);"><td style="padding:10px;"><strong>'+esc(s.firmName)+'</strong></td>';
+      h += '<td style="text-align:center;padding:10px;">'+s.closedCases+'/'+s.totalCases+'</td>';
+      h += '<td style="text-align:center;padding:10px;font-weight:700;color:'+(s.compositeScore >= 80 ? 'var(--good)' : s.compositeScore >= 70 ? 'var(--amber)' : 'var(--bad)')+';">'+s.compositeScore+'</td>';
+      h += '<td style="text-align:center;padding:10px;">'+s.reserveAccuracy+'%</td>';
+      h += '<td style="text-align:center;padding:10px;">'+s.avgVelocity+' d</td>';
+      h += '<td style="text-align:center;padding:10px;">'+s.avgCostRatio+'x</td></tr>';
+    });
+    
+    h += '</table></div>';
+    
+  } else if (tab === 'assignment') {
+    h += '<div class="card"><div style="padding:20px;text-align:center;color:var(--muted);">Case assignment recommendations coming soon</div></div>';
+  } else if (tab === 'trends') {
+    h += '<div class="card"><div style="padding:20px;text-align:center;color:var(--muted);">Trend analysis and benchmarking coming soon</div></div>';
+  }
+  
+  h += '</div>';
+  return h;
+}
+
 /* Enrich a few cases with full detail */
 function enrich(idx, cfg) { Object.assign(CASES[idx], cfg); }
+
+
+/* Initialize scorecard fields for all cases */
+CASES.forEach(c => addScorecardFields(c));
+
+/* Populate scorecard data for enriched cases */
+CASES[0].scorecard.assignedFirm = { firmId: 'df1', firmName: 'Morgan & Morgan', assignedDate: CASES[0].openedDate };
+CASES[1].scorecard.assignedFirm = { firmId: 'df2', firmName: 'Seyfarth Shaw', assignedDate: CASES[1].openedDate };
+CASES[2].scorecard.assignedFirm = { firmId: 'df3', firmName: 'Dinsmore & Shohl', assignedDate: CASES[2].openedDate };
+
+// For closed case (CC-007), populate outcome
+CASES[6].scorecard.outcome = {
+  status: 'closed',
+  finalSettlement: 280000,
+  reserveAtClose: 150000,
+  closedDate: CASES[6].stageHistory?.[CASES[6].stageHistory.length-1]?.date || '2024-05-30'
+};
 
 /* CC-001 Harmon Industries - rich data */
 Object.assign(CASES[0].court, {name:'Southern District of New York', judge:'Hon. Sarah Mitchell', docketNo:'24-CV-1103', jurisdiction:'Federal - 2nd Circuit', division:'Commercial', venueCounty:'New York', filingDate:'2024-01-15', caseNo:'2024-1103'});
@@ -1275,6 +1440,7 @@ function render(){
   else if (S.role === 'billing') html += invoiceHubV();
   else if (S.role === 'api') html += apiHubV();
   else if (S.role === 'admin') html += adminPanelV();
+  else if (S.role === 'carrier-intelligence') html += carrierIntelligenceV();
   html += '</div>';
   if (S.caseId) html += ws();
   if (S.showAdd) html += addModal();
