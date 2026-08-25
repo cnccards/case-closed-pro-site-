@@ -2858,50 +2858,79 @@ function reportsHubV(){
   const cats = ['All', 'Litigation', 'Financial', 'Compliance', 'Strategic', 'Aging'];
   const filt = S.rptCat || 'All';
   const filtered = filt === 'All' ? REPORT_TEMPLATES : REPORT_TEMPLATES.filter(r => r.cat === filt);
-  const view = S.reportsView || 'templates';
-
-  let h = '<div class="wrap">';
-  h += '<div class="hero">';
-  h += '<div class="hero-l"><div class="hero-eyebrow">Reports Hub</div>';
-  h += '<h1 class="hero-title">'+REPORT_TEMPLATES.length+' Pre-Built Reports</h1>';
-  h += '<p class="hero-sub">Carrier-grade analytics templates · Generate, save, export to CSV, or email</p></div>';
-  h += '<div class="hero-r"><button class="btn btn-pri" onclick="st({showRpt:true})">+ Custom Report Builder</button></div></div>';
-
-  h += '<div class="tab-bar" style="padding-top:0;margin-bottom:16px;">';
-  h += '<button class="pill '+(view==='templates'?'on':'')+'" onclick="st({reportsView:\'templates\'})">Templates</button>';
-  h += '<button class="pill '+(view==='saved'?'on':'')+'" onclick="st({reportsView:\'saved\'})">Saved Reports · '+SAVED_REPORTS.length+'</button>';
+  const selectedReport = S.selectedRptDetail || null;
+  
+  let h = '<div style="display:flex;flex-direction:column;height:100%;">';
+  
+  /* Header */
+  h += '<div style="padding:20px;border-bottom:1px solid var(--line);background:white;">';
+  h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
+  h += '<div><div class="sh">Reports Hub</div><div style="font-size:12px;color:var(--muted);">'+REPORT_TEMPLATES.length+' pre-built analytics templates</div></div>';
+  h += '<button class="btn btn-pri" onclick="st({showRpt:true})">+ Custom Report Builder</button>';
   h += '</div>';
-
-  if (view === 'saved') {
-    h += savedReportsListV();
-    h += '</div>';
-    return h;
-  }
-
-  h += '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:18px;">';
+  
+  /* Category filters */
+  h += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
   cats.forEach(c => {
     const ct = c === 'All' ? REPORT_TEMPLATES.length : REPORT_TEMPLATES.filter(r => r.cat === c).length;
-    h += '<button class="pill '+(filt===c?'on':'')+'" onclick="st({rptCat:\''+c+'\'})">'+c+' · '+ct+'</button>';
+    const isActive = filt === c;
+    h += '<button class="pill '+(isActive?'on':'')+'" onclick="st({rptCat:\''+c+'\'})">'+c+' · '+ct+'</button>';
   });
   h += '</div>';
-
-  h += '<div class="case-grid">';
+  h += '</div>';
+  
+  /* Main content area: Left list + Right output */
+  h += '<div style="display:flex;flex:1;overflow:hidden;gap:0;">';
+  
+  /* LEFT SIDEBAR - Vertical List */
+  h += '<div style="width:350px;border-right:1px solid var(--line);overflow-y:auto;background:white;">';
   filtered.forEach(r => {
-    h += '<div class="case-card" style="cursor:default;">';
-    h += '<div style="display:flex;align-items:flex-start;gap:11px;margin-bottom:10px;">';
-    h += '<div style="width:40px;height:40px;border-radius:8px;background:'+r.color+'22;color:'+r.color+';display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">'+r.icon+'</div>';
-    h += '<div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;flex-wrap:wrap;"><span class="tag" style="background:'+r.color+'18;color:'+r.color+';">'+r.cat+'</span></div>';
-    h += '<div class="serif" style="font-size:14.5px;font-weight:700;color:var(--ink);line-height:1.25;">'+esc(r.name)+'</div></div>';
-    h += '</div>';
-    h += '<div style="font-size:11.5px;color:var(--muted);line-height:1.5;margin-bottom:12px;min-height:40px;">'+esc(r.desc)+'</div>';
-    h += '<div style="display:flex;gap:6px;">';
-    h += '<button class="btn btn-pri" style="flex:1;font-size:11px;padding:7px 10px;" onclick="openReport(\''+r.id+'\')">Generate</button>';
-    h += '<button class="btn btn-out" style="font-size:11px;padding:7px 10px;" onclick="exportReportCSV(\''+r.id+'\')" title="Export CSV">CSV</button>';
-    h += '<button class="btn btn-out" style="font-size:11px;padding:7px 10px;" onclick="genRptAI(\''+r.id+'\')" title="AI Insights">AI ★</button>';
-    h += '</div>';
+    const isSelected = selectedReport === r.id;
+    h += '<div onclick="st({selectedRptDetail:\''+r.id+'\'})" style="padding:12px 15px;border-bottom:1px solid var(--line2);cursor:pointer;background:'+(isSelected?'var(--pri2)18':'white')+';border-left:3px solid '+(isSelected?'var(--pri2)':'transparent')+';transition:all 0.2s;">';
+    h += '<div style="display:flex;gap:8px;">';
+    h += '<div style="width:36px;height:36px;border-radius:6px;background:'+r.color+'22;color:'+r.color+';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;">'+r.icon+'</div>';
+    h += '<div style="flex:1;min-width:0;">';
+    h += '<div style="font-weight:600;color:var(--ink);font-size:12px;margin-bottom:2px;">'+esc(r.name)+'</div>';
+    h += '<span class="tag" style="background:'+r.color+'18;color:'+r.color+';font-size:10px;margin-bottom:4px;display:inline-block;">'+r.cat+'</span>';
+    h += '<div style="font-size:11px;color:var(--muted);line-height:1.3;">'+esc(r.desc)+'</div>';
+    h += '</div></div>';
     h += '</div>';
   });
-  h += '</div></div>';
+  h += '</div>';
+  
+  /* RIGHT SIDE - Report Output */
+  h += '<div style="flex:1;overflow-y:auto;background:var(--surf1);display:flex;flex-direction:column;">';
+  
+  if (selectedReport) {
+    const report = REPORT_TEMPLATES.find(r => r.id === selectedReport);
+    if (report) {
+      h += '<div style="padding:20px;border-bottom:1px solid var(--line);background:white;flex-shrink:0;">';
+      h += '<div style="margin-bottom:10px;"><span class="tag" style="background:'+report.color+'18;color:'+report.color+';">'+report.cat+'</span></div>';
+      h += '<div style="font-size:16px;font-weight:700;color:var(--ink);margin-bottom:6px;">'+esc(report.name)+'</div>';
+      h += '<div style="font-size:12px;color:var(--muted);margin-bottom:15px;line-height:1.5;">'+esc(report.desc)+'</div>';
+      h += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+      h += '<button class="btn btn-pri" onclick="openReport(\''+report.id+'\')">Generate Report</button>';
+      h += '<button class="btn btn-out" onclick="exportReportCSV(\''+report.id+'\')">Export CSV</button>';
+      h += '<button class="btn btn-out" onclick="genRptAI(\''+report.id+'\')">AI Insights ★</button>';
+      h += '</div>';
+      h += '</div>';
+      
+      h += '<div style="flex:1;overflow-y:auto;padding:20px;">';
+      h += '<div style="background:white;border-radius:8px;padding:20px;color:var(--muted);font-size:13px;line-height:1.6;">';
+      h += 'Report will generate here when you click "Generate Report".<br/><br/>';
+      h += 'This template is ready to query your case data and create a formatted report with CSV export capability.';
+      h += '</div>';
+      h += '</div>';
+    }
+  } else {
+    h += '<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;">';
+    h += 'Select a report from the left';
+    h += '</div>';
+  }
+  
+  h += '</div>';
+  h += '</div>';
+  h += '</div>';
   return h;
 }
 
