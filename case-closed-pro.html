@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+  else if (S.navTab === 'reports') html += reportsHubV();
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -1337,6 +1338,7 @@ function hdr(){
       ['scorecard','Scorecards'],
       ['reports','Reports Hub']
     ]},
+    { label:'Reports Hub', roles:role=>(role === 'tpa' || role === 'executive' || role === 'admin'), cb: () => st({navTab:'reports',caseId:null}) },
     { label:'Admin', items:[
       ['tpa','TPA / Carrier'],
       ['partner','Partner View'],
@@ -5430,3 +5432,125 @@ render();
 </script>
 </body>
 </html>
+/* ══════════════════════════════════════════════════════════════════════
+   REPORTS HUB - 30+ Pre-Built Reports
+   Organized by category: Executive, TPA/AE, Financial, Litigation, Compliance
+   ══════════════════════════════════════════════════════════════════════ */
+
+const REPORTS = [
+  /* ACCOUNT EXECUTIVE / TPA REPORTS (8) */
+  { id: 'ae-health', category: 'Account Executive', title: 'Customer Health Brief', desc: 'Weekly snapshot: cases, reserves, alerts, pipeline' },
+  { id: 'ae-pipeline', category: 'Account Executive', title: 'Settlement Pipeline Forecast', desc: 'Cases closing next 30/60/90 days + expected payout' },
+  { id: 'ae-ar', category: 'Account Executive', title: 'AR Aging Report', desc: 'Invoice aging by customer, collections status' },
+  { id: 'ae-firms', category: 'Account Executive', title: 'Defense Firm Scorecard', desc: 'Firm performance ranking for this customer' },
+  { id: 'ae-reserve', category: 'Account Executive', title: 'Reserve Adequacy Trend', desc: '6-month reserve accuracy analysis' },
+  { id: 'ae-age', category: 'Account Executive', title: 'Case Age & Velocity', desc: 'Cases by stage duration, bottleneck analysis' },
+  { id: 'ae-billing', category: 'Account Executive', title: 'Billing Efficiency Report', desc: 'Cost per case, budget variance, trends' },
+  { id: 'ae-exec', category: 'Account Executive', title: 'Executive Summary', desc: '1-page portfolio snapshot for C-suite' },
+
+  /* LITIGATION MANAGEMENT (8) */
+  { id: 'lit-pipeline', category: 'Litigation', title: 'Case Pipeline by Stage', desc: 'Cases distributed across Pre-Suit, Discovery, Trial, Closing' },
+  { id: 'lit-settlement', category: 'Litigation', title: 'Settlement Outcomes', desc: 'Closed cases, settlement rates, avg payout vs reserve' },
+  { id: 'lit-duration', category: 'Litigation', title: 'Case Duration Benchmarks', desc: 'Average days to close by case type, stage' },
+  { id: 'lit-motions', category: 'Litigation', title: 'Motions & Trial Outcomes', desc: 'Success rates, outcome analysis' },
+  { id: 'lit-experts', category: 'Litigation', title: 'Expert Witness Performance', desc: 'Which experts correlate with better outcomes' },
+  { id: 'lit-opposing', category: 'Litigation', title: 'Opposing Counsel Analysis', desc: 'Which opposing firms win most, settlement patterns' },
+  { id: 'lit-jurisdiction', category: 'Litigation', title: 'Jurisdiction Analysis', desc: 'Performance by court/venue' },
+  { id: 'lit-type', category: 'Litigation', title: 'Case Type Performance', desc: 'Outcomes by claim type (contract, tort, employment, etc)' },
+
+  /* FINANCIAL REPORTS (7) */
+  { id: 'fin-revenue', category: 'Financial', title: 'Revenue Recognition', desc: 'Billed vs collected vs accrued' },
+  { id: 'fin-budget', category: 'Financial', title: 'Budget vs Actual', desc: 'Spend variance by case, by firm, by customer' },
+  { id: 'fin-cost', category: 'Financial', title: 'Cost per Case Analysis', desc: 'Average cost by type, trend analysis' },
+  { id: 'fin-firm-billing', category: 'Financial', title: 'Firm Billing Comparison', desc: 'Top 10 firms by revenue, rate comparison' },
+  { id: 'fin-time', category: 'Financial', title: 'Time Entry Summary', desc: 'Hours logged by attorney, by task type, utilization' },
+  { id: 'fin-expense', category: 'Financial', title: 'Expense Breakdown', desc: 'Expert fees, filing fees, investigation costs' },
+  { id: 'fin-profit', category: 'Financial', title: 'Profitability by Case Type', desc: 'Margin analysis, cost recovery rates' },
+
+  /* COMPLIANCE & ADMIN (7) */
+  { id: 'comp-ledes', category: 'Compliance', title: 'Time Entry Compliance (LEDES)', desc: 'LEDES code coverage, audit trail' },
+  { id: 'comp-docs', category: 'Compliance', title: 'Document Inventory', desc: 'Documents per case, stage-appropriate seeding' },
+  { id: 'comp-atty', category: 'Compliance', title: 'Attorney Performance Scorecard', desc: 'Reserve accuracy, velocity, cost by attorney' },
+  { id: 'comp-audit', category: 'Compliance', title: 'Activity Audit Trail', desc: 'Case updates, changes, who did what when' },
+  { id: 'comp-comms', category: 'Compliance', title: 'Client Communication Log', desc: 'Updates sent to customers, response tracking' },
+  { id: 'comp-deadline', category: 'Compliance', title: 'Deadline Compliance', desc: 'On-time filing, missed deadlines, SOL alerts' },
+  { id: 'comp-coverage', category: 'Compliance', title: 'Insurance Coverage Analysis', desc: 'Indemnity vs defense, retention, subrogation' },
+
+  /* RISK & ALERTS (5) */
+  { id: 'risk-flags', category: 'Risk', title: 'Risk Flag Dashboard', desc: 'SOL <180d, under-reserved, over budget, missing step' },
+  { id: 'risk-reserve', category: 'Risk', title: 'Reserve Adequacy Issues', desc: 'Cases under-reserved, over-reserved' },
+  { id: 'risk-old', category: 'Risk', title: 'Old Case Alerts', desc: 'Cases >12mo, >24mo old — bottleneck analysis' },
+  { id: 'risk-budget', category: 'Risk', title: 'Budget Overrun Alerts', desc: 'Cases over budget, trending data' },
+  { id: 'risk-sol', category: 'Risk', title: 'Statute of Limitation Watch', desc: 'Cases with <180d to SOL, action items' },
+
+  /* BENCHMARKING & ANALYTICS (5) */
+  { id: 'bench-peer', category: 'Benchmarking', title: 'Peer Comparison', desc: 'Your metrics vs industry/other customers' },
+  { id: 'bench-trend', category: 'Benchmarking', title: 'Portfolio Trends (6-month)', desc: 'Reserve accuracy, velocity, spend trends' },
+  { id: 'bench-firm', category: 'Benchmarking', title: 'Firm Performance Trends', desc: 'How firms are improving/declining' },
+  { id: 'bench-geo', category: 'Benchmarking', title: 'Geographic Analysis', desc: 'Performance by state/jurisdiction' },
+  { id: 'bench-seasonal', category: 'Benchmarking', title: 'Seasonal Patterns', desc: 'Case filing, settlement, velocity by season' },
+];
+
+function reportsHubV() {
+  const selectedCategory = S.reportCategory || 'Account Executive';
+  const selectedReport = S.selectedReport || null;
+  
+  let h = '<div style="padding:20px;">';
+  h += '<div class="sh" style="margin-bottom:20px;">REPORTS HUB ('+REPORTS.length+' Reports)</div>';
+  
+  /* Category filter */
+  h += '<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;overflow-x:auto;">';
+  const categories = [...new Set(REPORTS.map(r => r.category))];
+  categories.forEach(cat => {
+    const isActive = selectedCategory === cat;
+    const count = REPORTS.filter(r => r.category === cat).length;
+    h += '<button onclick="st({reportCategory:\''+cat+'\',selectedReport:null})" style="'+(isActive?'background:var(--pri2);color:white;':'background:var(--surf3);color:var(--muted);')+'border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:600;font-size:12px;white-space:nowrap;">'+cat+' ('+count+')</button>';
+  });
+  h += '</div>';
+  
+  if (selectedReport) {
+    /* Report detail view */
+    const report = REPORTS.find(r => r.id === selectedReport);
+    h += '<button onclick="st({selectedReport:null})" style="background:none;border:none;color:var(--pri2);cursor:pointer;font-weight:600;margin-bottom:15px;">← Back to Reports</button>';
+    h += '<div class="card" style="margin-bottom:20px;">';
+    h += '<div class="sh">'+esc(report.title)+'</div>';
+    h += '<div style="font-size:12px;color:var(--muted);margin:10px 0;">'+esc(report.desc)+'</div>';
+    h += '<div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">';
+    h += '<input type="date" id="reportStart" placeholder="Start date" style="padding:8px;border:1px solid var(--line);border-radius:4px;font-size:12px;">';
+    h += '<input type="date" id="reportEnd" placeholder="End date" style="padding:8px;border:1px solid var(--line);border-radius:4px;font-size:12px;">';
+    h += '<button onclick="exportReport(\''+report.id+'\')" class="btn btn-pri" style="font-size:12px;">Export PDF</button>';
+    h += '<button onclick="exportReport(\''+report.id+'\',\'csv\')" class="btn btn-out" style="font-size:12px;">Export CSV</button>';
+    h += '</div>';
+    h += '<div style="background:var(--surf2);padding:20px;border-radius:8px;min-height:400px;color:var(--muted);font-size:13px;">';
+    h += 'Report content: '+report.title+'<br/><br/>Backend integration required to populate with real data.';
+    h += '</div>';
+    h += '</div>';
+  } else {
+    /* Reports list by category */
+    const categoryReports = REPORTS.filter(r => r.category === selectedCategory);
+    h += '<div class="card">';
+    h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;">';
+    
+    categoryReports.forEach(report => {
+      h += '<div style="border:1px solid var(--line);border-radius:8px;padding:15px;cursor:pointer;transition:all 0.2s;background:white;" onmousedown="st({selectedReport:\''+report.id+'\'});" onmouseover="this.style.borderColor=\'var(--pri2)\'" onmouseout="this.style.borderColor=\'var(--line)\';">';
+      h += '<div style="font-weight:700;color:var(--ink);margin-bottom:6px;">'+esc(report.title)+'</div>';
+      h += '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.4;">'+esc(report.desc)+'</div>';
+      h += '<div style="display:flex;gap:6px;">';
+      h += '<span style="padding:2px 8px;background:var(--pri2)18;color:var(--pri2);font-size:10px;border-radius:3px;font-weight:600;">PDF</span>';
+      h += '<span style="padding:2px 8px;background:var(--pri2)18;color:var(--pri2);font-size:10px;border-radius:3px;font-weight:600;">CSV</span>';
+      h += '</div>';
+      h += '</div>';
+    });
+    
+    h += '</div>';
+    h += '</div>';
+  }
+  
+  h += '</div>';
+  return h;
+}
+
+function exportReport(reportId, format) {
+  format = format || 'pdf';
+  alert('Exporting '+reportId+' as '+format.toUpperCase()+'...\n\nBackend integration required. Placeholder in demo.');
+}
