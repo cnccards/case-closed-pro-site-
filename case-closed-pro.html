@@ -2060,46 +2060,54 @@ function getTop3Recommendations(caseObj) {
 }
 
 function assignCasesV() {
-  const unassignedCases = CASES.filter(c => !c.attorney || c.attorney === '' || c.attorney === 'Unassigned');
+  // Filter unassigned cases - catches all variations
+  const unassignedCases = CASES.filter(c => {
+    const atty = (c.attorney || '').trim();
+    return atty === '' || atty === 'Unassigned';
+  });
   
-  // Debug: Log to console
-  console.log('Total CASES:', CASES.length);
-  console.log('Unassigned CASES:', unassignedCases.length);
-  console.log('Unassigned details:', unassignedCases.map(c => ({id: c.id, client: c.client, attorney: c.attorney})));
-  
-  let h = '<div style="padding:20px;">';
-  h += '<div class="sh" style="margin-bottom:20px;">🤖 AI Attorney Assignment</div>';
-  h += '<div style="font-size:12px;color:var(--muted);margin-bottom:20px;">Found <strong>'+unassignedCases.length+'</strong> unassigned cases — Recommendations based on specialization, complexity, win rate, workload, and case value</div>';
+  let h = '<div style="padding:20px;max-width:1200px;margin:0 auto;">';
+  h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">';
+  h += '<div>';
+  h += '<div class="sh">🤖 AI Attorney Assignment</div>';
+  h += '<div style="font-size:12px;color:var(--muted);margin-top:5px;">Found <strong>'+unassignedCases.length+'</strong> case'+(unassignedCases.length!==1?'s':'')+' waiting for attorney assignment</div>';
+  h += '</div>';
+  h += '<button onclick="st({showAssignCases:false})" class="btn btn-out">← Back to Dashboard</button>';
+  h += '</div>';
   
   if (unassignedCases.length === 0) {
-    h += '<div class="card" style="padding:30px;text-align:center;">';
-    h += '<div style="font-size:14px;color:var(--good);">✓ All cases assigned! 🎉</div>';
-    h += '<div style="font-size:11px;color:var(--muted);margin-top:10px;">Total cases in system: '+CASES.length+'</div>';
+    h += '<div class="card" style="padding:40px;text-align:center;">';
+    h += '<div style="font-size:16px;color:var(--good);font-weight:700;">✓ All cases assigned! 🎉</div>';
+    h += '<div style="font-size:12px;color:var(--muted);margin-top:10px;">Create a new matter with "Unassigned" to get started.</div>';
     h += '</div>';
     h += '</div>';
     return h;
   }
   
-  h += '<div style="display:grid;grid-template-columns:1fr;gap:15px;">';
+  h += '<div style="display:grid;grid-template-columns:1fr;gap:20px;">';
   
   unassignedCases.forEach(c => {
     const top3 = getTop3Recommendations(c);
     
-    h += '<div class="card" style="padding:15px;border:2px solid var(--line);">';
-    h += '<div style="font-weight:700;color:var(--pri2);margin-bottom:10px;">'+c.id+' — '+esc(c.client.substring(0,30))+'</div>';
-    h += '<div style="font-size:11px;color:var(--muted);margin-bottom:15px;">Value: $'+f(c.value)+' | Type: '+c.type+'</div>';
+    h += '<div class="card" style="padding:20px;border-left:4px solid var(--pri2);">';
+    h += '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:15px;">';
+    h += '<div>';
+    h += '<div style="font-weight:700;font-size:15px;color:var(--ink);">'+c.id+' — '+esc(c.client)+'</div>';
+    h += '<div style="font-size:12px;color:var(--muted);margin-top:4px;">'+c.type+' | Value: $'+f(c.value)+'</div>';
+    h += '</div>';
+    h += '</div>';
     
-    h += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">';
+    h += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">';
     
     top3.forEach((atty, idx) => {
-      const medal = ['🥇', '🥈', '🥉'][idx];
-      const bgColor = idx === 0 ? 'var(--good)18' : idx === 1 ? 'var(--pri2)18' : 'var(--surf2)';
-      h += '<div style="background:'+bgColor+';padding:10px;border-radius:6px;text-align:center;">';
-      h += '<div style="font-size:16px;margin-bottom:5px;">'+medal+'</div>';
-      h += '<div style="font-weight:700;font-size:12px;color:var(--ink);">'+esc(atty.name)+'</div>';
-      h += '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Score: '+atty.score+'</div>';
-      h += '<div style="font-size:10px;color:var(--dim);">'+atty.experience+'</div>';
-      h += '<button onclick="assignAttorney(\''+c.id+'\', \''+esc(atty.name)+'\', '+idx+')" class="btn btn-pri" style="margin-top:8px;width:100%;font-size:10px;padding:4px;cursor:pointer;">Assign</button>';
+      const medal = ['🥇 GOLD', '🥈 SILVER', '🥉 BRONZE'][idx];
+      const bgColor = idx === 0 ? 'var(--good)' : idx === 1 ? 'var(--pri2)' : 'var(--muted)';
+      h += '<div style="background:'+bgColor+'15;border:1px solid '+bgColor+'33;padding:12px;border-radius:6px;text-align:center;">';
+      h += '<div style="font-weight:700;font-size:11px;color:'+bgColor+';margin-bottom:8px;">'+medal+'</div>';
+      h += '<div style="font-weight:700;font-size:13px;color:var(--ink);">'+esc(atty.name)+'</div>';
+      h += '<div style="font-size:11px;color:var(--muted);margin-top:6px;">Score: '+atty.score+'/100</div>';
+      h += '<div style="font-size:10px;color:var(--dim);margin-top:2px;">'+atty.experience+'</div>';
+      h += '<button onclick="assignAttorney(\''+c.id+'\', \''+esc(atty.name)+'\'); st({showAssignCases:true});" class="btn" style="background:'+bgColor+';color:white;margin-top:10px;width:100%;font-size:11px;padding:6px;cursor:pointer;border:none;border-radius:3px;font-weight:600;">Assign</button>';
       h += '</div>';
     });
     
@@ -5311,7 +5319,7 @@ function addModal(){
   h += '<div>'+inp('Matter Value','','window._nV=this.value','number')+'</div>';
   h += '</div>';
   h += '</div>';
-  h += '<div class="modal-f"><button class="btn btn-out" onclick="st({showAdd:false})">Cancel</button><button class="btn btn-pri" onclick="submitCase()">Create Matter</button></div></div></div>';
+  h += '<div class="modal-f"><button class="btn btn-out" onclick="st({showAdd:false})">Cancel</button><button class="btn btn-pri" onclick="try { submitCase(); } catch(e) { alert(\'Error: \' + e.message); console.error(e); }">Create Matter</button></div></div></div>';
   return h;
 }
 
@@ -5631,39 +5639,115 @@ function removeParty(grp, idx){
   sc(c); render();
 }
 
-async function submitCase(){
-  const cl = (window._nC || '').trim();
-  if (!cl) { alert('Please enter client name'); return; }
-  const type = window._nT||'Insurance Defense', status = window._nS||'Active', priority = window._nP||'Medium',
-        attorney = window._nA||'Unassigned', filed = window._nF||td(), value = parseFloat(window._nV)||100000,
-        claimNo = window._nCl||'', carrier = window._nCar||'', reserve = parseFloat(window._nR)||0;
-
-  if (API_BASE) {
-    try {
-      const created = await apiFetch('/api/cases', {
-        method:'POST',
-        body: JSON.stringify({ client: cl, type, status, attorney, filed, value, claimNo, carrier, reserveAmount: reserve })
-      });
-      CASES.push(created);
-    } catch (e) {
-      alert('Could not create matter on the server: ' + e.message);
-      return;
+function submitCase(){
+  // Get form values directly from input fields instead of window variables
+  const inputs = document.querySelectorAll('.modal input, .modal select');
+  const formData = {};
+  
+  inputs.forEach(input => {
+    if (input.name) {
+      formData[input.name] = input.value;
     }
-  } else {
-    const newId = 'CC-' + String(CASES.length + 1).padStart(3, '0');
-    const newCase = mkC(newId, cl, type, status, priority, attorney, filed, '', value, 0, claimNo, carrier, reserve, '');
-    newCase.aob = window._nAo || 'No';
-    newCase.catastrophe = window._nCa || 'No';
-    newCase.coverageType = window._nCt || '';
-    CASES.push(newCase);
-    if (attorney === 'Unassigned') {
-      alert('✓ Matter created as UNASSIGNED! Click "🤖 Assign Cases" to assign via AI.');
-    } else {
-      alert('✓ Matter created and assigned to ' + attorney);
-    }
+  });
+  
+  // Find specific values by label
+  const labels = Array.from(document.querySelectorAll('.modal .lbl'));
+  const clientLabel = labels.find(l => l.textContent.includes('Client'));
+  const mattertypeLabel = labels.find(l => l.textContent.includes('Matter Type'));
+  const statusLabel = labels.find(l => l.textContent.includes('Status'));
+  const priorityLabel = labels.find(l => l.textContent.includes('Priority'));
+  const attorneyLabel = labels.find(l => l.textContent.includes('Lead Attorney'));
+  const valueLabel = labels.find(l => l.textContent.includes('Matter Value'));
+  
+  // Get input value from next sibling
+  const getFieldValue = (label) => {
+    if (!label) return '';
+    const input = label.nextElementSibling;
+    return input ? input.value : '';
+  };
+  
+  const clientName = (getFieldValue(clientLabel) || window._nC || '').trim();
+  
+  if (!clientName) {
+    alert('Please enter a Client/Insured name');
+    return;
   }
-  ['_nC','_nCl','_nV','_nR'].forEach(k => window[k] = '');
-  st({showAdd:false});
+  
+  try {
+    // Get form values (fall back to window variables if DOM method fails)
+    const caseType = getFieldValue(mattertypeLabel) || window._nT || 'Insurance Defense';
+    const caseStatus = getFieldValue(statusLabel) || window._nS || 'Active';
+    const casePriority = getFieldValue(priorityLabel) || window._nP || 'Medium';
+    const caseAttorney = getFieldValue(attorneyLabel) || window._nA || 'Unassigned';
+    const caseValue = parseFloat(getFieldValue(valueLabel) || window._nV || 100000);
+    const caseFiled = window._nF || td();
+    const caseClaimNo = window._nCl || '';
+    const caseCarrier = window._nCar || 'AIG';
+    const caseReserve = parseFloat(window._nR || 0);
+    const caseAOB = window._nAo || 'No';
+    const caseCatastrophe = window._nCa || 'No';
+    const caseCoverage = window._nCt || 'General Liability';
+    
+    // Create new case ID
+    const newCaseId = 'CC-' + String(CASES.length + 1).padStart(3, '0');
+    
+    // Create case using mkC function
+    const newCase = mkC(
+      newCaseId, 
+      clientName, 
+      caseType, 
+      caseStatus, 
+      casePriority, 
+      caseAttorney, 
+      caseFiled, 
+      '', 
+      caseValue, 
+      0, 
+      caseClaimNo, 
+      caseCarrier, 
+      caseReserve, 
+      ''
+    );
+    
+    // Add extra fields
+    newCase.aob = caseAOB;
+    newCase.catastrophe = caseCatastrophe;
+    newCase.coverageType = caseCoverage;
+    
+    // Add to CASES array
+    CASES.push(newCase);
+    
+    console.log('✓ Case created:', newCaseId, clientName, caseAttorney);
+    
+    // Clear form variables
+    window._nC = '';
+    window._nCl = '';
+    window._nV = '';
+    window._nR = '';
+    window._nF = td();
+    window._nA = 'Unassigned';
+    window._nS = 'Active';
+    window._nP = 'Medium';
+    window._nT = 'Insurance Defense';
+    window._nAo = 'No';
+    window._nCa = 'No';
+    window._nCt = 'General Liability';
+    window._nCar = 'AIG';
+    
+    // Close modal and refresh UI - close first, then render
+    S.showAdd = false;
+    S.showAssignCases = false;
+    render();
+    
+    // Show success message
+    setTimeout(() => {
+      alert('✓ Matter ' + newCaseId + ' (' + clientName + ') created as UNASSIGNED!\n\nClick "🤖 Assign Cases" to assign via AI.');
+    }, 200);
+    
+  } catch (e) {
+    console.error('Error creating case:', e);
+    alert('Error creating matter: ' + e.message + '\n\n' + e.stack);
+  }
 }
 
 /* ── AI INTEGRATION (Claude API) ───────────────────────── */
