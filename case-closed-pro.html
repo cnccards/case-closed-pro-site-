@@ -2062,20 +2062,23 @@ function getTop3Recommendations(caseObj) {
 function assignCasesV() {
   const unassignedCases = CASES.filter(c => c.attorney === null || c.attorney === 'Unassigned' || !c.attorney);
   
-  if (unassignedCases.length === 0) {
-    return '<div class="card" style="padding:30px;text-align:center;"><div style="font-size:14px;color:var(--muted);">All cases assigned! 🎉</div></div>';
-  }
+  let h = '<div style="padding:20px;">';
+  h += '<div class="sh" style="margin-bottom:20px;">🤖 AI Attorney Assignment</div>';
+  h += '<div style="font-size:12px;color:var(--muted);margin-bottom:20px;">Found '+unassignedCases.length+' unassigned cases — Recommendations based on specialization, complexity, win rate, workload, and case value</div>';
   
-  let h = '<div style="padding:20px;"><div class="sh" style="margin-bottom:20px;">AI Attorney Assignment</div>';
-  h += '<div style="font-size:12px;color:var(--muted);margin-bottom:20px;">🤖 Recommendations based on specialization, complexity, win rate, workload, and case value</div>';
+  if (unassignedCases.length === 0) {
+    h += '<div class="card" style="padding:30px;text-align:center;"><div style="font-size:14px;color:var(--good);">✓ All cases assigned! 🎉</div></div>';
+    h += '</div>';
+    return h;
+  }
   
   h += '<div style="display:grid;grid-template-columns:1fr;gap:15px;">';
   
-  unassignedCases.slice(0, 5).forEach(c => {
+  unassignedCases.forEach(c => {
     const top3 = getTop3Recommendations(c);
     
     h += '<div class="card" style="padding:15px;border:2px solid var(--line);">';
-    h += '<div style="font-weight:700;color:var(--pri2);margin-bottom:10px;">'+c.matterNo+' — '+esc(c.client.substring(0,25))+'</div>';
+    h += '<div style="font-weight:700;color:var(--pri2);margin-bottom:10px;">'+c.id+' — '+esc(c.client.substring(0,30))+'</div>';
     h += '<div style="font-size:11px;color:var(--muted);margin-bottom:15px;">Value: $'+f(c.value)+' | Type: '+c.type+'</div>';
     
     h += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">';
