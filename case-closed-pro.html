@@ -704,7 +704,10 @@ let CASES = [
   mkC('CC-013','Coastal Restoration','Insurance Defense','Active','Medium','Rachel Goldberg','2025-02-10','2026-11-01',420000,25,'AOB-2025-0044','State Farm',180000,'Patty Singh'),
   mkC('CC-014','Pinnacle Realty Trust','Premises Liability','Mediation','High','Sarah Chen','2024-06-30','2026-08-15',2200000,70,'CLM-2024-7203','Liberty Mutual',1100000,'Frank Toomey'),
   mkC('CC-015','Lighthouse Aerospace','Product Liability','Trial','High','David Park','2023-12-12','2026-05-20',12500000,85,'CLM-2023-9971','AIG',5500000,'Tom Whitfield'),
-  mkC('CC-016','Blackstone Holdings','Securities Fraud','Pleadings','High','Unassigned','2025-01-20','2026-12-15',7500000,5,'CLM-2025-0098','Zurich',3000000,'Victoria Cross')
+  mkC('CC-016','Blackstone Holdings','Securities Fraud','Pleadings','High','Unassigned','2025-01-20','2026-12-15',7500000,5,'CLM-2025-0098','Zurich',3000000,'Victoria Cross'),
+  mkC('CC-017','Quantum Industries','Trade Secret Theft','Pleadings','High','Unassigned','2025-02-01','2026-11-30',5200000,8,'CLM-2025-0112','Hartford',2100000,'Karen Liu'),
+  mkC('CC-018','Apex Healthcare','Medical Malpractice','Discovery','High','Unassigned','2025-01-10','2027-03-01',4800000,10,'CLM-2025-0088','CNA',1900000,'Dr. James Wu'),
+  mkC('CC-019','Global Finance Corp','Breach of Contract','Pleadings','Medium','Unassigned','2025-02-15','2026-10-20',3200000,3,'CLM-2025-0145','Progressive',1300000,'Michael Chen')
 ];
 
 
@@ -2190,7 +2193,7 @@ function litigationDashV(){
   h += '<div class="subhead">Portfolio across '+CASES.length+' matters · '+open.length+' active · '+fM(totRes)+' in reserves · CCI avg '+avgIdx+'</div>';
   h += '</div>';
   h += '<div style="display:flex;gap:8px;">';
-  h += '<button onclick="st({showAssignCases:!S.showAssignCases})" class="btn '+(S.showAssignCases?'btn-pri':'btn-out')+'">🤖 AI Assign Cases</button>';
+  h += '<button onclick="st({showAssignCases:!S.showAssignCases})" class="btn '+(S.showAssignCases?'btn-pri':'')+ '" style="'+(S.showAssignCases?'background:var(--good);color:white;border:1px solid var(--good);':'background:var(--good)18;color:var(--good);border:1px solid var(--good);')+'">🤖 AI Assign Cases</button>';
   h += '<select onchange="st({fAt:this.value})" class="inp" style="width:auto;min-width:130px;">'+['All',...ATTY].map(a=>'<option'+(S.fAt===a?' selected':'')+'>'+a+'</option>').join('')+'</select>';
   h += '<select onchange="st({fCarrier:this.value})" class="inp" style="width:auto;min-width:130px;">'+['All',...CARRIERS.slice(0,8)].map(c=>'<option'+(S.fCarrier===c?' selected':'')+'>'+c+'</option>').join('')+'</select>';
   h += '</div>';
