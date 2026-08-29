@@ -2129,7 +2129,90 @@ function assignAttorney(caseId, attorneyName, ranking) {
   render();
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   DRILL-DOWN VIEWS - Click any dashboard element to see detailed breakdowns
+   ══════════════════════════════════════════════════════════════════════ */
+
+function drillDownV() {
+  const type = S.drillType;
+  const label = S.drillLabel || 'Cases';
+  
+  let filteredCases = CASES;
+  
+  // Filter based on what was clicked
+  switch(type) {
+    case 'open':
+      filteredCases = CASES.filter(c => c.status !== 'Closed');
+      break;
+    case 'mediation':
+      const next90 = new Date(Date.now() + 90*864e5);
+      filteredCases = CASES.filter(c => c.keyDates.mediationDate && new Date(c.keyDates.mediationDate) <= next90 && new Date(c.keyDates.mediationDate) >= new Date());
+      break;
+    case 'trial':
+      const next90Trial = new Date(Date.now() + 90*864e5);
+      filteredCases = CASES.filter(c => c.keyDates.trialDate && new Date(c.keyDates.trialDate) <= next90Trial && new Date(c.keyDates.trialDate) >= new Date());
+      break;
+    case 'reserves':
+      filteredCases = CASES.filter(c => c.insurance.reserveAmount > 0).sort((a,b) => b.insurance.reserveAmount - a.insurance.reserveAmount);
+      break;
+    case 'cci':
+      filteredCases = CASES.filter(c => c.status !== 'Closed');
+      break;
+  }
+  
+  let h = '<div style="padding:20px;max-width:1200px;margin:0 auto;">';
+  h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid var(--line);padding-bottom:15px;">';
+  h += '<div>';
+  h += '<div class="sh">📊 ' + label + '</div>';
+  h += '<div style="font-size:12px;color:var(--muted);margin-top:4px;">'+filteredCases.length+' case'+(filteredCases.length!==1?'s':'')+' matching this filter</div>';
+  h += '</div>';
+  h += '<button onclick="st({showDrill:false, drillType:null, drillLabel:null})" class="btn btn-out">← Back to Dashboard</button>';
+  h += '</div>';
+  
+  if (filteredCases.length === 0) {
+    h += '<div class="card" style="padding:40px;text-align:center;color:var(--muted);">No cases match this filter</div>';
+    h += '</div>';
+    return h;
+  }
+  
+  // Show as table
+  h += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">';
+  h += '<thead><tr style="border-bottom:2px solid var(--line);">';
+  h += '<th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);font-weight:700;">Matter</th>';
+  h += '<th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);font-weight:700;">Client</th>';
+  h += '<th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);font-weight:700;">Type</th>';
+  h += '<th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);font-weight:700;">Status</th>';
+  h += '<th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);font-weight:700;">Attorney</th>';
+  h += '<th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);font-weight:700;">Value</th>';
+  h += '<th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);font-weight:700;">Reserve</th>';
+  h += '<th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);font-weight:700;">CCI</th>';
+  h += '<th style="padding:10px;text-align:center;font-size:12px;color:var(--muted);font-weight:700;">Action</th>';
+  h += '</tr></thead><tbody>';
+  
+  filteredCases.forEach(c => {
+    const idx = cci(c);
+    h += '<tr style="border-bottom:1px solid var(--line);hover:background-color:var(--surf2);">';
+    h += '<td style="padding:10px;font-weight:700;color:var(--pri2);">'+esc(c.matterNo||c.id)+'</td>';
+    h += '<td style="padding:10px;">'+esc(c.client)+'</td>';
+    h += '<td style="padding:10px;font-size:11px;color:var(--muted);">'+esc(c.type)+'</td>';
+    h += '<td style="padding:10px;font-size:11px;">'+esc(c.status)+'</td>';
+    h += '<td style="padding:10px;font-size:11px;">'+esc(c.attorney)+'</td>';
+    h += '<td style="padding:10px;color:var(--gold);">'+fV(c.value)+'</td>';
+    h += '<td style="padding:10px;color:var(--gold);">'+fM(c.insurance.reserveAmount||0)+'</td>';
+    h += '<td style="padding:10px;"><span class="cci-pill" style="background:'+cciColor(idx)+'22;color:'+cciColor(idx)+';padding:2px 6px;border-radius:3px;">'+idx+'</span></td>';
+    h += '<td style="padding:10px;text-align:center;"><button onclick="stCase(\''+c.id+'\')" class="btn btn-pri" style="font-size:10px;padding:4px 8px;">View</button></td>';
+    h += '</tr>';
+  });
+  
+  h += '</tbody></table></div>';
+  h += '</div>';
+  return h;
+}
+
 function litigationDashV(){
+  /* Check if showing drill-down view */
+  if (S.showDrill) return drillDownV();
+  
   /* Check if showing Assign Cases view */
   if (S.showAssignCases) return assignCasesV();
   
@@ -2229,9 +2312,11 @@ function litigationDashV(){
     {l:'CCI Avg', v:avgIdx, c:cciColor(avgIdx), sub:cciLabel(avgIdx)+' portfolio'}
   ];
   h += '<div class="kpi-grid" style="margin-bottom:14px;order:1;">';
-  kpis.forEach(k => {
-    h += '<div class="kpi"><div class="kpi-bar" style="background:'+k.c+'"></div>';
-    h += '<div class="kpi-l">'+k.l+'</div>';
+  kpis.forEach((k, idx) => {
+    const drillAction = `st({showDrill:true, drillType:'${['open','total','mediation','trial','reserves','cci'][idx]}', drillLabel:'${k.l}'})`;
+    h += '<div class="kpi" onclick="'+drillAction+'" style="cursor:pointer;transition:all 0.2s;hover:transform scale(1.02);">';
+    h += '<div class="kpi-bar" style="background:'+k.c+'"></div>';
+    h += '<div class="kpi-l">'+k.l+' <span style="color:var(--pri2);font-size:9px;text-transform:uppercase;opacity:0.6;">→ click to drill</span></div>';
     h += '<div class="kpi-v" style="color:'+k.c+'">'+k.v+'</div>';
     h += '<div class="kpi-sub">'+k.sub+'</div></div>';
   });
@@ -2484,7 +2569,7 @@ function litigationDashV(){
 
   /* Open Matters Table */
   h += '<div class="card" style="order:8;">';
-  h += '<div class="sh"><span>All Open Matters — '+open.length+' active</span><span style="display:flex;gap:8px;"><span class="muted-link" onclick="st({role:\'reports\'})">Generate Report →</span></span></div>';
+  h += '<div class="sh"><span onclick="st({showDrill:true, drillType:\'open\', drillLabel:\'All Open Cases\'})" style="cursor:pointer;">All Open Matters — '+open.length+' active ↓</span><span style="display:flex;gap:8px;"><span class="muted-link" onclick="st({role:\'reports\'})">Generate Report →</span></span></div>';
   h += '<div style="overflow-x:auto;"><table>';
   h += '<thead><tr><th>Matter #</th><th>Client</th><th>Type</th><th>Carrier</th><th>Stage</th><th>Track</th><th>Fav</th><th>CCI</th><th>Reserve</th><th>Exposure</th><th>SOL</th><th>Atty</th></tr></thead><tbody>';
   open.forEach(c => {
@@ -5718,6 +5803,7 @@ function submitCase(){
     CASES.push(newCase);
     
     console.log('✓ Case created:', newCaseId, clientName, caseAttorney);
+    console.log('Total cases now:', CASES.length);
     
     // Clear form variables
     window._nC = '';
@@ -5734,15 +5820,13 @@ function submitCase(){
     window._nCt = 'General Liability';
     window._nCar = 'AIG';
     
-    // Close modal and refresh UI - close first, then render
-    S.showAdd = false;
-    S.showAssignCases = false;
-    render();
+    // Use st() to properly close modal and trigger full re-render
+    st({showAdd: false, showAssignCases: false});
     
     // Show success message
     setTimeout(() => {
       alert('✓ Matter ' + newCaseId + ' (' + clientName + ') created as UNASSIGNED!\n\nClick "🤖 Assign Cases" to assign via AI.');
-    }, 200);
+    }, 300);
     
   } catch (e) {
     console.error('Error creating case:', e);
