@@ -705,10 +705,10 @@ let CASES = [
   mkC('CC-014','Pinnacle Realty Trust','Premises Liability','Mediation','High','Sarah Chen','2024-06-30','2026-08-15',2200000,70,'CLM-2024-7203','Liberty Mutual',1100000,'Frank Toomey'),
   mkC('CC-015','Lighthouse Aerospace','Product Liability','Trial','High','David Park','2023-12-12','2026-05-20',12500000,85,'CLM-2023-9971','AIG',5500000,'Tom Whitfield'),
   
-  /* UNASSIGNED TEST CASES - for AI assignment demo */
-  mkC('DEMO-001','Tech Startup Inc','Patent Infringement','Pleadings','High',null,'2025-02-01','2026-12-01',6500000,5,'CLM-2025-9001','Zurich',2500000,'Sara Kim'),
-  mkC('DEMO-002','Acme Manufacturing','Product Liability','Pleadings','High',null,'2025-02-15','2026-11-15',4200000,8,'CLM-2025-9002','Hartford',1800000,'John Smith'),
-  mkC('DEMO-003','Global Services LLC','Contract Breach','Pleadings','Medium',null,'2025-01-25','2026-10-01',3100000,3,'CLM-2025-9003','Chubb',1200000,'Lisa Wong')
+  /* FRESH UNASSIGNED TEST CASES FOR DEMO */
+  mkC('NEW-001','VentureTech Corp','Patent Dispute','Pleadings','High','','2025-02-01','2026-12-01',5500000,2,'CLM-2025-8001','Zurich',2200000,'Sarah King'),
+  mkC('NEW-002','RetailMax LLC','Employment Claim','Pleadings','Medium','','2025-02-10','2026-11-01',2800000,5,'CLM-2025-8002','Hartford',1100000,'Mike Johnson'),
+  mkC('NEW-003','HealthFirst Inc','Medical Dispute','Pleadings','High','','2025-01-30','2027-01-15',4100000,3,'CLM-2025-8003','CNA',1650000,'Dr. Lisa Chen')
 ];
 
 
@@ -2060,7 +2060,7 @@ function getTop3Recommendations(caseObj) {
 }
 
 function assignCasesV() {
-  const unassignedCases = CASES.filter(c => c.attorney === null || c.attorney === 'Unassigned' || !c.attorney);
+  const unassignedCases = CASES.filter(c => !c.attorney || c.attorney === '' || c.attorney === 'Unassigned');
   
   let h = '<div style="padding:20px;">';
   h += '<div class="sh" style="margin-bottom:20px;">🤖 AI Attorney Assignment</div>';
@@ -5627,7 +5627,7 @@ async function submitCase(){
   const cl = (window._nC || '').trim();
   if (!cl) { alert('Please enter client name'); return; }
   const type = window._nT||'Insurance Defense', status = window._nS||'Active', priority = window._nP||'Medium',
-        attorney = window._nA||ATTY[0], filed = window._nF||td(), value = parseFloat(window._nV)||100000,
+        attorney = '', filed = window._nF||td(), value = parseFloat(window._nV)||100000,
         claimNo = window._nCl||'', carrier = window._nCar||'', reserve = parseFloat(window._nR)||0;
 
   if (API_BASE) {
@@ -5648,6 +5648,7 @@ async function submitCase(){
     newCase.catastrophe = window._nCa || 'No';
     newCase.coverageType = window._nCt || '';
     CASES.push(newCase);
+    alert('✓ Matter created! Now use "🤖 Assign Cases" to assign it via AI.');
   }
   ['_nC','_nCl','_nV','_nR'].forEach(k => window[k] = '');
   st({showAdd:false});
