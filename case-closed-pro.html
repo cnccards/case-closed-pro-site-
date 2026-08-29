@@ -1262,6 +1262,146 @@ function verifyResultBannerV(){
 }
 
 /* ── RENDER ────────────────────────────────────────────────── */
+
+/* ══════════════════════════════════════════════════════════════════════
+   ATTORNEY LOGIN & ROLE-BASED ACCESS - Data entry only
+   ══════════════════════════════════════════════════════════════════════ */
+
+function attorneyLoginV() {
+  let h = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:linear-gradient(135deg, var(--pri2), var(--pri2)dd);">';
+  h += '<div style="background:white;border-radius:12px;padding:40px;width:90%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,0.3);">';
+  h += '<div style="text-align:center;margin-bottom:30px;">';
+  h += '<div style="font-size:32px;font-weight:700;margin-bottom:8px;">Case Closed Pro</div>';
+  h += '<div style="font-size:13px;color:var(--muted);">Attorney Portal — Case Management</div>';
+  h += '</div>';
+  h += '<div class="fld"><label class="lbl">Select Your Name</label>';
+  h += '<select class="inp" id="attorneySelect" style="padding:10px;border:1px solid var(--line);border-radius:6px;font-size:13px;">';
+  h += '<option value="">Choose attorney...</option>';
+  ATTY.forEach(a => {
+    h += '<option value="'+a.id+'">'+esc(a.name)+'</option>';
+  });
+  h += '</select></div>';
+  h += '<button onclick="attorneyLogin()" class="btn btn-pri" style="width:100%;margin-top:20px;">Sign In</button>';
+  h += '<div style="text-align:center;font-size:11px;color:var(--muted);margin-top:20px;">Demo: Select any attorney</div>';
+  h += '</div></div>';
+  return h;
+}
+
+function attorneyLogin() {
+  const attorneyId = document.getElementById('attorneySelect').value;
+  if (!attorneyId) { alert('Please select an attorney'); return; }
+  const atty = ATTY.find(a => a.id === attorneyId);
+  st({role:'attorney', attorneyId:attorneyId, attorneyName:atty.name, isAuthenticated:true});
+}
+
+function myCasesV() {
+  const attorneyName = S.attorneyName;
+  const myCases = CASES.filter(c => c.attorney === attorneyName);
+  
+  let h = '<div style="padding:20px;">';
+  h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid var(--line);padding-bottom:15px;">';
+  h += '<div>';
+  h += '<div class="sh">My Cases</div>';
+  h += '<div style="font-size:12px;color:var(--muted);margin-top:4px;">'+myCases.length+' assigned cases — Manage and update</div>';
+  h += '</div>';
+  h += '<button onclick="st({isAuthenticated:false, attorneyId:null, attorneyName:null})" class="btn btn-out">Sign Out</button>';
+  h += '</div>';
+  
+  if (myCases.length === 0) {
+    h += '<div class="card" style="text-align:center;padding:40px;color:var(--muted);">';
+    h += '<div style="font-size:14px;">No cases assigned yet</div>';
+    h += '</div>';
+    h += '</div>';
+    return h;
+  }
+  
+  h += '<div style="display:grid;grid-template-columns:1fr;gap:12px;">';
+  
+  myCases.forEach(c => {
+    const isSelected = S.caseId === c.id;
+    h += '<div class="card" style="padding:15px;border:'+(isSelected?'2px solid var(--pri2)':'1px solid var(--line)')+';cursor:pointer;" onclick="st({caseId:\''+c.id+'\'})">';
+    h += '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:10px;">';
+    h += '<div>';
+    h += '<div style="font-weight:700;color:var(--pri2);font-size:13px;">'+c.matterNo+'</div>';
+    h += '<div style="font-size:12px;color:var(--ink);margin-top:2px;">'+esc(c.client)+'</div>';
+    h += '</div>';
+    h += '<span class="pill" style="background:var(--pri2)18;color:var(--pri2);font-size:11px;padding:3px 8px;border-radius:3px;">'+c.status+'</span>';
+    h += '</div>';
+    h += '<div style="font-size:11px;color:var(--muted);margin-bottom:10px;">';
+    h += '💰 $'+f(c.value)+' | 📊 '+c.type+' | 📅 Days open: '+Math.floor((new Date() - new Date(c.filed))/(1000*60*60*24));
+    h += '</div>';
+    h += '<div style="background:var(--surf2);padding:8px;border-radius:4px;font-size:11px;color:var(--muted);margin-bottom:10px;">';
+    h += 'Settlement: $'+(c.exposure?.settlementAmount || '—')+' | Costs: $'+f(c.billing?.totalBilled || 0);
+    h += '</div>';
+    if (isSelected) {
+      h += '<button onclick="st({showCaseUpdateForm:true})" class="btn btn-pri" style="width:100%;font-size:11px;">Update Case</button>';
+    }
+    h += '</div>';
+  });
+  
+  h += '</div>';
+  
+  /* Case Update Form Modal */
+  if (S.showCaseUpdateForm && S.caseId) {
+    const caseObj = CASES.find(c => c.id === S.caseId);
+    h += '<div style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px;">';
+    h += '<div style="background:white;border-radius:12px;padding:30px;width:90%;max-width:500px;max-height:90vh;overflow-y:auto;box-shadow:0 25px 80px rgba(0,0,0,0.3);">';
+    h += '<div style="font-size:18px;font-weight:700;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;">';
+    h += '<div>'+caseObj.matterNo+' — '+esc(caseObj.client.substring(0,30))+'</div>';
+    h += '<button onclick="st({showCaseUpdateForm:false})" style="background:none;border:none;font-size:20px;color:var(--muted);cursor:pointer;">×</button>';
+    h += '</div>';
+    
+    h += '<div class="fld"><label class="lbl">Case Status</label>';
+    h += '<select class="inp" id="caseStatus" style="padding:8px;border:1px solid var(--line);border-radius:4px;font-size:12px;">';
+    ['Open', 'Discovery', 'Trial', 'Mediation', 'Settling', 'Closing', 'Closed'].forEach(st => {
+      h += '<option value="'+st+'" '+(caseObj.status === st ? 'selected' : '')+'>'+st+'</option>';
+    });
+    h += '</select></div>';
+    
+    h += '<div class="fld"><label class="lbl">Settlement Status</label>';
+    h += '<div style="display:flex;flex-direction:column;gap:8px;">';
+    ['No settlement discussions', 'Demand received', 'Offer in negotiation', 'Settled'].forEach(st => {
+      const isChecked = caseObj.exposure?.settlementStatus === st;
+      h += '<label style="display:flex;gap:8px;font-size:12px;cursor:pointer;"><input type="radio" name="settlement" value="'+st+'" '+(isChecked?'checked':'')+' style="cursor:pointer;"> '+st+'</label>';
+    });
+    h += '</div></div>';
+    
+    h += '<div class="g2" style="gap:10px;">';
+    h += '<div class="fld"><label class="lbl">Their Demand</label><input type="number" id="demand" value="'+(caseObj.value || '')+'" class="inp" placeholder="$" style="padding:8px;border:1px solid var(--line);border-radius:4px;"></div>';
+    h += '<div class="fld"><label class="lbl">Our Offer</label><input type="number" id="offer" value="'+(caseObj.exposure?.settlementAmount || '')+'" class="inp" placeholder="$" style="padding:8px;border:1px solid var(--line);border-radius:4px;"></div>';
+    h += '</div>';
+    
+    h += '<div class="fld"><label class="lbl">Costs to Date</label><input type="number" id="costs" value="'+(caseObj.billing?.totalBilled || '')+'" class="inp" placeholder="$" style="padding:8px;border:1px solid var(--line);border-radius:4px;"></div>';
+    
+    h += '<div class="fld"><label class="lbl">Next Step / Notes</label><textarea id="nextStep" class="inp" placeholder="What happens next? Any urgent items?" style="padding:8px;border:1px solid var(--line);border-radius:4px;min-height:80px;font-family:monospace;">'+esc(caseObj.nextStep || '')+'</textarea></div>';
+    
+    h += '<div style="display:flex;gap:10px;margin-top:20px;">';
+    h += '<button onclick="saveCaseUpdate(\''+caseObj.id+'\')" class="btn btn-pri" style="flex:1;">Save Update</button>';
+    h += '<button onclick="st({showCaseUpdateForm:false})" class="btn btn-out" style="flex:1;">Cancel</button>';
+    h += '</div>';
+    h += '</div></div>';
+  }
+  
+  h += '</div>';
+  return h;
+}
+
+function saveCaseUpdate(caseId) {
+  const caseObj = CASES.find(c => c.id === caseId);
+  if (!caseObj) return;
+  
+  caseObj.status = document.getElementById('caseStatus').value;
+  caseObj.exposure.settlementAmount = parseFloat(document.getElementById('offer').value) || 0;
+  caseObj.billing.totalBilled = parseFloat(document.getElementById('costs').value) || 0;
+  caseObj.nextStep = document.getElementById('nextStep').value;
+  
+  const settlementStatus = document.querySelector('input[name="settlement"]:checked')?.value;
+  if (settlementStatus) caseObj.exposure.settlementStatus = settlementStatus;
+  
+  alert('✓ Case '+caseObj.matterNo+' updated');
+  st({showCaseUpdateForm:false, caseId:null});
+}
+
 /* ══════════════════════════════════════════════════════════════════════
    CARRIER CLIENT PORTAL - Insurance company visibility
    ══════════════════════════════════════════════════════════════════════ */
@@ -1344,6 +1484,10 @@ function carrierLogin() {
 }
 
 function render(){
+  if (S.role === 'attorney' && !S.isAuthenticated) {
+    document.getElementById('app').innerHTML = attorneyLoginV();
+    return;
+  }
   if (S.role === 'carrier' && !S.carrierId) {
     document.getElementById('app').innerHTML = carrierLoginV();
     return;
@@ -1376,15 +1520,16 @@ function render(){
   if (S.verifyEmailResult) html += verifyResultBannerV();
   if (S.isDemoMode) html += demoModeBannerV();
   else if (API_BASE && S.currentUser && S.currentUser.emailVerified === false) html += unverifiedEmailBannerV();
-  html += hdr();
+  if (S.role !== 'attorney') html += hdr();
+  else html += '<div style="padding:15px;text-align:right;"><button onclick="st({isAuthenticated:false, attorneyId:null, attorneyName:null})" class="btn btn-out">Sign Out</button></div>';
   html += '<div id="ct">';
   if (S.role === 'litigation') html += litigationDashV();
-  else if (S.role === 'attorney') html += attyV();
   else if (S.role === 'tpa') html += tpaV();
   else if (S.role === 'partner') html += partV();
   else if (S.role === 'executive') html += execV();
   else if (S.role === 'scorecard') html += (S.scorecardDetail ? attorneyDetailV(S.scorecardDetail) : scorecardV());
   else if (S.role === 'reports') html += reportsHubV();
+  else if (S.role === 'attorney') html += myCasesV();
   else if (S.role === 'carrier') html += carrierPortalV();
   else if (S.role === 'activity') html += activityHubV();
   else if (S.role === 'billing') html += invoiceHubV();
@@ -1414,7 +1559,7 @@ function hdr(){
   const groups = [
     { label:'', items:[
       ['litigation','Litigation'],
-      ['attorney','Defense Attorney'],
+      ['attorney','My Cases'],
       ['activity','Activity Hub'],
       ['billing','Invoice Hub']
     ]},
@@ -1766,7 +1911,107 @@ function welcomeV(){
 }
 
 /* ── LITIGATION DASHBOARD (Carrier-grade) ──── */
+/* ══════════════════════════════════════════════════════════════════════
+   AI ATTORNEY ASSIGNMENT - Premium Feature
+   Gold/Silver/Bronze recommendations for case assignments
+   ══════════════════════════════════════════════════════════════════════ */
+
+function getTop3Recommendations(caseObj) {
+  const scores = ATTY.map(a => {
+    let score = 0;
+    
+    // 1. Case specialization (15 pts per similar case handled)
+    const attorneysCases = CASES.filter(c => c.attorney === a.name);
+    const similarCases = attorneysCases.filter(c => c.type === caseObj.type);
+    score += Math.min(similarCases.length * 15, 30);
+    
+    // 2. Complexity match (5 pts if experience level matches)
+    if (a.experience === 'Senior' && caseObj.value > 500000) score += 5;
+    if (a.experience === 'Mid' && caseObj.value >= 250000 && caseObj.value <= 750000) score += 5;
+    if (a.experience === 'Associate' && caseObj.value < 300000) score += 3;
+    
+    // 3. Win rate (30 pts max, based on closed cases)
+    const closedCases = attorneysCases.filter(c => c.status === 'Closed');
+    if (closedCases.length > 0) {
+      const wins = closedCases.filter(c => (c.exposure?.settlementAmount || 0) < (c.value * 0.35)).length;
+      const winRate = wins / closedCases.length;
+      score += winRate * 30;
+    }
+    
+    // 4. Workload availability (20 pts if available)
+    const openCases = attorneysCases.filter(c => c.status !== 'Closed').length;
+    if (openCases < 8) score += 20;
+    else if (openCases < 12) score += 10;
+    
+    // 5. Value alignment (10 pts if handles similar case values)
+    const avgCaseValue = attorneysCases.length > 0 
+      ? attorneysCases.reduce((s, c) => s + c.value, 0) / attorneysCases.length
+      : 0;
+    const valueDiff = Math.abs(caseObj.value - avgCaseValue);
+    if (valueDiff < 200000) score += 10;
+    else if (valueDiff < 500000) score += 5;
+    
+    return { name: a.name, experience: a.experience, score: Math.round(score) };
+  });
+  
+  return scores.sort((a, b) => b.score - a.score).slice(0, 3);
+}
+
+function assignCasesV() {
+  const unassignedCases = CASES.filter(c => !c.attorney || c.attorney === 'Unassigned');
+  
+  if (unassignedCases.length === 0) {
+    return '<div class="card" style="padding:30px;text-align:center;"><div style="font-size:14px;color:var(--muted);">All cases assigned! 🎉</div></div>';
+  }
+  
+  let h = '<div style="padding:20px;"><div class="sh" style="margin-bottom:20px;">AI Attorney Assignment</div>';
+  h += '<div style="font-size:12px;color:var(--muted);margin-bottom:20px;">🤖 Recommendations based on specialization, complexity, win rate, workload, and case value</div>';
+  
+  h += '<div style="display:grid;grid-template-columns:1fr;gap:15px;">';
+  
+  unassignedCases.slice(0, 5).forEach(c => {
+    const top3 = getTop3Recommendations(c);
+    
+    h += '<div class="card" style="padding:15px;border:2px solid var(--line);">';
+    h += '<div style="font-weight:700;color:var(--pri2);margin-bottom:10px;">'+c.matterNo+' — '+esc(c.client.substring(0,25))+'</div>';
+    h += '<div style="font-size:11px;color:var(--muted);margin-bottom:15px;">Value: $'+f(c.value)+' | Type: '+c.type+'</div>';
+    
+    h += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">';
+    
+    top3.forEach((atty, idx) => {
+      const medal = ['🥇', '🥈', '🥉'][idx];
+      const bgColor = idx === 0 ? 'var(--good)18' : idx === 1 ? 'var(--pri2)18' : 'var(--surf2)';
+      h += '<div style="background:'+bgColor+';padding:10px;border-radius:6px;text-align:center;">';
+      h += '<div style="font-size:16px;margin-bottom:5px;">'+medal+'</div>';
+      h += '<div style="font-weight:700;font-size:12px;color:var(--ink);">'+esc(atty.name)+'</div>';
+      h += '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Score: '+atty.score+'</div>';
+      h += '<div style="font-size:10px;color:var(--dim);">'+atty.experience+'</div>';
+      h += '<button onclick="assignAttorney(\''+c.id+'\', \''+esc(atty.name)+'\', '+idx+')" class="btn btn-pri" style="margin-top:8px;width:100%;font-size:10px;padding:4px;cursor:pointer;">Assign</button>';
+      h += '</div>';
+    });
+    
+    h += '</div>';
+    h += '</div>';
+  });
+  
+  h += '</div></div>';
+  return h;
+}
+
+function assignAttorney(caseId, attorneyName, ranking) {
+  const caseObj = CASES.find(c => c.id === caseId);
+  if (!caseObj) return;
+  
+  caseObj.attorney = attorneyName;
+  const medal = ['🥇 Gold', '🥈 Silver', '🥉 Bronze'][ranking];
+  alert('✓ Case '+caseObj.matterNo+' assigned to '+attorneyName+' ('+medal+' recommendation)');
+  render();
+}
+
 function litigationDashV(){
+  /* Check if showing Assign Cases view */
+  if (S.showAssignCases) return assignCasesV();
+  
   const open = CASES.filter(c => c.status !== 'Closed');
   const closed = CASES.filter(c => c.status === 'Closed');
   const totRes = CASES.reduce((s,c) => s + (c.insurance.reserveAmount||0), 0);
@@ -1847,6 +2092,7 @@ function litigationDashV(){
   h += '<div class="subhead">Portfolio across '+CASES.length+' matters · '+open.length+' active · '+fM(totRes)+' in reserves · CCI avg '+avgIdx+'</div>';
   h += '</div>';
   h += '<div style="display:flex;gap:8px;">';
+  h += '<button onclick="st({showAssignCases:!S.showAssignCases})" class="btn '+(S.showAssignCases?'btn-pri':'btn-out')+'">🤖 AI Assign Cases</button>';
   h += '<select onchange="st({fAt:this.value})" class="inp" style="width:auto;min-width:130px;">'+['All',...ATTY].map(a=>'<option'+(S.fAt===a?' selected':'')+'>'+a+'</option>').join('')+'</select>';
   h += '<select onchange="st({fCarrier:this.value})" class="inp" style="width:auto;min-width:130px;">'+['All',...CARRIERS.slice(0,8)].map(c=>'<option'+(S.fCarrier===c?' selected':'')+'>'+c+'</option>').join('')+'</select>';
   h += '</div>';
