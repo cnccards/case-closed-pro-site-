@@ -2062,12 +2062,20 @@ function getTop3Recommendations(caseObj) {
 function assignCasesV() {
   const unassignedCases = CASES.filter(c => !c.attorney || c.attorney === '' || c.attorney === 'Unassigned');
   
+  // Debug: Log to console
+  console.log('Total CASES:', CASES.length);
+  console.log('Unassigned CASES:', unassignedCases.length);
+  console.log('Unassigned details:', unassignedCases.map(c => ({id: c.id, client: c.client, attorney: c.attorney})));
+  
   let h = '<div style="padding:20px;">';
   h += '<div class="sh" style="margin-bottom:20px;">🤖 AI Attorney Assignment</div>';
-  h += '<div style="font-size:12px;color:var(--muted);margin-bottom:20px;">Found '+unassignedCases.length+' unassigned cases — Recommendations based on specialization, complexity, win rate, workload, and case value</div>';
+  h += '<div style="font-size:12px;color:var(--muted);margin-bottom:20px;">Found <strong>'+unassignedCases.length+'</strong> unassigned cases — Recommendations based on specialization, complexity, win rate, workload, and case value</div>';
   
   if (unassignedCases.length === 0) {
-    h += '<div class="card" style="padding:30px;text-align:center;"><div style="font-size:14px;color:var(--good);">✓ All cases assigned! 🎉</div></div>';
+    h += '<div class="card" style="padding:30px;text-align:center;">';
+    h += '<div style="font-size:14px;color:var(--good);">✓ All cases assigned! 🎉</div>';
+    h += '<div style="font-size:11px;color:var(--muted);margin-top:10px;">Total cases in system: '+CASES.length+'</div>';
+    h += '</div>';
     h += '</div>';
     return h;
   }
@@ -5286,7 +5294,7 @@ function addModal(){
   h += '<div class="grid-3">';
   h += '<div>'+sel('Status','window._nS=this.value', STATS, S._nS||'Active')+'</div>';
   h += '<div>'+sel('Priority','window._nP=this.value', ['High','Medium','Low'], S._nP||'Medium')+'</div>';
-  h += '<div>'+sel('Lead Attorney','window._nA=this.value', ATTY, S._nA||ATTY[0])+'</div>';
+  h += '<div>'+sel('Lead Attorney','window._nA=this.value', ['Unassigned',...ATTY], S._nA||'Unassigned')+'</div>';
   h += '</div>';
   h += '<div class="grid-3">';
   h += '<div>'+sel('AOB?','window._nAo=this.value', ['No','Yes'], S._nAo||'No')+'</div>';
@@ -5627,7 +5635,7 @@ async function submitCase(){
   const cl = (window._nC || '').trim();
   if (!cl) { alert('Please enter client name'); return; }
   const type = window._nT||'Insurance Defense', status = window._nS||'Active', priority = window._nP||'Medium',
-        attorney = '', filed = window._nF||td(), value = parseFloat(window._nV)||100000,
+        attorney = window._nA||'Unassigned', filed = window._nF||td(), value = parseFloat(window._nV)||100000,
         claimNo = window._nCl||'', carrier = window._nCar||'', reserve = parseFloat(window._nR)||0;
 
   if (API_BASE) {
@@ -5648,7 +5656,11 @@ async function submitCase(){
     newCase.catastrophe = window._nCa || 'No';
     newCase.coverageType = window._nCt || '';
     CASES.push(newCase);
-    alert('✓ Matter created! Now use "🤖 Assign Cases" to assign it via AI.');
+    if (attorney === 'Unassigned') {
+      alert('✓ Matter created as UNASSIGNED! Click "🤖 Assign Cases" to assign via AI.');
+    } else {
+      alert('✓ Matter created and assigned to ' + attorney);
+    }
   }
   ['_nC','_nCl','_nV','_nR'].forEach(k => window[k] = '');
   st({showAdd:false});
