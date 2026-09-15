@@ -6913,62 +6913,24 @@ async function aiProcessClaimIntake() {
   st({ aiProcessing: true, aiError: '' });
   
   try {
-    const prompt = `You are an expert litigation assistant. Extract key information from the following claim details and return ONLY valid JSON (no markdown, no explanation).
-
-CLAIM DETAILS:
-${claimText}
-
-Extract and return ONLY this exact JSON structure (fill in values from the claim or leave empty if not found):
-{
-  "client": "Company or person name",
-  "type": "Insurance Defense|Personal Injury|Contract Dispute|Employment Law|Product Liability|Premises Liability|Medical Malpractice|IP Litigation|Property Damage|Other",
-  "status": "Active|Closed|Discovery|Trial|Mediation|Pleadings|Review",
-  "priority": "High|Medium|Low",
-  "attorney": "Recommend attorney name (Sarah Chen|James Ortega|David Park|Maria Santos|Rachel Goldberg|Lisa Johnson|Unassigned)",
-  "value": estimated numeric value in dollars,
-  "claimNo": "Claim or reference number",
-  "carrier": "Insurance carrier name or empty",
-  "reserve": numeric reserve amount or 0,
-  "filed": "YYYY-MM-DD date format",
-  "aob": "Yes|No",
-  "catastrophe": "Yes|No",
-  "coverageType": "General Liability|Professional Liability|Cyber|Medical Malpractice|Auto Liability|Property|Other",
-  "summary": "2-3 sentence summary of the claim for attorney review"
-}
-
-CRITICAL: Return ONLY valid JSON. No markdown backticks. No explanations.`;
-
-    // Call Claude API
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    // Call serverless function (which calls Claude API with API key)
+    const response = await fetch("/api/extract-claim", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1000,
-        messages: [
-          { role: "user", content: prompt }
-        ],
+        claimText: claimText
       })
     });
 
-    const data = await response.json();
-    
     if (!response.ok) {
-      throw new Error(data.error?.message || 'API call failed');
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'API call failed');
     }
 
-    const responseText = data.content[0]?.text || '';
-    
-    // Clean up response (remove markdown code blocks if present)
-    let cleanJson = responseText.trim();
-    if (cleanJson.startsWith('```')) {
-      cleanJson = cleanJson.replace(/^```json?\n?/, '').replace(/\n?```$/, '');
-    }
-    
-    // Parse JSON response
-    const extracted = JSON.parse(cleanJson);
+    // Response is already parsed JSON from serverless function
+    const extracted = await response.json();
     
     // Validate required fields
     if (!extracted.client) {
