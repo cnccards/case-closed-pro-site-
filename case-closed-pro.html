@@ -1017,7 +1017,7 @@ let S = {
   rptAt: 'All', rptSt: 'All',
   addForm: {client:'',type:'Insurance Defense',status:'Active',priority:'Medium',attorney:'Sarah Chen',filed:'',deadline:'',value:'',claimNo:'',carrier:'',reserve:'',adjuster:'',notes:'',aob:'No',catastrophe:'No',coverageType:'General Liability',claimCategory:'Bodily Injury'},
   /* AI Intake for Claims */
-  showAiIntake: false, aiIntakeStep: 1, aiClaimText: '', aiProcessing: false, aiExtracted: null, aiError: ''
+  showAiIntake: false, aiIntakeStep: 1, aiClaimText: '', aiProcessing: false, aiExtracted: null, aiError: '', aiAssignLoading: false
 };
 const RATINGS = {};
 let SAVED_REPORTS = [];
@@ -6868,6 +6868,9 @@ function aiIntakeStep3V() {
   if (!S.aiExtracted) return '';
   const d = S.aiExtracted;
   
+  // Check if attorney is still "Unassigned"
+  const isUnassigned = d.attorney === 'Unassigned' || !d.attorney;
+  
   return '<div class="modal-bg" onclick="if(event.target===this)st({showAiIntake:false})">' +
     '<div class="modal" style="max-width:600px;">' +
       '<div class="modal-h">' +
@@ -6883,6 +6886,15 @@ function aiIntakeStep3V() {
             'Assigned to: <strong>' + esc(d.attorney) + '</strong><br/>' +
             'Est. Value: <strong>$' + (d.value || 0).toLocaleString() + '</strong>' +
           '</div>' +
+          (isUnassigned ? 
+            '<div style="background:var(--surf1);border:2px solid var(--pri2);border-radius:8px;padding:16px;margin-bottom:24px;text-align:center;">' +
+              '<div style="font-size:12px;font-weight:700;color:var(--pri2);margin-bottom:12px;">🤖 Let AI recommend the best attorney for this case</div>' +
+              '<button class="btn btn-pri" style="width:100%;" onclick="aiAssignBestAttorney()" ' + (S.aiAssignLoading ? 'disabled' : '') + '>' +
+                (S.aiAssignLoading ? '⏳ Assigning...' : '✨ AI Smart Assign') +
+              '</button>' +
+            '</div>'
+            : ''
+          ) +
           '<div style="background:var(--surf2);border-radius:8px;padding:14px;margin-bottom:24px;text-align:left;">' +
             '<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Next Steps</div>' +
             '<ul style="margin:0;padding-left:20px;font-size:12px;color:var(--ink);line-height:1.8;">' +
@@ -6899,6 +6911,70 @@ function aiIntakeStep3V() {
       '</div>' +
     '</div>' +
   '</div>';
+}
+
+/* AI Smart Attorney Assignment */
+async function aiAssignBestAttorney() {
+  if (!S.aiExtracted) return;
+  
+  st({ aiAssignLoading: true });
+  
+  try {
+    const d = S.aiExtracted;
+    const attorneyList = ATTY.map(a => a.name).join(', ');
+    
+    const response = await fetch("/api/extract-claim", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        claimText: `Based on this case, which of these attorneys is best suited to handle it?
+
+CASE DETAILS:
+- Client: ${d.client}
+- Type: ${d.type}
+- Priority: ${d.priority}
+- Value: $${d.value || 0}
+- Summary: ${d.summary || 'N/A'}
+
+AVAILABLE ATTORNEYS (choose one):
+${attorneyList}
+
+Respond with ONLY the attorney name, nothing else. Just the name.`
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to get attorney recommendation');
+    }
+
+    const result = await response.json();
+    const recommendedAttorney = result.summary ? result.summary.trim() : 'Sarah Chen';
+    
+    // Validate attorney exists in list
+    const validAttorney = ATTY.find(a => a.name.toLowerCase() === recommendedAttorney.toLowerCase())?.name || 'Sarah Chen';
+    
+    // Update extracted data with assigned attorney
+    S.aiExtracted.attorney = validAttorney;
+    
+    // Find the created case and update it
+    const createdCase = CASES[CASES.length - 1];
+    if (createdCase) {
+      createdCase.attorney = validAttorney;
+      logAuditTrail('case_attorney_assigned_ai', createdCase.id, null, { attorney: validAttorney });
+    }
+    
+    console.log('✅ Attorney assigned:', validAttorney);
+    
+    // Refresh UI
+    st({ aiAssignLoading: false });
+    render();
+    
+  } catch (error) {
+    console.error('Attorney assignment failed:', error);
+    st({ aiAssignLoading: false });
+  }
 }
 
 /* Process claim text with Claude API */
