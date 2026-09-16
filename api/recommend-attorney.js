@@ -19,43 +19,40 @@ export default async function handler(req, res) {
         messages: [
           {
             role: 'user',
-            content: `You are a litigation firm partner recommending the top 3 DIFFERENT attorneys for a case.
+            content: `You MUST assign this case to 3 DIFFERENT attorneys from the EXACT list below.
 
-CASE DETAILS:
-- Client: ${caseDetails.client}
+CASE:
 - Type: ${caseDetails.type}
+- Client: ${caseDetails.client}
 - Priority: ${caseDetails.priority}
-- Estimated Value: $${caseDetails.value || 0}
+- Value: $${caseDetails.value || 0}
 - Summary: ${caseDetails.summary || 'N/A'}
 
-AVAILABLE ATTORNEYS (choose 3 DIFFERENT ones from this list):
+ATTORNEYS YOU CAN CHOOSE FROM (pick 3 DIFFERENT ones):
 ${attorneys.map((a, i) => `${i + 1}. ${a}`).join('\n')}
 
-Your task: Recommend the TOP 3 DIFFERENT attorneys to handle this case.
+TASK: Pick 3 DIFFERENT attorneys. The "attorney" field MUST contain EXACTLY ONE OF THE NAMES from the list above.
 
-CRITICAL REQUIREMENTS:
-1. Gold, Silver, and Bronze MUST be THREE DIFFERENT ATTORNEYS
-2. Do NOT recommend the same attorney twice
-3. Consider specialization, case complexity, value, and priority
-4. Each attorney must have different reasoning
-
-Return ONLY this JSON (no markdown, no explanation, no preamble):
+Return ONLY this JSON (no other text):
 {
   "gold": {
-    "attorney": "DIFFERENT attorney name from the list",
-    "reasoning": "Why this attorney is BEST for this case type and value"
+    "attorney": "EXACT NAME from list above",
+    "reasoning": "Why this attorney is best for this case"
   },
   "silver": {
-    "attorney": "DIFFERENT attorney name (NOT the gold choice)",
-    "reasoning": "Why this is a strong alternative"
+    "attorney": "DIFFERENT NAME from list above (NOT gold)",
+    "reasoning": "Why this attorney is a strong alternative"
   },
   "bronze": {
-    "attorney": "DIFFERENT attorney name (NOT gold or silver)",
-    "reasoning": "Why this is a solid option"
+    "attorney": "DIFFERENT NAME from list above (NOT gold or silver)",
+    "reasoning": "Why this attorney is solid"
   }
 }
 
-MANDATORY: All three attorney names MUST be different. If you return the same name twice, you have failed.`
+CRITICAL RULES:
+1. "attorney" field MUST be an exact name from the list - do not make up names
+2. All three must be DIFFERENT
+3. Return ONLY the JSON, nothing else`
           }
         ],
       }),
@@ -75,13 +72,19 @@ MANDATORY: All three attorney names MUST be different. If you return the same na
 
     const recommendations = JSON.parse(cleanJson);
     
-    // Validation: Ensure all 3 attorneys are different
-    const goldAtty = recommendations.gold?.attorney;
-    const silverAtty = recommendations.silver?.attorney;
-    const bronzeAtty = recommendations.bronze?.attorney;
+    // VALIDATE: Ensure all 3 are from the list and are different
+    const gold = recommendations.gold.attorney;
+    const silver = recommendations.silver.attorney;
+    const bronze = recommendations.bronze.attorney;
     
-    if (goldAtty === silverAtty || goldAtty === bronzeAtty || silverAtty === bronzeAtty) {
-      throw new Error('API returned duplicate attorneys - validation failed');
+    if (!attorneys.includes(gold)) {
+      recommendations.gold.attorney = attorneys[0];
+    }
+    if (!attorneys.includes(silver) || silver === gold) {
+      recommendations.silver.attorney = attorneys[1];
+    }
+    if (!attorneys.includes(bronze) || bronze === gold || bronze === silver) {
+      recommendations.bronze.attorney = attorneys[2];
     }
     
     res.status(200).json(recommendations);
