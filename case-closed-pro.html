@@ -6996,7 +6996,7 @@ async function aiAssignBestAttorney() {
   
   try {
     const d = S.aiExtracted;
-    const attorneyList = ATTY.map(a => a.name);
+    const attorneyList = ATTY;
     
     // Call attorney recommendation API (returns 3 options)
     const response = await fetch("/api/recommend-attorney", {
