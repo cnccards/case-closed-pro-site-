@@ -7023,7 +7023,7 @@ async function aiAssignBestAttorney() {
     const recommendations = await response.json();
     
     // Validate attorneys exist
-    const validateAtty = (name) => ATTY.find(a => a.name === name) ? name : 'Sarah Chen';
+    const validateAtty = (name) => ATTY.includes(name) ? name : 'Sarah Chen';
     
     S.attorneyRecommendations = {
       gold: { attorney: validateAtty(recommendations.gold.attorney), reasoning: recommendations.gold.reasoning },
