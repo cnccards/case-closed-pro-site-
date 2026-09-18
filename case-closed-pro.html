@@ -1486,6 +1486,152 @@ function auditLogViewerV() {
    ATTORNEY LOGIN & ROLE-BASED ACCESS - Data entry only
    ══════════════════════════════════════════════════════════════════════ */
 
+/* ══════════════════════════════════════════════════════════════════════
+   PUBLIC LANDING PAGE — Product / Pricing / ROI / Careers
+   Colors pulled entirely from the app's own CSS variables
+   (var(--pri), var(--pri2), var(--pri3), var(--gold), var(--ink),
+   var(--muted), var(--line), var(--surf2)) so this always matches
+   whatever the current theme is — nothing hardcoded.
+   ══════════════════════════════════════════════════════════════════════ */
+function landingPageV() {
+  let h = '<div style="background:#fff;min-height:100vh;font-family:var(--sans);">';
+
+  /* Nav */
+  h += '<div style="background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:100;">';
+  h += '<div style="max-width:1400px;margin:0 auto;padding:0 40px;display:flex;justify-content:space-between;align-items:center;height:70px;">';
+  h += '<div style="display:flex;align-items:center;gap:10px;">';
+  h += '<div class="brand-mark" style="width:30px;height:30px;"><svg viewBox="0 0 300 160" width="20" height="11" fill="none">'+
+        '<circle cx="80" cy="55" r="21" stroke-width="12" stroke="#F5B700"/><circle cx="80" cy="105" r="21" stroke-width="12" stroke="#F5B700"/>'+
+        '<circle cx="118" cy="80" r="26" stroke-width="13" stroke="#F5B700"/>'+
+        '<path d="M233 37 A62 62 0 1 0 233 123" stroke-width="24" stroke-linecap="butt" stroke="white"/>'+
+        '<line x1="170" y1="80" x2="289" y2="80" stroke-width="11" stroke-linecap="butt" stroke="#F5B700"/>'+
+        '<rect x="278" y="80" width="10" height="27" fill="#F5B700" stroke="none"/>'+
+        '<rect x="261" y="80" width="10" height="20" fill="#F5B700" stroke="none"/>'+
+        '<rect x="244" y="80" width="10" height="13" fill="#F5B700" stroke="none"/></svg></div>';
+  h += '<div style="font-weight:700;font-size:18px;color:var(--pri);font-family:var(--serif);">Case Closed Pro</div>';
+  h += '</div>';
+  h += '<div style="display:flex;gap:30px;align-items:center;font-size:14px;">';
+  h += '<a href="#" onclick="st({showLandingTab:\'product\'});return false;" style="color:'+(S.showLandingTab==='product'?'var(--pri2)':'var(--ink)')+';text-decoration:none;cursor:pointer;font-weight:'+(S.showLandingTab==='product'?'700':'500')+';">Product</a>';
+  h += '<a href="#" onclick="st({showLandingTab:\'pricing\'});return false;" style="color:'+(S.showLandingTab==='pricing'?'var(--pri2)':'var(--ink)')+';text-decoration:none;cursor:pointer;font-weight:'+(S.showLandingTab==='pricing'?'700':'500')+';">Pricing</a>';
+  h += '<a href="#" onclick="st({showLandingTab:\'roi\'});return false;" style="color:'+(S.showLandingTab==='roi'?'var(--pri2)':'var(--ink)')+';text-decoration:none;cursor:pointer;font-weight:'+(S.showLandingTab==='roi'?'700':'500')+';">ROI Calculator</a>';
+  h += '<a href="#" onclick="st({showLandingTab:\'defense\'});return false;" style="color:'+(S.showLandingTab==='defense'?'var(--pri2)':'var(--ink)')+';text-decoration:none;cursor:pointer;font-weight:'+(S.showLandingTab==='defense'?'700':'500')+';">For Defense Counsel</a>';
+  h += '<a href="#" onclick="st({showLandingTab:\'pricing\'});return false;" style="color:var(--ink);text-decoration:none;cursor:pointer;">Full Pricing Details</a>';
+  h += '<a href="#" onclick="st({showLandingTab:\'careers\'});return false;" style="color:'+(S.showLandingTab==='careers'?'var(--pri2)':'var(--ink)')+';text-decoration:none;cursor:pointer;font-weight:'+(S.showLandingTab==='careers'?'700':'500')+';">Careers</a>';
+  h += '</div>';
+  h += '<div style="display:flex;gap:12px;align-items:center;">';
+  h += '<button onclick="st({showLandingPage:false})" class="btn btn-out">Sign In</button>';
+  h += '<button onclick="window.location.href=\'mailto:sales@cclosed.com\'" class="btn btn-pri">Talk to Sales</button>';
+  h += '</div></div></div>';
+
+  /* Hiring banner */
+  h += '<div style="background:var(--pri2);color:#fff;padding:12px 40px;text-align:center;font-size:13px;font-weight:600;">✨ We\'re hiring! Join our team building the future of litigation AI — <a href="#" onclick="st({showLandingTab:\'careers\'});return false;" style="color:#fff;text-decoration:underline;">see open roles →</a></div>';
+
+  const tab = S.showLandingTab || 'product';
+
+  /* Hero — shown on every tab except a bare careers-only view keeps its own hero below */
+  if (tab !== 'careers') {
+    h += '<div style="background:linear-gradient(135deg, var(--pri) 0%, var(--pri2) 100%);color:#fff;padding:100px 40px;text-align:center;">';
+    h += '<h1 style="font-size:48px;font-weight:700;margin-bottom:16px;line-height:1.1;font-family:var(--serif);">AI-Native Litigation Platform</h1>';
+    h += '<p style="font-size:18px;opacity:0.95;margin-bottom:40px;max-width:700px;margin-left:auto;margin-right:auto;">Native AI handles attorney assignment, settlement strategy, risk analysis, and case forecasting. Every case gets institutional knowledge.</p>';
+    h += '<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">';
+    h += '<button onclick="window.open(\'https://calendly.com/cclosed\')" style="background:var(--pri3);color:var(--pri);padding:14px 32px;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:14px;">Schedule Demo</button>';
+    h += '<button onclick="window.location.href=\'mailto:sales@cclosed.com\'" style="background:transparent;color:#fff;padding:14px 32px;border:1px solid #fff;border-radius:6px;font-weight:500;cursor:pointer;font-size:14px;">Talk to Sales</button>';
+    h += '</div></div>';
+  }
+
+  if (tab === 'product') {
+    h += '<div style="padding:80px 40px;background:var(--surf2);">';
+    h += '<div style="max-width:1100px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:60px;align-items:center;">';
+    h += '<div>';
+    h += '<h2 style="font-size:36px;font-weight:700;color:var(--pri);margin-bottom:20px;font-family:var(--serif);">Proprietary AI Attorney Selection</h2>';
+    h += '<p style="font-size:16px;color:var(--muted);margin-bottom:24px;line-height:1.7;">Native AI analyzes your case details and assigns it to your best attorney for that specific matter. No more guessing. Perfect fit, every time.</p>';
+    h += '<ul style="list-style:none;">';
+    ['Case type specialization matching','Attorney track record analysis','Case complexity assessment','Workload balancing','Real-time recommendations'].forEach(li => {
+      h += '<li style="padding:12px 0;font-size:15px;color:var(--ink);">✓ '+li+'</li>';
+    });
+    h += '</ul></div>';
+    h += '<div style="background:#fff;padding:48px;border-radius:10px;border:1px solid var(--line);text-align:center;">';
+    h += '<div style="font-size:72px;margin-bottom:20px;">🏆</div>';
+    h += '<h3 style="font-size:20px;font-weight:600;color:var(--pri);margin-bottom:8px;">Intelligent Assignment</h3>';
+    h += '<p style="font-size:14px;color:var(--dim);">AI-powered attorney selection based on expertise and availability</p>';
+    h += '</div></div></div>';
+
+    h += '<div style="padding:60px 40px;background:#fff;">';
+    h += '<div style="max-width:1100px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:40px;text-align:center;">';
+    [['15-25%','Better case outcomes'],['30%','Faster case resolution'],['50+','Hours saved per case']].forEach(([n,l]) => {
+      h += '<div><div style="font-size:42px;font-weight:700;color:var(--gold);margin-bottom:8px;font-family:var(--serif);">'+n+'</div><div style="font-size:15px;color:var(--muted);">'+l+'</div></div>';
+    });
+    h += '</div></div>';
+  } else if (tab === 'pricing') {
+    h += '<div style="padding:80px 40px;background:#fff;text-align:center;">';
+    h += '<div style="max-width:700px;margin:0 auto;">';
+    h += '<h2 style="font-size:32px;font-weight:700;color:var(--pri);margin-bottom:16px;font-family:var(--serif);">Custom Pricing</h2>';
+    h += '<p style="font-size:15px;color:var(--muted);line-height:1.7;margin-bottom:30px;">Pricing is based on portfolio size and plan tier. One better settlement decision typically pays for a full year — talk to sales for a quote tailored to your firm or carrier.</p>';
+    h += '<button onclick="window.location.href=\'mailto:sales@cclosed.com?subject=Pricing%20Inquiry\'" class="btn btn-pri" style="padding:12px 28px;font-size:14px;">Get a Custom Quote</button>';
+    h += '</div></div>';
+  } else if (tab === 'roi') {
+    h += '<div style="padding:80px 40px;background:#fff;text-align:center;">';
+    h += '<div style="max-width:700px;margin:0 auto;">';
+    h += '<h2 style="font-size:32px;font-weight:700;color:var(--pri);margin-bottom:16px;font-family:var(--serif);">ROI Calculator</h2>';
+    h += '<p style="font-size:15px;color:var(--muted);line-height:1.7;margin-bottom:30px;">Most firms recoup the cost of Case Closed Pro from a single improved settlement decision. Talk to sales for a portfolio-specific ROI estimate.</p>';
+    h += '<button onclick="window.location.href=\'mailto:sales@cclosed.com?subject=ROI%20Calculator%20Request\'" class="btn btn-pri" style="padding:12px 28px;font-size:14px;">Request an ROI Estimate</button>';
+    h += '</div></div>';
+  } else if (tab === 'defense') {
+    h += '<div style="padding:80px 40px;background:#fff;text-align:center;">';
+    h += '<div style="max-width:700px;margin:0 auto;">';
+    h += '<h2 style="font-size:32px;font-weight:700;color:var(--pri);margin-bottom:16px;font-family:var(--serif);">For Defense Counsel</h2>';
+    h += '<p style="font-size:15px;color:var(--muted);line-height:1.7;margin-bottom:30px;">Free for defense firms assigned matters by a carrier client — no cost to your firm, ever. Matters your carrier clients assign appear in My Cases automatically.</p>';
+    h += '<button onclick="st({showLandingPage:false,_loginPersona:\'defense\'})" class="btn btn-pri" style="padding:12px 28px;font-size:14px;">Sign In as Defense Counsel</button>';
+    h += '</div></div>';
+  }
+
+  if (tab === 'careers' || tab === 'product') {
+    h += '<div style="padding:80px 40px;background:var(--surf2);">';
+    h += '<div style="max-width:1100px;margin:0 auto;">';
+    h += '<div style="text-align:center;margin-bottom:50px;">';
+    h += '<h2 style="font-size:36px;font-weight:700;color:var(--pri);margin-bottom:12px;font-family:var(--serif);">We\'re Hiring</h2>';
+    h += '<p style="font-size:16px;color:var(--muted);">Help us build the AI-native litigation platform trusted by the nation\'s leading law firms and carriers</p>';
+    h += '</div>';
+    h += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:24px;">';
+
+    const jobs = [
+      ['Backend Engineer', 'Build scalable infrastructure for AI-powered case management. Work with Node.js, Firebase, and advanced API integrations.'],
+      ['Full-Stack Developer', 'Create beautiful, intuitive UIs for litigation professionals. React, TypeScript, real-time collaboration features.'],
+      ['Sales Development Rep', 'Reach out to law firms and carriers to build our customer base. Own your territory, high earning potential, rapidly scaling market.']
+    ];
+    jobs.forEach(([title, desc]) => {
+      h += '<div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:32px;display:flex;flex-direction:column;">';
+      h += '<div style="font-size:11px;color:var(--pri2);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">Full-time</div>';
+      h += '<h3 style="font-size:18px;font-weight:700;color:var(--pri);margin-bottom:16px;font-family:var(--serif);">'+title+'</h3>';
+      h += '<p style="font-size:14px;color:var(--muted);line-height:1.7;margin-bottom:20px;flex-grow:1;">'+desc+'</p>';
+      h += '<ul style="list-style:none;font-size:13px;color:var(--dim);margin-bottom:24px;padding:0;">';
+      h += '<li style="padding:6px 0;">• Competitive salary + equity</li>';
+      h += '<li style="padding:6px 0;">• Remote-friendly</li>';
+      h += '<li style="padding:6px 0;">• Fast-growing product</li>';
+      h += '</ul>';
+      h += '<button onclick="window.location.href=\'mailto:sales@cclosed.com?subject=Job%20Application%20-%20'+encodeURIComponent(title)+'\'" class="btn btn-pri" style="align-self:flex-start;">Apply Now</button>';
+      h += '</div>';
+    });
+    h += '</div></div></div>';
+  }
+
+  /* Final CTA */
+  h += '<div style="background:linear-gradient(135deg, var(--pri) 0%, var(--pri2) 100%);color:#fff;padding:80px 40px;text-align:center;">';
+  h += '<h2 style="font-size:36px;font-weight:700;margin-bottom:16px;font-family:var(--serif);">Ready to experience AI-native litigation management?</h2>';
+  h += '<p style="font-size:16px;opacity:0.95;margin-bottom:40px;max-width:600px;margin-left:auto;margin-right:auto;">Join forward-thinking firms and carriers leveraging native AI for better outcomes</p>';
+  h += '<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">';
+  h += '<button onclick="window.open(\'https://calendly.com/cclosed\')" style="background:var(--pri3);color:var(--pri);padding:14px 32px;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:14px;">Schedule Demo</button>';
+  h += '<button onclick="window.location.href=\'mailto:sales@cclosed.com\'" style="background:transparent;color:#fff;padding:14px 32px;border:1px solid #fff;border-radius:6px;font-weight:500;cursor:pointer;font-size:14px;">Talk to Sales</button>';
+  h += '</div></div>';
+
+  /* Footer */
+  h += '<div style="padding:40px;background:var(--surf2);text-align:center;color:var(--dim);font-size:13px;border-top:1px solid var(--line);">';
+  h += '<p>© 2026 Case Closed Pro. All rights reserved. &nbsp;|&nbsp; <a href="mailto:sales@cclosed.com" style="color:var(--pri2);text-decoration:none;">Contact: sales@cclosed.com</a></p></div>';
+
+  h += '</div>';
+  return h;
+}
+
 function attorneyLoginV() {
   let h = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:linear-gradient(135deg, var(--pri2), var(--pri2)dd);">';
   h += '<div style="background:white;border-radius:12px;padding:40px;width:90%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,0.3);">';
@@ -2809,6 +2955,10 @@ function battleCardsV() {
 
 function render(){
   try {
+    if (S.showLandingPage !== false && !S.isAuthenticated && !S.role) {
+      document.getElementById('app').innerHTML = landingPageV();
+      return;
+    }
     if (S.role === 'attorney' && !S.isAuthenticated) {
       document.getElementById('app').innerHTML = attorneyLoginV();
       return;
