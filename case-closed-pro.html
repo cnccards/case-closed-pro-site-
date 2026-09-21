@@ -238,6 +238,55 @@ const SM = {
 };
 const PC = {High:'#DC2626', Medium:'#D97706', Low:'#059669'};
 const ATTY = ['Sarah Chen','James Ortega','David Park','Maria Santos','Rachel Goldberg','Lisa Johnson','Rickey Henderson','Jennifer Martinez','Michael Tomassi','Amanda Foster','Sean Green'];
+
+/* ══════════════════════════════════════════════════════════════
+   PAYABLES — the org paying ITS OWN people (outside counsel,
+   claims adjusters, expert witnesses, vendors). Distinct from
+   invoiceHubV() above, which is accounts RECEIVABLE (money coming
+   IN from billing the carrier). This is accounts PAYABLE — money
+   going OUT. Deliberately separate data, separate hub, separate
+   approval workflow — mixing them would make an org's real payable
+   obligations impossible to track cleanly.
+   ══════════════════════════════════════════════════════════════ */
+const PAYEE_TYPES = ['Outside Counsel','Claims Adjuster','Expert Witness','Court Reporter','Investigator','Vendor','Other'];
+const PAYABLES_STATUSES = ['Draft','Submitted','Approved','Paid','Rejected'];
+let PAYEES = [
+  {id:'py1', name:'Sarah Chen', type:'Outside Counsel', email:'schen@lawfirm.com', defaultRate:425},
+  {id:'py2', name:'James Ortega', type:'Outside Counsel', email:'jortega@lawfirm.com', defaultRate:395},
+  {id:'py3', name:'David Park', type:'Outside Counsel', email:'dpark@lawfirm.com', defaultRate:450},
+  {id:'py4', name:'Rachel Goldberg', type:'Claims Adjuster', email:'rgoldberg@carrier.com', defaultRate:0},
+  {id:'py5', name:'Michael Tomassi', type:'Claims Adjuster', email:'mtomassi@carrier.com', defaultRate:0},
+  {id:'py6', name:'Dr. Elena Vasquez', type:'Expert Witness', email:'evasquez@medexperts.com', defaultRate:600},
+  {id:'py7', name:'Capitol Court Reporting', type:'Court Reporter', email:'billing@capitolreporting.com', defaultRate:0},
+];
+function nextPayableId(){ return 'PAY-' + String(1000 + PAYABLES.length + 1); }
+let PAYABLES = [
+  {id:'PAY-1001', payeeId:'py1', payeeName:'Sarah Chen', payeeType:'Outside Counsel', relatedCaseId: null, amount:12450, description:'January legal fees — Smith v. Acme', dueDate: new Date(Date.now()+10*864e5).toISOString().slice(0,10), submittedDate: new Date(Date.now()-3*864e5).toISOString().slice(0,10), status:'Approved', approvedBy:'Platform Admin', paidDate:null, paymentMethod:'ACH'},
+  {id:'PAY-1002', payeeId:'py4', payeeName:'Rachel Goldberg', payeeType:'Claims Adjuster', relatedCaseId: null, amount:3200, description:'Field inspection & reserve review, Q1', dueDate: new Date(Date.now()+5*864e5).toISOString().slice(0,10), submittedDate: new Date(Date.now()-1*864e5).toISOString().slice(0,10), status:'Submitted', approvedBy:null, paidDate:null, paymentMethod:'Check'},
+  {id:'PAY-1003', payeeId:'py6', payeeName:'Dr. Elena Vasquez', payeeType:'Expert Witness', relatedCaseId: null, amount:8500, description:'Independent medical exam + report', dueDate: new Date(Date.now()-4*864e5).toISOString().slice(0,10), submittedDate: new Date(Date.now()-12*864e5).toISOString().slice(0,10), status:'Paid', approvedBy:'Platform Admin', paidDate: new Date(Date.now()-2*864e5).toISOString().slice(0,10), paymentMethod:'Wire'},
+  {id:'PAY-1004', payeeId:'py7', payeeName:'Capitol Court Reporting', payeeType:'Court Reporter', relatedCaseId: null, amount:1875, description:'Deposition transcript — 3 witnesses', dueDate: new Date(Date.now()+18*864e5).toISOString().slice(0,10), submittedDate: new Date().toISOString().slice(0,10), status:'Draft', approvedBy:null, paidDate:null, paymentMethod:'ACH'},
+];
+function createPayable(payeeId, amount, description, dueDate, relatedCaseId){
+  const payee = PAYEES.find(p => p.id === payeeId);
+  if (!payee) return null;
+  const entry = {
+    id: nextPayableId(), payeeId, payeeName: payee.name, payeeType: payee.type,
+    relatedCaseId: relatedCaseId || null, amount: Number(amount)||0, description: description||'',
+    dueDate: dueDate || '', submittedDate: td(), status: 'Submitted',
+    approvedBy: null, paidDate: null, paymentMethod: 'ACH'
+  };
+  PAYABLES.unshift(entry);
+  return entry;
+}
+function updatePayableStatus(id, newStatus){
+  const p = PAYABLES.find(x => x.id === id);
+  if (!p) return;
+  if (newStatus === 'Approved') p.approvedBy = (S.currentUser && S.currentUser.name) || 'You';
+  if (newStatus === 'Paid') p.paidDate = td();
+  p.status = newStatus;
+  render();
+}
+
 const ATTY_COLOR = {'Sarah Chen':'#1F4E8C','James Ortega':'#1A5C2A','David Park':'#5C1A1A','Maria Santos':'#3A1A5C','Rachel Goldberg':'#6B4226','Rickey Henderson':'#2A4C7C','Jennifer Martinez':'#7C2A4C','Michael Tomassi':'#4C7C2A','Amanda Foster':'#7C6B2A','Sean Green':'#2A4C7C'};
 
 /* ════════════════════════════════════════════════════════════════
@@ -2265,8 +2314,7 @@ function settlementIntelligenceV() {
     {id:'discovery', label:'📊 Discovery'},
     {id:'attorneys', label:'👥 Attorney Analytics'},
     {id:'costbenefit', label:'💰 Cost-Benefit'},
-    {id:'demand', label:'🔮 Demand Prediction'},
-    {id:'battles', label:'🥊 Battle Cards'}
+    {id:'demand', label:'🔮 Demand Prediction'}
   ];
   premiumTabs.forEach(tab => {
     const active = (S.premiumTab || 'offers') === tab.id;
@@ -2282,7 +2330,6 @@ function settlementIntelligenceV() {
   else if (activeTab === 'attorneys') h += attorneyPerformanceV();
   else if (activeTab === 'costbenefit') h += costBenefitAnalyzerV();
   else if (activeTab === 'demand') h += plaintiffDemandPredictorV();
-  else if (activeTab === 'battles') h += battleCardsV();
   
   h += '</div>';
   return h;
@@ -3072,131 +3119,6 @@ function updateDemandPrediction() {
   st({selectedDemandCase: caseId || null, premiumTab: 'demand'});
 }
 
-function battleCardsV() {
-  let h = '<div>';
-  h += '<div style="margin-bottom:30px;">';
-  h += '<div class="sh" style="margin-bottom:20px;">🥊 Competitive Battle Cards</div>';
-  h += '<div style="font-size:13px;color:var(--muted);line-height:1.6;">How Case Closed Pro compares to the industry standard solutions. Use these to win deals against any competitor.</div>';
-  h += '</div>';
-  
-  const competitors = [
-    {
-      name: 'Lexis Nexis (LexisNexis+)',
-      logo: 'LN',
-      price: '$900/month',
-      features: [
-        {name: 'Case Management', you: true, them: true},
-        {name: 'Document Management', you: true, them: true},
-        {name: 'Settlement Intelligence', you: true, them: false},
-        {name: 'Win Prediction (AI)', you: true, them: false},
-        {name: 'Discovery Auto-Tracking', you: true, them: false},
-        {name: 'Attorney Analytics', you: true, them: false},
-        {name: 'Plaintiff Demand Prediction', you: true, them: false},
-        {name: 'Cost-Benefit ROI Analysis', you: true, them: false},
-        {name: 'Opposing Counsel Intelligence', you: true, them: false},
-        {name: 'Judge Win Rate Tracking', you: true, them: false},
-      ]
-    },
-    {
-      name: 'Thomson Reuters (Practical Law)',
-      logo: 'TR',
-      price: '$1,200/month',
-      features: [
-        {name: 'Case Management', you: true, them: true},
-        {name: 'Legal Research', you: false, them: true},
-        {name: 'Settlement Intelligence', you: true, them: false},
-        {name: 'Win Prediction (AI)', you: true, them: false},
-        {name: 'Discovery Auto-Tracking', you: true, them: false},
-        {name: 'Attorney Analytics', you: true, them: false},
-        {name: 'Plaintiff Demand Prediction', you: true, them: false},
-        {name: 'Cost-Benefit ROI Analysis', you: true, them: false},
-        {name: 'One Unified Dashboard', you: true, them: false},
-        {name: 'AI Settlement Recommendations', you: true, them: false},
-      ]
-    },
-    {
-      name: 'Smokeball',
-      logo: 'SB',
-      price: '$500/month',
-      features: [
-        {name: 'Case Management', you: true, them: true},
-        {name: 'Time Tracking', you: false, them: true},
-        {name: 'Settlement Intelligence', you: true, them: false},
-        {name: 'Win Prediction (AI)', you: true, them: false},
-        {name: 'Discovery Auto-Tracking', you: true, them: false},
-        {name: 'Attorney Analytics', you: true, them: false},
-        {name: 'Plaintiff Demand Prediction', you: true, them: false},
-        {name: 'Cost-Benefit ROI Analysis', you: true, them: false},
-        {name: 'Judge Intelligence', you: true, them: false},
-        {name: 'AI Settlement Advisor', you: true, them: false},
-      ]
-    },
-  ];
-  
-  competitors.forEach(comp => {
-    h += '<div class="card" style="margin-bottom:20px;overflow:hidden;">';
-    h += '<div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);padding:20px;color:#fff;display:flex;justify-content:space-between;align-items:center;">';
-    h += '<div>';
-    h += '<div style="font-weight:700;font-size:16px;">'+comp.name+'</div>';
-    h += '<div style="font-size:12px;opacity:0.9;">'+comp.price+'/month</div>';
-    h += '</div>';
-    h += '<div style="font-size:28px;opacity:0.5;">'+comp.logo+'</div>';
-    h += '</div>';
-    
-    h += '<div style="padding:0;">';
-    h += '<table style="width:100%;border-collapse:collapse;">';
-    h += '<tbody>';
-    
-    comp.features.forEach(f => {
-      const youHave = f.you ? '✓' : '—';
-      const youColor = f.you ? '#059669' : '#ccc';
-      const themHave = f.them ? '✓' : '—';
-      const themColor = f.them ? '#059669' : '#ccc';
-      
-      h += '<tr style="border-bottom:1px solid var(--line);">';
-      h += '<td style="padding:14px;flex:1;font-size:13px;">'+f.name+'</td>';
-      h += '<td style="padding:14px;text-align:center;width:100px;font-weight:700;color:'+youColor+';">'+youHave+'</td>';
-      h += '<td style="padding:14px;text-align:center;width:100px;font-weight:700;color:'+themColor+';">'+themHave+'</td>';
-      h += '</tr>';
-    });
-    
-    h += '</tbody>';
-    h += '</table>';
-    h += '</div>';
-    h += '</div>';
-  });
-  
-  // Value Proposition
-  h += '<div class="card" style="padding:20px;margin-bottom:20px;background:linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);border-left:4px solid var(--gold);">';
-  h += '<div style="font-weight:700;margin-bottom:10px;color:var(--ink);">💰 Value Proposition</div>';
-  h += '<div style="font-size:13px;color:var(--ink);line-height:1.8;">';
-  h += '<strong>Case Closed Pro:</strong> The only litigation software built for settlement strategy<br>';
-  h += '<br>';
-  h += '✓ 6 AI tools (prediction, settlement intelligence, attorney analytics, discovery, cost-benefit, demand)<br>';
-  h += '✓ Unlimited team members<br>';
-  h += '✓ Full case management + reporting<br>';
-  h += '✓ Email + chat support<br>';
-  h += '<br>';
-  h += '<strong>ROI:</strong> One better settlement decision = $200K+ saved. Custom pricing based on portfolio size.<br>';
-  h += '<a href="mailto:sales@cclosed.com?subject=Pricing%20Inquiry" style="color:#0369a1;font-weight:600;text-decoration:none;">Get a custom quote →</a>';
-  h += '</div>';
-  h += '</div>';
-  
-  // Win angles
-  h += '<div class="card" style="padding:20px;background:linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);border-left:4px solid #0369a1;">';
-  h += '<div style="font-weight:700;margin-bottom:10px;color:#0369a1;">🎯 Key Win Angles</div>';
-  h += '<div style="font-size:13px;color:var(--ink);line-height:1.8;">';
-  h += '<strong>1. AI Decision Support:</strong> "We don\'t just manage cases - we advise on them. AI tells you when to settle, when to try, and when to walk away."<br><br>';
-  h += '<strong>2. All-in-One:</strong> "Competitors make you buy their CRM + their research + their discovery tool. We\'re everything in one dashboard."<br><br>';
-  h += '<strong>3. Objective Attorney Evaluation:</strong> "Know who\'s actually winning cases, not just who\'s billing hours. Compensation based on data, not politics."<br><br>';
-  h += '<strong>4. Never Miss a Deadline:</strong> "Discovery auto-tracked. SOL auto-alerted. Prevents million-dollar mistakes."<br><br>';
-  h += '<strong>5. Better ROI Than Alternatives:</strong> "One settlement recommendation per quarter pays for a year. All other tools are cost centers - we\'re a profit center."';
-  h += '</div>';
-  h += '</div>';
-  
-  h += '</div>';
-  return h;
-}
 
 function render(){
   try {
@@ -3254,6 +3176,7 @@ function render(){
   else if (S.role === 'carrier') html += carrierPortalV();
   else if (S.role === 'activity') html += activityHubV();
   else if (S.role === 'billing') html += invoiceHubV();
+  else if (S.role === 'payables') html += payablesHubV();
   else if (S.role === 'api') html += apiHubV();
   else if (S.role === 'admin') html += adminPanelV();
   html += '</div>';
@@ -3310,7 +3233,8 @@ function hdr(){
       ['litigation','Litigation'],
       ['attorney','My Cases'],
       ['activity','Activity Hub'],
-      ['billing','Invoice Hub']
+      ['billing','Invoice Hub'],
+      ['payables','Payables']
     ]},
     { label:'Insights', items:[
       ['executive','Executive'],
@@ -6602,6 +6526,135 @@ function invoiceHubV(){
 
   h += '</div>';
   return h;
+}
+
+/* ── PAYABLES HUB — pay outside counsel, claims adjusters, expert
+   witnesses, and other vendors. Real approval workflow: Draft →
+   Submitted → Approved → Paid (or Rejected at any point before
+   Paid). This is the org's own accounts-payable operation, kept
+   fully separate from invoiceHubV()'s receivables view above. ── */
+function payablesHubV(){
+  const outstanding = PAYABLES.filter(p => p.status !== 'Paid' && p.status !== 'Rejected');
+  const totalOutstanding = outstanding.reduce((s,p) => s+p.amount, 0);
+  const pendingApproval = PAYABLES.filter(p => p.status === 'Submitted');
+  const totalPendingApproval = pendingApproval.reduce((s,p) => s+p.amount, 0);
+  const thisMonth = new Date().toISOString().slice(0,7);
+  const paidThisMonth = PAYABLES.filter(p => p.status === 'Paid' && p.paidDate && p.paidDate.slice(0,7) === thisMonth);
+  const totalPaidThisMonth = paidThisMonth.reduce((s,p) => s+p.amount, 0);
+  const overdue = PAYABLES.filter(p => p.status !== 'Paid' && p.status !== 'Rejected' && p.dueDate && new Date(p.dueDate) < new Date());
+
+  let h = '<div class="wrap">';
+  h += '<div class="hero"><div class="hero-l"><div class="hero-eyebrow">Payables · Pay Your People</div>';
+  h += '<h1 class="hero-title">Accounts Payable</h1>';
+  h += '<p class="hero-sub">'+PAYABLES.length+' payable'+(PAYABLES.length!==1?'s':'')+' · '+PAYEES.length+' payee'+(PAYEES.length!==1?'s':'')+' on file</p></div>';
+  h += '<div class="hero-r"><button class="btn btn-pri" onclick="st({showNewPayableModal:true})">+ New Payable</button> <button class="btn btn-out" onclick="st({showPayeesModal:true})">Manage Payees</button></div></div>';
+
+  h += '<div class="kpi-grid">';
+  h += '<div class="kpi"><div class="kpi-l">Total Outstanding</div><div class="kpi-v" style="color:var(--gold);">'+fV(totalOutstanding)+'</div><div class="kpi-sub">'+outstanding.length+' open</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Pending Approval</div><div class="kpi-v" style="color:var(--pri2);">'+fV(totalPendingApproval)+'</div><div class="kpi-sub">'+pendingApproval.length+' waiting</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Paid This Month</div><div class="kpi-v" style="color:var(--green);">'+fV(totalPaidThisMonth)+'</div><div class="kpi-sub">'+paidThisMonth.length+' payment'+(paidThisMonth.length!==1?'s':'')+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Overdue</div><div class="kpi-v" style="color:'+(overdue.length?'var(--red)':'var(--green)')+';">'+overdue.length+'</div><div class="kpi-sub">'+fV(overdue.reduce((s,p)=>s+p.amount,0))+'</div></div>';
+  h += '</div>';
+
+  const filterTab = S.payablesFilter || 'All';
+  h += '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">';
+  ['All',...PAYABLES_STATUSES].forEach(status => {
+    const active = filterTab === status;
+    const count = status === 'All' ? PAYABLES.length : PAYABLES.filter(p=>p.status===status).length;
+    h += '<button class="btn '+(active?'btn-pri':'btn-out')+'" style="font-size:12px;padding:7px 14px;" onclick="st({payablesFilter:\''+status+'\'})">'+status+' ('+count+')</button>';
+  });
+  h += '</div>';
+
+  const filtered = filterTab === 'All' ? PAYABLES : PAYABLES.filter(p => p.status === filterTab);
+  h += '<div class="card">';
+  if (filtered.length === 0) {
+    h += '<div style="padding:30px;text-align:center;color:var(--muted);font-size:12.5px;">No payables in this status.</div>';
+  } else {
+    h += '<div style="overflow-x:auto;"><table><thead><tr><th>ID</th><th>Payee</th><th>Type</th><th>Description</th><th>Amount</th><th>Due Date</th><th>Status</th><th></th></tr></thead><tbody>';
+    filtered.forEach(p => {
+      const isOverdue = p.status !== 'Paid' && p.status !== 'Rejected' && p.dueDate && new Date(p.dueDate) < new Date();
+      const statusColor = {Draft:'var(--dim)', Submitted:'var(--pri2)', Approved:'var(--gold)', Paid:'var(--green)', Rejected:'var(--red)'}[p.status] || 'var(--muted)';
+      h += '<tr>';
+      h += '<td style="font-weight:700;color:var(--pri2);font-size:11px;">'+esc(p.id)+'</td>';
+      h += '<td>'+esc(p.payeeName)+'</td>';
+      h += '<td><span class="tag">'+esc(p.payeeType)+'</span></td>';
+      h += '<td style="font-size:12px;color:var(--muted);max-width:220px;">'+esc(p.description)+'</td>';
+      h += '<td style="font-weight:700;">'+fV(p.amount)+'</td>';
+      h += '<td style="font-size:12px;color:'+(isOverdue?'var(--red)':'var(--dim)')+';font-weight:'+(isOverdue?'700':'400')+';">'+esc(p.dueDate||'—')+(isOverdue?' ⚠':'')+'</td>';
+      h += '<td><span class="tag" style="background:'+statusColor+'18;color:'+statusColor+';font-weight:700;">'+esc(p.status)+'</span></td>';
+      h += '<td style="white-space:nowrap;">';
+      if (p.status === 'Draft') h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;" onclick="updatePayableStatus(\''+p.id+'\',\'Submitted\')">Submit</button>';
+      if (p.status === 'Submitted') h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;color:var(--green);" onclick="updatePayableStatus(\''+p.id+'\',\'Approved\')">Approve</button> <button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;color:var(--red);" onclick="updatePayableStatus(\''+p.id+'\',\'Rejected\')">Reject</button>';
+      if (p.status === 'Approved') h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;color:var(--green);" onclick="if(confirm(\'Mark '+fV(p.amount)+' to '+escAttr(p.payeeName)+' as paid?\'))updatePayableStatus(\''+p.id+'\',\'Paid\')">Mark Paid</button>';
+      if (p.status === 'Paid') h += '<span style="font-size:10.5px;color:var(--dim);">Paid '+esc(p.paidDate||'')+' · '+esc(p.paymentMethod||'')+'</span>';
+      h += '</td></tr>';
+    });
+    h += '</tbody></table></div>';
+  }
+  h += '</div></div>';
+
+  if (S.showNewPayableModal) h += newPayableModalV();
+  if (S.showPayeesModal) h += payeesModalV();
+  return h;
+}
+
+function newPayableModalV(){
+  let h = '<div class="modal-bg" onclick="if(event.target===this)st({showNewPayableModal:false})">';
+  h += '<div class="modal" style="max-width:480px;">';
+  h += '<div class="modal-h"><div class="serif" style="font-size:18px;font-weight:700;">+ New Payable</div>';
+  h += '<button class="x" onclick="st({showNewPayableModal:false})">×</button></div>';
+  h += '<div class="modal-b">';
+  h += sel('Payee', 'window._pyPayeeId=this.value', PAYEES.map(p=>p.name+'||'+p.id), '');
+  h += '<div style="font-size:10.5px;color:var(--dim);margin:-8px 0 12px;">Need a new payee first? Close this and use "Manage Payees."</div>';
+  h += sel('Related Matter (optional)', 'window._pyCaseId=this.value', ['— None —'].concat(CASES.map(c=>(c.matterNo||c.id)+' — '+c.client+'||'+c.id)), '');
+  h += inpMoney('Amount', '', 'window._pyAmount=moneyVal(this.value)');
+  h += inp('Due Date', '', 'window._pyDue=this.value', 'date');
+  h += ta('Description', '', 'window._pyDesc=this.value', 'What this payment covers');
+  h += '<button class="btn btn-pri" style="width:100%;justify-content:center;margin-top:6px;" onclick="submitNewPayable()">Create &amp; Submit for Approval</button>';
+  h += '</div></div></div>';
+  return h;
+}
+function submitNewPayable(){
+  const rawPayee = window._pyPayeeId || '';
+  const payeeId = rawPayee.includes('||') ? rawPayee.split('||')[1] : rawPayee;
+  const rawCase = window._pyCaseId || '';
+  const caseId = (rawCase.includes('||')) ? rawCase.split('||')[1] : null;
+  if (!payeeId) { alert('Select a payee.'); return; }
+  if (!window._pyAmount || window._pyAmount <= 0) { alert('Enter an amount.'); return; }
+  createPayable(payeeId, window._pyAmount, window._pyDesc, window._pyDue, caseId);
+  window._pyPayeeId = ''; window._pyAmount = 0; window._pyDesc = ''; window._pyDue = ''; window._pyCaseId = '';
+  st({showNewPayableModal:false});
+}
+
+function payeesModalV(){
+  let h = '<div class="modal-bg" onclick="if(event.target===this)st({showPayeesModal:false})">';
+  h += '<div class="modal" style="max-width:520px;">';
+  h += '<div class="modal-h"><div class="serif" style="font-size:18px;font-weight:700;">Manage Payees</div>';
+  h += '<button class="x" onclick="st({showPayeesModal:false})">×</button></div>';
+  h += '<div class="modal-b">';
+  h += '<div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:7px;align-items:end;margin-bottom:16px;">';
+  h += '<div>'+inp('Name', '', 'window._newPayeeName=this.value')+'</div>';
+  h += '<div>'+sel('Type', 'window._newPayeeType=this.value', PAYEE_TYPES, '')+'</div>';
+  h += '<div>'+inp('Email', '', 'window._newPayeeEmail=this.value', 'email')+'</div>';
+  h += '<button class="btn btn-pri" onclick="addPayee()">+ Add</button>';
+  h += '</div>';
+  h += '<div style="max-height:280px;overflow-y:auto;">';
+  PAYEES.forEach(p => {
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--surf2);">';
+    h += '<div><div style="font-weight:700;font-size:13px;">'+esc(p.name)+'</div><div style="font-size:11px;color:var(--dim);">'+esc(p.type)+' · '+esc(p.email||'no email on file')+'</div></div>';
+    h += '</div>';
+  });
+  h += '</div></div></div></div>';
+  return h;
+}
+function addPayee(){
+  const name = (window._newPayeeName||'').trim();
+  const type = window._newPayeeType || 'Other';
+  const email = (window._newPayeeEmail||'').trim();
+  if (!name) { alert('Enter a name.'); return; }
+  PAYEES.push({id:'py'+(PAYEES.length+1), name, type, email, defaultRate:0});
+  window._newPayeeName=''; window._newPayeeEmail='';
+  render();
 }
 
 /* Export consolidated LEDES across all matters */
