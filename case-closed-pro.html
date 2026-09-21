@@ -20,6 +20,7 @@
   });
 </script>
 <script src="https://browser.sentry-cdn.com/latest/bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
 :root{
   --ink:#0F172A;--ink2:#1E293B;--muted:#5B6B85;--dim:#8B96AB;--line:#E1E7EF;--line2:#C9D2E0;
@@ -492,9 +493,116 @@ function mentorNetwork(){
   return pairs;
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════
+   STATE SOL REFERENCE TABLE — 50 states + DC
+   ══════════════════════════════════════════════════════════════════════
+   IMPORTANT: These are GENERAL DEFAULT PERIODS ONLY, for reference and
+   as a starting-point suggestion — not legal advice, and not a
+   substitute for confirming the actual deadline with local counsel.
+   Real deadlines can differ from these general defaults because of:
+   discovery-rule tolling, claims against government entities (often
+   much shorter, with a separate notice-of-claim deadline), minors or
+   incapacitated claimants, wrongful death vs. injury claims, contract
+   terms that shorten a period, and legislative changes since this
+   table was last reviewed. Four broad categories are tracked here:
+   personalInjury (general negligence/bodily injury — also used as
+   the default for product liability and premises claims),
+   propertyDamage, contractWritten, and medicalMalpractice. Every
+   value is in YEARS from the date of injury/breach unless a
+   discovery rule applies in that state (not modeled here). */
+const STATE_SOL_YEARS = {
+  'Alabama':{personalInjury:2,propertyDamage:6,contractWritten:6,medicalMalpractice:2},
+  'Alaska':{personalInjury:2,propertyDamage:2,contractWritten:3,medicalMalpractice:2},
+  'Arizona':{personalInjury:2,propertyDamage:2,contractWritten:6,medicalMalpractice:2},
+  'Arkansas':{personalInjury:3,propertyDamage:3,contractWritten:5,medicalMalpractice:2},
+  'California':{personalInjury:2,propertyDamage:3,contractWritten:4,medicalMalpractice:3},
+  'Colorado':{personalInjury:2,propertyDamage:2,contractWritten:3,medicalMalpractice:2},
+  'Connecticut':{personalInjury:2,propertyDamage:3,contractWritten:6,medicalMalpractice:2},
+  'Delaware':{personalInjury:2,propertyDamage:2,contractWritten:3,medicalMalpractice:2},
+  'Florida':{personalInjury:2,propertyDamage:4,contractWritten:5,medicalMalpractice:2},
+  'Georgia':{personalInjury:2,propertyDamage:4,contractWritten:6,medicalMalpractice:2},
+  'Hawaii':{personalInjury:2,propertyDamage:2,contractWritten:6,medicalMalpractice:2},
+  'Idaho':{personalInjury:2,propertyDamage:3,contractWritten:5,medicalMalpractice:2},
+  'Illinois':{personalInjury:2,propertyDamage:5,contractWritten:10,medicalMalpractice:2},
+  'Indiana':{personalInjury:2,propertyDamage:2,contractWritten:6,medicalMalpractice:2},
+  'Iowa':{personalInjury:2,propertyDamage:5,contractWritten:10,medicalMalpractice:2},
+  'Kansas':{personalInjury:2,propertyDamage:2,contractWritten:5,medicalMalpractice:2},
+  'Kentucky':{personalInjury:1,propertyDamage:5,contractWritten:10,medicalMalpractice:1},
+  'Louisiana':{personalInjury:1,propertyDamage:1,contractWritten:10,medicalMalpractice:1},
+  'Maine':{personalInjury:6,propertyDamage:6,contractWritten:6,medicalMalpractice:3},
+  'Maryland':{personalInjury:3,propertyDamage:3,contractWritten:3,medicalMalpractice:3},
+  'Massachusetts':{personalInjury:3,propertyDamage:3,contractWritten:6,medicalMalpractice:3},
+  'Michigan':{personalInjury:3,propertyDamage:3,contractWritten:6,medicalMalpractice:2},
+  'Minnesota':{personalInjury:6,propertyDamage:6,contractWritten:6,medicalMalpractice:4},
+  'Mississippi':{personalInjury:3,propertyDamage:3,contractWritten:3,medicalMalpractice:2},
+  'Missouri':{personalInjury:5,propertyDamage:5,contractWritten:10,medicalMalpractice:2},
+  'Montana':{personalInjury:3,propertyDamage:3,contractWritten:8,medicalMalpractice:3},
+  'Nebraska':{personalInjury:4,propertyDamage:4,contractWritten:5,medicalMalpractice:2},
+  'Nevada':{personalInjury:2,propertyDamage:3,contractWritten:6,medicalMalpractice:3},
+  'New Hampshire':{personalInjury:3,propertyDamage:3,contractWritten:3,medicalMalpractice:3},
+  'New Jersey':{personalInjury:2,propertyDamage:6,contractWritten:6,medicalMalpractice:2},
+  'New Mexico':{personalInjury:3,propertyDamage:4,contractWritten:6,medicalMalpractice:3},
+  'New York':{personalInjury:3,propertyDamage:3,contractWritten:6,medicalMalpractice:2.5},
+  'North Carolina':{personalInjury:3,propertyDamage:3,contractWritten:3,medicalMalpractice:3},
+  'North Dakota':{personalInjury:6,propertyDamage:6,contractWritten:6,medicalMalpractice:2},
+  'Ohio':{personalInjury:2,propertyDamage:4,contractWritten:6,medicalMalpractice:1},
+  'Oklahoma':{personalInjury:2,propertyDamage:2,contractWritten:5,medicalMalpractice:2},
+  'Oregon':{personalInjury:2,propertyDamage:6,contractWritten:6,medicalMalpractice:2},
+  'Pennsylvania':{personalInjury:2,propertyDamage:2,contractWritten:4,medicalMalpractice:2},
+  'Rhode Island':{personalInjury:3,propertyDamage:10,contractWritten:10,medicalMalpractice:3},
+  'South Carolina':{personalInjury:3,propertyDamage:3,contractWritten:3,medicalMalpractice:3},
+  'South Dakota':{personalInjury:3,propertyDamage:6,contractWritten:6,medicalMalpractice:2},
+  'Tennessee':{personalInjury:1,propertyDamage:3,contractWritten:6,medicalMalpractice:1},
+  'Texas':{personalInjury:2,propertyDamage:2,contractWritten:4,medicalMalpractice:2},
+  'Utah':{personalInjury:4,propertyDamage:3,contractWritten:6,medicalMalpractice:2},
+  'Vermont':{personalInjury:3,propertyDamage:3,contractWritten:6,medicalMalpractice:3},
+  'Virginia':{personalInjury:2,propertyDamage:5,contractWritten:5,medicalMalpractice:2},
+  'Washington':{personalInjury:3,propertyDamage:3,contractWritten:6,medicalMalpractice:3},
+  'West Virginia':{personalInjury:2,propertyDamage:2,contractWritten:10,medicalMalpractice:2},
+  'Wisconsin':{personalInjury:3,propertyDamage:6,contractWritten:6,medicalMalpractice:3},
+  'Wyoming':{personalInjury:4,propertyDamage:4,contractWritten:10,medicalMalpractice:2},
+  'District of Columbia':{personalInjury:3,propertyDamage:3,contractWritten:3,medicalMalpractice:3}
+};
+const ALL_STATE_NAMES = Object.keys(STATE_SOL_YEARS).sort();
+
+/* Pull "New York" out of a jurisdiction string like "State - New York". */
+function stateFromJurisdiction(jur){
+  if (!jur) return null;
+  const m = /^State - (.+)$/.exec(jur.trim());
+  return m ? m[1] : null;
+}
+/* Map this app's claim/matter categories onto one of the four SOL
+   reference buckets. Falls back to personalInjury, the broadest and
+   most commonly applicable category, when nothing more specific matches. */
+function solCategoryForCase(c){
+  const cat = (c.claimCategory||'').toLowerCase();
+  const type = (c.type||'').toLowerCase();
+  if (type.includes('malpractice')) return 'medicalMalpractice';
+  if (cat.includes('property') || cat.includes('aob') || cat.includes('wind') || cat.includes('hail') || cat.includes('mold') || cat.includes('water') || cat.includes('catastrophe') || type.includes('property') || type.includes('construction')) return 'propertyDamage';
+  if (cat.includes('subrogation') || type.includes('contract') || type.includes('coverage')) return 'contractWritten';
+  return 'personalInjury';
+}
+const SOL_CATEGORY_LABELS = {personalInjury:'Personal Injury / Bodily Injury', propertyDamage:'Property Damage', contractWritten:'Written Contract', medicalMalpractice:'Medical Malpractice'};
+/* Returns {state, category, categoryLabel, years, suggestedDate} or
+   null if we don't have enough info (no filed date, or state can't
+   be determined from court.jurisdiction) to suggest anything. */
+function getSolEstimate(c){
+  const state = stateFromJurisdiction(c.court && c.court.jurisdiction);
+  if (!state || !STATE_SOL_YEARS[state] || !c.filed) return null;
+  const category = solCategoryForCase(c);
+  const years = STATE_SOL_YEARS[state][category];
+  const d = new Date(c.filed);
+  if (isNaN(d.getTime())) return null;
+  const wholeYears = Math.floor(years);
+  const fraction = years - wholeYears;
+  d.setFullYear(d.getFullYear() + wholeYears);
+  if (fraction) d.setMonth(d.getMonth() + Math.round(fraction*12));
+  return {state, category, categoryLabel:SOL_CATEGORY_LABELS[category], years, suggestedDate: d.toISOString().slice(0,10)};
+}
 const MTYPES = ['Contract Dispute','Employment Law','IP Litigation','Personal Injury','Malpractice Defense','Real Estate','Insurance Defense','Workers Comp','Product Liability','Class Action','Coverage Dispute','Premises Liability','Auto Liability','Construction Defect','Bad Faith','Subrogation','Other'];
 const STATS = ['Active','Pleadings','Discovery','Review','Mediation','Trial','Closing','Closed','Appeal'];
-const JURIS = ['Federal - 1st Circuit','Federal - 2nd Circuit','Federal - 3rd Circuit','Federal - 4th Circuit','Federal - 5th Circuit','Federal - 9th Circuit','Federal - 11th Circuit','State - New York','State - California','State - Texas','State - Florida','State - Illinois','State - New Jersey','State - Pennsylvania','State - Massachusetts','Other State'];
+const JURIS = ['Federal - 1st Circuit','Federal - 2nd Circuit','Federal - 3rd Circuit','Federal - 4th Circuit','Federal - 5th Circuit','Federal - 6th Circuit','Federal - 7th Circuit','Federal - 8th Circuit','Federal - 9th Circuit','Federal - 10th Circuit','Federal - 11th Circuit','Federal - DC Circuit'].concat(ALL_STATE_NAMES.map(s => 'State - '+s));
 
 /* NEW: insurance-defense specific */
 const COVERAGE_TYPES = ['General Liability','Auto Liability','Property','Professional Liability (E&O)','Directors & Officers (D&O)','Workers Compensation','Cyber Liability','Employment Practices (EPLI)','Commercial Umbrella','Homeowners','Bad Faith','Other'];
@@ -534,7 +642,16 @@ const REPORT_TEMPLATES = [
   {id:'r18',cat:'Financial',name:'Reserve Adequacy Analysis',icon:'🛡️',color:'#B45309',desc:'Reserves vs. likely exposure across portfolio with under-reserved flags'},
   {id:'r19',cat:'Financial',name:'Outstanding A/R by Carrier',icon:'💵',color:'#047857',desc:'Aged accounts receivable broken out by insurance carrier'},
   {id:'r20',cat:'Compliance',name:'Statute of Limitations Tracker',icon:'⏰',color:'#DC2626',desc:'All matters by SOL date with risk-window classification'},
-  {id:'r21',cat:'Litigation',name:'Closing Readiness / Claims Handoff',icon:'🤝',color:'#065F46',desc:'Matters in the closing pipeline with liens, authority status, and blockers'}
+  {id:'r21',cat:'Litigation',name:'Closing Readiness / Claims Handoff',icon:'🤝',color:'#065F46',desc:'Matters in the closing pipeline with liens, authority status, and blockers'},
+  {id:'r22',cat:'Enterprise',name:'Material Matters Watchlist',icon:'⚠️',color:'#991B1B',desc:'Open matters exceeding $10M in likely exposure — the company-threat list'},
+  {id:'r23',cat:'Enterprise',name:'Exposure by Probability of Loss',icon:'🎯',color:'#B45309',desc:'Likely exposure grouped by Remote / Reasonably Possible / Probable classification'},
+  {id:'r24',cat:'Enterprise',name:'Outside Counsel Performance Ranking',icon:'🏆',color:'#1D4ED8',desc:'Attorney spend, win rate, settlement rate, and LES grade, ranked by spend'},
+  {id:'r25',cat:'Enterprise',name:'Spend by Matter Type',icon:'📊',color:'#0F766E',desc:'Total defense spend broken out by practice/matter type'},
+  {id:'r26',cat:'Enterprise',name:'AFA Savings Detail',icon:'💡',color:'#047857',desc:'Matters billed under alternative fee arrangements vs. straight hourly'},
+  {id:'r27',cat:'Enterprise',name:'Litigation Inflow vs. Outflow',icon:'📈',color:'#5B21B6',desc:'New filings vs. closures by month over the last 12 months'},
+  {id:'r28',cat:'Enterprise',name:'Avg. Cycle Time by Claim Type',icon:'⏱️',color:'#0F766E',desc:'Average days from filing to resolution, broken out by matter type'},
+  {id:'r29',cat:'Enterprise',name:'Root Cause Analysis',icon:'🔍',color:'#6D28D9',desc:'Why the company is being sued, ranked — for preventative policy decisions'},
+  {id:'r30',cat:'Enterprise',name:'Regulatory / Compliance Incidents',icon:'🏛️',color:'#DC2626',desc:'Open and resolved government investigations and enforcement actions'}
 ];
 
 /* ── HELPERS ───────────────────────────────────────────────── */
@@ -689,6 +806,14 @@ function mkC(id, cl, ty, st, pr, at, fi, dl, va, pg, cn, ca, re, adj) {
     catastrophe: 'No',
     claimCategory: ty.includes('Personal Injury') ? 'Bodily Injury' : (ty.includes('Property') || ty.includes('Construction') ? 'Property Damage' : 'Other'),
     coverageType: ca ? 'General Liability' : '',
+    /* Enterprise risk fields — probabilityOfLoss follows standard
+       ASC 450 / SOX-style categorization (Remote / Reasonably
+       Possible / Probable). Seeded here from priority + favorability
+       so the Enterprise dashboard has real spread instead of every
+       case defaulting to the same bucket; both fields stay fully
+       editable per matter. */
+    probabilityOfLoss: pr === 'High' ? 'Probable' : pr === 'Low' ? 'Remote' : 'Reasonably Possible',
+    rootCause: '',
     /* Multi-party structure */
     parties: {
       defendants:[], insureds:[], plaintiffs:[], thirdParties:[]
@@ -968,6 +1093,46 @@ CASES.forEach(c => {
   if (!c.documents || c.documents.length === 0) c.documents = docs;
 });
 
+/* Root-cause reference list — used for the "why is the company being
+   sued" breakdown on the Enterprise tab (Operational Velocity &
+   Prevention). Seeded here from each case's type/claimCategory so
+   the chart has real signal; stays fully editable per matter. */
+const ROOT_CAUSES = ['Product Defect','Contract Language Dispute','Premises Condition','Employment Practice','Auto Incident','Professional Error','Regulatory Non-Compliance','Vendor / Third-Party Failure','Coverage Interpretation Dispute','Other'];
+function inferRootCause(c){
+  const t = (c.type||'').toLowerCase(), cat = (c.claimCategory||'').toLowerCase();
+  if (t.includes('product')) return 'Product Defect';
+  if (t.includes('contract') || t.includes('coverage')) return 'Contract Language Dispute';
+  if (t.includes('premises') || cat.includes('premises')) return 'Premises Condition';
+  if (t.includes('employment')) return 'Employment Practice';
+  if (t.includes('auto') || cat.includes('auto')) return 'Auto Incident';
+  if (t.includes('malpractice')) return 'Professional Error';
+  if (cat.includes('aob') || cat.includes('subrogation')) return 'Vendor / Third-Party Failure';
+  if (t.includes('construction')) return 'Vendor / Third-Party Failure';
+  return 'Other';
+}
+CASES.forEach(c => { if (!c.rootCause) c.rootCause = inferRootCause(c); });
+
+/* ── ENTERPRISE: REGULATORY / COMPLIANCE INCIDENT TRACKER ─────
+   Separate from litigation CASES on purpose — a government
+   investigation isn't a "matter" in this app's litigation data
+   model, it's a different kind of exposure entirely (SEC, DOJ, FTC,
+   state AG actions, etc). Kept lightweight: a flat list, not a full
+   case workspace, since that's genuinely a different workflow. */
+let REGULATORY_INCIDENTS = [
+  {id:'REG-001', name:'State DOI Market Conduct Exam — Claims Handling', agency:'State Insurance Dept.', status:'Open', openedDate:'2025-11-03', exposureEstimate:250000, notes:'Routine market conduct examination; document production in progress.'},
+  {id:'REG-002', name:'FTC Inquiry — Data Practices', agency:'FTC', status:'Open', openedDate:'2026-02-14', exposureEstimate:0, notes:'Informal inquiry letter received; outside privacy counsel engaged.'}
+];
+function addRegulatoryIncident(name, agency, exposureEstimate){
+  const n = (name||'').trim();
+  if (!n) return;
+  REGULATORY_INCIDENTS.push({id:'REG-'+String(REGULATORY_INCIDENTS.length+1).padStart(3,'0'), name:n, agency:agency||'Other', status:'Open', openedDate:td(), exposureEstimate:parseFloat(exposureEstimate)||0, notes:''});
+  render();
+}
+function closeRegulatoryIncident(id){
+  const inc = REGULATORY_INCIDENTS.find(r=>r.id===id);
+  if (inc) { inc.status = 'Resolved'; inc.closedDate = td(); render(); }
+}
+
 /* ── STATE ─────────────────────────────────────────────────── */
 // ?demo=1 in the URL skips the login screen entirely and drops the
 // visitor straight into the seeded demo data — built for sales calls
@@ -978,6 +1143,13 @@ CASES.forEach(c => {
 const DEMO_MODE = (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('demo') === '1');
 
 let S = {
+  /* Enterprise budget targets — a company-level number, not tied to
+     any single matter, so it lives in app state rather than on a
+     case. Defaults unset (0) until someone configures it on the
+     Enterprise tab; a 0 target is treated as "not configured" in the
+     UI rather than shown as 0% spent. */
+  enterpriseBudgetQuarterly: 0, enterpriseBudgetAnnual: 0,
+  weeklyDigestRecipients: '', weeklyDigestDay: 'Monday', weeklyDigestEnabled: false, weeklyDigestLastSentWeek: '',
   role: DEMO_MODE ? 'litigation' : 'litigation',  /* default = Litigation Dashboard */
   isAuthenticated: DEMO_MODE ? true : false,
   currentUser: DEMO_MODE ? { name: 'Alex Rivera', email: 'demo@cclosed.com', persona: 'carrier', orgId: 'demo-org' } : null,
@@ -1091,6 +1263,74 @@ const API_BASE = (window.CCP_API_BASE || '').replace(/\/$/, '');
 let authToken = null; // held in memory only — see README for the
                        // httpOnly-cookie upgrade path before real launch
 
+/* ── REAL AUTH: SUPABASE CLIENT ──────────────────────────────
+   Set window.CCP_SUPABASE_URL and window.CCP_SUPABASE_ANON_KEY
+   (both public/safe values, not secrets) before this script runs to
+   switch the app from demo-mode auth to real Supabase Auth. Leave
+   them unset and login stays in demo mode exactly as before.
+   authToken is kept in sync automatically here — every apiFetch()
+   call elsewhere in this file already sends it as a Bearer token,
+   so no other call site needs to change for the Edge Functions
+   (organizations, cases, team, cases-import) to work. */
+let supabaseClient = null;
+let _supabaseAuthHashType = (typeof window !== 'undefined' && new URLSearchParams(window.location.hash.replace('#','?')).get('type')) || null;
+if (window.CCP_SUPABASE_URL && window.CCP_SUPABASE_ANON_KEY && window.supabase) {
+  supabaseClient = window.supabase.createClient(window.CCP_SUPABASE_URL, window.CCP_SUPABASE_ANON_KEY);
+  supabaseClient.auth.onAuthStateChange((event, session) => {
+    authToken = session?.access_token || null;
+    // A password-recovery link, or a first-time invite link, both
+    // land here with a real session already — but the person hasn't
+    // chosen a password yet. Route to "set a password" first rather
+    // than silently logging them into the app with no password set.
+    if (event === 'PASSWORD_RECOVERY' || (_supabaseAuthHashType === 'invite' && event === 'SIGNED_IN' && !S.isAuthenticated)) {
+      S._forcePasswordSetup = true;
+      render();
+    }
+  });
+}
+
+/* Loads profile + org membership after a real Supabase sign-in and
+   populates S.currentUser to match what the rest of this app
+   expects. Platform admins may have no org membership at all — the
+   Admin Panel is their whole job — everyone else must belong to
+   exactly one ACTIVE org to get in. */
+async function loadUserContextAfterAuth(session){
+  authToken = session.access_token;
+  const supaUser = session.user;
+  const { data: profile } = await supabaseClient.from('profiles').select('*').eq('id', supaUser.id).single();
+  const { data: membership } = await supabaseClient.from('memberships').select('org_id, role').eq('user_id', supaUser.id).limit(1).maybeSingle();
+
+  if (!membership) {
+    if (profile?.platform_admin) {
+      S.currentUser = { name: profile.name || supaUser.email, email: supaUser.email, platformAdmin: true, orgId: null, role: null, emailVerified: !!supaUser.email_confirmed_at };
+      S.isAuthenticated = true; S.loginLoading = false; S.showWelcome = false; S.role = 'admin';
+      render();
+      return;
+    }
+    st({ loginError: 'No organization membership found for this account. Contact your administrator.', loginLoading:false });
+    await supabaseClient.auth.signOut();
+    return;
+  }
+
+  const { data: org } = await supabaseClient.from('organizations').select('*').eq('id', membership.org_id).single();
+  if (!org || org.status !== 'active') {
+    const msg = org && org.status === 'pending_activation'
+      ? 'Your organization is still pending activation. Contact your administrator.'
+      : 'Your organization\'s access has been suspended. Contact your administrator.';
+    st({ loginError: msg, loginLoading:false });
+    await supabaseClient.auth.signOut();
+    return;
+  }
+
+  S.currentUser = { name: profile?.name || supaUser.email, email: supaUser.email, persona: org.persona, orgId: org.id, role: membership.role, platformAdmin: !!profile?.platform_admin, emailVerified: !!supaUser.email_confirmed_at };
+  S.isAuthenticated = true;
+  S.loginLoading = false;
+  S.showWelcome = true;
+  S.role = org.persona === 'defense' ? 'attorney' : 'tpa';
+  await loadCasesFromApi();
+  render();
+}
+
 async function apiFetch(path, opts = {}) {
   if (!API_BASE) throw new Error('API_BASE not configured');
   const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
@@ -1130,7 +1370,7 @@ window.addEventListener('unhandledrejection', (e) => {
    rather than leaving the user with a blank app. */
 async function loadCasesFromApi() {
   try {
-    const { cases } = await apiFetch('/api/cases');
+    const { cases } = await apiFetch('/cases');
     if (Array.isArray(cases) && cases.length >= 0) {
       CASES.length = 0;
       cases.forEach(c => CASES.push(c));
@@ -1150,7 +1390,7 @@ function syncCaseToApi(c) {
   if (!API_BASE || !authToken) return;
   const { id, matterNo, client, type, status, litigationStage, attorney, value, ...rest } = c;
   const { insurance, ...data } = rest;
-  apiFetch('/api/cases/' + id, {
+  apiFetch('/cases/' + id, {
     method: 'PATCH',
     body: JSON.stringify({
       matterNo, client, type, status, litigationStage, attorney, value,
@@ -2972,7 +3212,7 @@ function render(){
     document.getElementById('app').innerHTML = carrierLoginV();
     return;
   }
-  if (S._resetTokenFromUrl && !S.isAuthenticated) {
+  if ((S._resetTokenFromUrl || S._forcePasswordSetup) && !S.isAuthenticated) {
     document.getElementById('app').innerHTML = resetPasswordScreenV();
     return;
   }
@@ -3025,6 +3265,7 @@ function render(){
   if (S.showSecurityModal) html += securityModalV();
   if (S.showTeamModal) html += teamModalV();
   if (S.showCreateOrgModal) html += createOrgModalV();
+  if (S.activateOrgResult) html += activateOrgResultModalV();
   /* AI Intake Modal */
   if (S.showAiIntake) html += aiClaimIntakeModalV();
     if (S.showPrivacy) html += '<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:100;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;"><div style="background:#fff;width:90%;max-width:900px;margin:20px 0;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,.3);"><div style="position:sticky;top:0;background:#fff;border-bottom:1px solid var(--line);padding:20px;display:flex;justify-content:space-between;align-items:center;"><div style="font-weight:700;font-size:18px;">Privacy Policy</div><button onclick="st({showPrivacy:false})" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);">&times;</button></div>'+privacyPolicyV()+'</div></div>';
@@ -3268,7 +3509,11 @@ function userMenuHtml(){
    body for a fetch() call and keep everything else the same. */
 function loginScreenV(){
   const persona = S._loginPersona || 'carrier';
-  const mode = S._authMode || 'signin'; // 'signin' | 'register' — register only meaningful when API_BASE is set
+  // Self-serve org creation doesn't fit the admin-gated onboarding
+  // model once a real backend is connected — organizations are
+  // created by a platform admin (see the Admin Panel), never by
+  // someone signing themselves up. Force signin mode in that case.
+  const mode = supabaseClient ? 'signin' : (S._authMode || 'signin');
   let h = '<div style="min-height:100vh;background:linear-gradient(160deg,#001C41 0%,#012a5e 45%,#0056D2 130%);display:flex;align-items:center;justify-content:center;padding:24px;">';
   h += '<div style="width:100%;max-width:420px;">';
 
@@ -3313,9 +3558,11 @@ function loginScreenV(){
     h += '<div style="text-align:center;margin-top:12px;"><span onclick="st({showForgotPassword:true,loginError:\'\'})" style="font-size:11.5px;color:var(--pri2);cursor:pointer;text-decoration:underline;">Forgot password?</span></div>';
   }
 
-  h += '<div style="text-align:center;margin-top:18px;font-size:11.5px;color:var(--dim);">'+(API_BASE
-    ? (mode==='register' ? '<span onclick="st({_authMode:\'signin\',loginError:\'\'})" style="cursor:pointer;text-decoration:underline;">Already have an account? Sign in</span>' : '<span onclick="st({_authMode:\'register\',loginError:\'\'})" style="cursor:pointer;text-decoration:underline;">New organization? Create one</span>')
-    : 'Demo mode — any email + password signs you in.')+'</div>';
+  h += '<div style="text-align:center;margin-top:18px;font-size:11.5px;color:var(--dim);">'+(supabaseClient
+    ? 'New organizations are set up by our team — <a href="mailto:sales@cclosed.com" style="color:var(--pri2);">contact us to get started</a>.'
+    : (API_BASE
+      ? (mode==='register' ? '<span onclick="st({_authMode:\'signin\',loginError:\'\'})" style="cursor:pointer;text-decoration:underline;">Already have an account? Sign in</span>' : '<span onclick="st({_authMode:\'register\',loginError:\'\'})" style="cursor:pointer;text-decoration:underline;">New organization? Create one</span>')
+      : 'Demo mode — any email + password signs you in.'))+'</div>';
   h += '</div>';
 
   h += '</div></div>';
@@ -3342,21 +3589,13 @@ async function attemptLogin(){
   if (!password) { st({loginError:'Enter a password.'}); return; }
   st({loginError:'', loginLoading:true});
 
-  if (API_BASE) {
-    // Real backend path — actual credential verification against server.js.
-    try {
-      const data = await apiFetch('/api/auth/login', { method:'POST', body: JSON.stringify({ email, password }) });
-      if (data.twoFactorRequired) {
-        // Password was correct, but the account has 2FA on — one more step.
-        st({loginLoading:false, show2FAPrompt:true, _pending2FAToken:data.pendingToken, loginError:''});
-        return;
-      }
-      completeLoginSession(data);
-      await loadCasesFromApi();
-      render();
-    } catch (e) {
-      st({loginError: e.message, loginLoading:false});
-    }
+  if (supabaseClient) {
+    // Real auth path — Supabase Auth verifies the password directly;
+    // no custom backend endpoint needed for this part at all.
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    if (error) { st({loginError: error.message, loginLoading:false}); return; }
+    await loadUserContextAfterAuth(data.session);
+    window._loginEmail = ''; window._loginPassword = '';
     return;
   }
 
@@ -3411,6 +3650,7 @@ async function attemptRegister(){
 }
 
 function logout(){
+  if (supabaseClient) supabaseClient.auth.signOut();
   authToken = null;
   S.isAuthenticated = false;
   S.currentUser = null;
@@ -3461,16 +3701,13 @@ function forgotPasswordScreenV(){
 async function submitForgotPassword(){
   const email = (window._forgotEmail || '').trim();
   if (!email || !email.includes('@')) { st({loginError:'Enter a valid email address.'}); return; }
-  if (!API_BASE) return; // nothing to call in demo mode — message already shown above
+  if (!supabaseClient) return; // nothing to call in demo mode — message already shown above
   st({loginLoading:true, forgotStatus:''});
-  try {
-    const data = await apiFetch('/api/auth/forgot-password', { method:'POST', body: JSON.stringify({ email }) });
-    st({loginLoading:false, forgotStatus: data.message || 'If an account exists for that email, a reset link has been sent.'});
-  } catch (e) {
-    // Still show a generic message rather than a raw error — matches the
-    // backend's own "don't confirm or deny an account exists" behavior.
-    st({loginLoading:false, forgotStatus:'If an account exists for that email, a reset link has been sent.'});
-  }
+  await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + window.location.pathname });
+  // Same "don't confirm or deny an account exists" framing regardless
+  // of whether the email actually matched an account — Supabase's
+  // own API already behaves this way; this message just matches it.
+  st({loginLoading:false, forgotStatus:'If an account exists for that email, a reset link has been sent.'});
 }
 
 function resetPasswordScreenV(){
@@ -3493,14 +3730,16 @@ function resetPasswordScreenV(){
 async function submitResetPassword(){
   const newPassword = window._newPassword || '';
   if (!newPassword || newPassword.length < 8) { st({resetStatus:'Password must be at least 8 characters.', resetSuccess:false}); return; }
-  if (!API_BASE) { st({resetStatus:'This demo isn\'t connected to a real backend, so there\'s no account to reset.', resetSuccess:false}); return; }
+  if (!supabaseClient) { st({resetStatus:'This demo isn\'t connected to a real backend, so there\'s no account to reset.', resetSuccess:false}); return; }
   st({loginLoading:true});
-  try {
-    const data = await apiFetch('/api/auth/reset-password', { method:'POST', body: JSON.stringify({ token: S._resetTokenFromUrl, newPassword }) });
-    st({loginLoading:false, resetStatus: data.message || 'Password updated.', resetSuccess:true});
-  } catch (e) {
-    st({loginLoading:false, resetStatus: e.message, resetSuccess:false});
-  }
+  const { data, error } = await supabaseClient.auth.updateUser({ password: newPassword });
+  if (error) { st({loginLoading:false, resetStatus: error.message, resetSuccess:false}); return; }
+  S._forcePasswordSetup = false;
+  S.resetStatus = 'Password set — signing you in…';
+  S.resetSuccess = true;
+  render();
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  if (sessionData?.session) await loadUserContextAfterAuth(sessionData.session);
 }
 
 /* ── WELCOME / ONBOARDING ──────────────────────────────────
@@ -3653,6 +3892,7 @@ function assignAttorney(caseId, attorneyName, ranking) {
 
 function drillDownV() {
   const type = S.drillType;
+  const value = S.drillValue;
   const label = S.drillLabel || 'Cases';
   
   let filteredCases = CASES;
@@ -3692,6 +3932,31 @@ function drillDownV() {
       // Cases marked as trial candidates
       filteredCases = CASES.filter(c => c.potentialTrialCandidate);
       break;
+    /* ── Enterprise dashboard drill-downs — parametrized by drillValue ── */
+    case 'carrier-exposure':
+      filteredCases = CASES.filter(c => (c.insurance.carrier || 'Self-Insured') === value).sort((a,b)=>(b.exposure.likelyExposure||b.value)-(a.exposure.likelyExposure||a.value));
+      break;
+    case 'state-exposure':
+      filteredCases = CASES.filter(c => (stateFromJurisdiction(c.court && c.court.jurisdiction) || 'Not Set') === value).sort((a,b)=>(b.exposure.likelyExposure||b.value)-(a.exposure.likelyExposure||a.value));
+      break;
+    case 'probability-of-loss':
+      filteredCases = CASES.filter(c => c.status !== 'Closed' && (c.probabilityOfLoss||'Reasonably Possible') === value);
+      break;
+    case 'root-cause':
+      filteredCases = CASES.filter(c => (c.rootCause||'Other') === value);
+      break;
+    case 'matter-type-spend':
+      filteredCases = CASES.filter(c => c.type === value).sort((a,b)=>(b.billing.totalBilled||0)-(a.billing.totalBilled||0));
+      break;
+    case 'material-matters':
+      filteredCases = CASES.filter(c => c.status !== 'Closed' && (c.exposure.likelyExposure||c.value||0) > 10000000).sort((a,b)=>(b.exposure.likelyExposure||b.value)-(a.exposure.likelyExposure||a.value));
+      break;
+    case 'cycle-time-type':
+      filteredCases = CASES.filter(c => c.status === 'Closed' && c.type === value);
+      break;
+    case 'afa-matters':
+      filteredCases = CASES.filter(c => c.billing.type && c.billing.type !== 'Hourly');
+      break;
   }
   
   let h = '<div style="padding:20px;max-width:1200px;margin:0 auto;">';
@@ -3700,7 +3965,7 @@ function drillDownV() {
   h += '<div class="sh">📊 ' + label + '</div>';
   h += '<div style="font-size:12px;color:var(--muted);margin-top:4px;">'+filteredCases.length+' case'+(filteredCases.length!==1?'s':'')+' matching this filter</div>';
   h += '</div>';
-  h += '<button onclick="st({showDrill:false, drillType:null, drillLabel:null})" class="btn btn-out">← Back to Dashboard</button>';
+  h += '<button onclick="st({showDrill:false, drillType:null, drillLabel:null, drillValue:null, drillReturn:null})" class="btn btn-out">← Back to Dashboard</button>';
   h += '</div>';
   
   if (filteredCases.length === 0) {
@@ -4418,11 +4683,15 @@ function execSubNav(){
   return h;
 }
 function execV(){
+  if (S.showDrill) return drillDownV();
   let h = '<div class="wrap">';
   h += '<div class="hero"><div class="hero-l"><div class="hero-eyebrow">Executive Dashboard</div>';
   h += '<h1 class="hero-title">'+(EXEC_TABS.find(([k])=>k===S.execTab)||[])[1]+'</h1>';
   h += '<p class="hero-sub">'+CASES.length+' total matters across the firm</p></div>';
   h += '<div class="hero-r"><button class="btn btn-out" onclick="window.print()">🖨 Export PDF</button></div></div>';
+
+  h += execTotalLitigationSummaryV();
+  h += weeklyDigestCardV();
   h += execSubNav();
 
   if (S.execTab === 'financial') h += execFinancialV();
@@ -4436,30 +4705,263 @@ function execV(){
   return h;
 }
 
+/* ── TOTAL LITIGATION SUMMARY ─────────────────────────────
+   Always visible at the top of the Executive Dashboard regardless
+   of which subtab is selected — the one-glance answer to "where do
+   we stand across the whole company right now." Everything below
+   this (the subnav tabs) is the drill-down; this band is the
+   summary. Pulls from real CASES data only — no seeded/placeholder
+   figures. */
+function execTotalLitigationSummaryV(){
+  const open = CASES.filter(c => c.status !== 'Closed');
+  const closed = CASES.filter(c => c.status === 'Closed');
+  const totExposure = CASES.reduce((s,c) => s + (c.exposure.likelyExposure||c.value||0), 0);
+  const totReserves = CASES.reduce((s,c) => s + (c.insurance.reserveAmount||0), 0);
+  const totBilled = CASES.reduce((s,c) => s + (c.billing.totalBilled||0), 0);
+  const totPaid = CASES.reduce((s,c) => s + (c.billing.totalPaid||0), 0);
+  const wins = closed.filter(c => (c.exposure.settlementAmount || 0) < (c.exposure.demandAmount || c.value));
+  const winRate = closed.length ? Math.round(wins.length/closed.length*100) : 0;
+  const avgCycle = closed.length ? Math.round(closed.reduce((s,c)=>s+daysOpen(c),0)/closed.length) : 0;
+  const avgIdx = open.length ? Math.round(open.reduce((s,c)=>s+cci(c),0)/open.length) : 0;
+  const trialCount = CASES.filter(c => c.status !== 'Closed' && (c.status === 'Trial' || c.potentialTrialCandidate)).length;
+  const missingSol = open.filter(c => !c.keyDates.sol).length;
+
+  let h = '<div class="card" style="margin-bottom:18px;background:linear-gradient(135deg,var(--surf) 0%,var(--surf2) 100%);border:1px solid var(--line);">';
+  h += '<div class="sh"><span>📊 Total Litigation Summary — Company-Wide</span><span style="color:var(--dim);font-weight:500;">Live snapshot · updates automatically</span></div>';
+  h += '<div class="kpi-grid" style="margin-bottom:0;">';
+  const kpis = [
+    ['Total Litigation', CASES.length, 'var(--pri)', open.length+' open · '+closed.length+' closed'],
+    ['Total Exposure', fV(totExposure), 'var(--red)', 'likely exposure, all matters'],
+    ['Total Reserves', fV(totReserves), 'var(--gold)', 'held across portfolio'],
+    ['Total Billed / Paid', fV(totBilled), 'var(--ink)', fV(totPaid)+' collected'],
+    ['Win Rate', winRate+'%', 'var(--green)', closed.length+' closed matters'],
+    ['Avg. Days to Resolution', avgCycle, 'var(--pri2)', 'across closed matters'],
+    ['Portfolio CCI', avgIdx, cciColor(avgIdx), cciLabel(avgIdx)+' average'],
+    ['Trial Candidates', trialCount, trialCount>0?'var(--red)':'var(--green)', 'active or flagged'],
+  ];
+  kpis.forEach(([l,v,c,sub]) => {
+    h += '<div class="kpi"><div class="kpi-bar" style="background:'+c+'"></div><div class="kpi-l">'+l+'</div><div class="kpi-v" style="color:'+c+';">'+v+'</div><div class="kpi-sub">'+sub+'</div></div>';
+  });
+  h += '</div>';
+  if (missingSol > 0) {
+    h += '<div class="alert-warn" style="margin-top:12px;">⚠ '+missingSol+' open matter'+(missingSol>1?'s are':' is')+' missing an SOL date. See the Key Dates tab on each matter for a general reference estimate, or check Risk &amp; Alerts below.</div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+/* ── WEEKLY EXECUTIVE DIGEST ─────────────────────────────────
+   Composes the same numbers shown on this dashboard into a plain-
+   text summary and emails it. Two honest limits, stated in the UI
+   itself rather than buried in a comment:
+   1. "Send Now" always works, zero setup — it's a mailto link, so
+      it opens the person's own mail client with everything filled in.
+   2. True unattended weekly sending — an email arriving every Monday
+      whether or not anyone has this app open — needs a server that's
+      always running to fire it on a timer. This is a browser app with
+      no such server. What this DOES do without one: if someone has
+      the app open on their chosen day, a one-click prompt appears so
+      they don't have to remember to go find this card. If a real
+      backend (window.CCP_API_BASE) is connected, the schedule is also
+      synced there so that server can take over actual unattended
+      sending — see syncWeeklyDigestSchedule() below for the hook. */
+function isoWeekKey(d){
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
+  const weekNo = Math.ceil((((date - yearStart) / 864e5) + 1)/7);
+  return date.getUTCFullYear()+'-W'+weekNo;
+}
+function buildWeeklyExecDigestText(){
+  const open = CASES.filter(c => c.status !== 'Closed');
+  const closed = CASES.filter(c => c.status === 'Closed');
+  const totExposure = CASES.reduce((s,c) => s + (c.exposure.likelyExposure||c.value||0), 0);
+  const totReserves = CASES.reduce((s,c) => s + (c.insurance.reserveAmount||0), 0);
+  const totBilled = CASES.reduce((s,c) => s + (c.billing.totalBilled||0), 0);
+  const wins = closed.filter(c => (c.exposure.settlementAmount || 0) < (c.exposure.demandAmount || c.value));
+  const winRate = closed.length ? Math.round(wins.length/closed.length*100) : 0;
+  const material = CASES.filter(c => c.status!=='Closed' && (c.exposure.likelyExposure||c.value||0) > 10000000);
+  const solDue = CASES.filter(c => c.status!=='Closed' && c.keyDates.sol && new Date(c.keyDates.sol) < new Date(Date.now()+90*864e5));
+  const trialsUp = CASES.filter(c => c.status!=='Closed' && c.keyDates.trialDate && new Date(c.keyDates.trialDate) < new Date(Date.now()+60*864e5) && new Date(c.keyDates.trialDate) >= new Date());
+  const pendingAuth = CASES.flatMap(c => (c.authorityRequests||[]).filter(a=>a.status==='Pending').map(a=>({c,a})));
+  const openIncidents = REGULATORY_INCIDENTS.filter(r=>r.status==='Open');
+
+  let s = 'WEEKLY EXECUTIVE LITIGATION SUMMARY\n';
+  s += '='.repeat(50) + '\n';
+  s += 'Generated: ' + td() + '\n\n';
+  s += 'PORTFOLIO\n' + '-'.repeat(30) + '\n';
+  s += 'Total Litigation: ' + CASES.length + ' (' + open.length + ' open, ' + closed.length + ' closed)\n';
+  s += 'Total Likely Exposure: ' + fM(totExposure) + '\n';
+  s += 'Total Reserves: ' + fM(totReserves) + '\n';
+  s += 'Total Defense Spend: ' + fM(totBilled) + '\n';
+  s += 'Win Rate: ' + winRate + '%\n\n';
+  s += 'NEEDS ATTENTION\n' + '-'.repeat(30) + '\n';
+  s += material.length + ' material matter(s) over $10M exposure\n';
+  s += solDue.length + ' matter(s) with SOL inside 90 days\n';
+  s += trialsUp.length + ' matter(s) with trial dates inside 60 days\n';
+  s += pendingAuth.length + ' pending settlement authority request(s)\n';
+  s += openIncidents.length + ' open regulatory/compliance incident(s)\n\n';
+  if (material.length) {
+    s += 'MATERIAL MATTERS\n' + '-'.repeat(30) + '\n';
+    material.slice(0,10).forEach(c => { s += '- ' + (c.matterNo||c.id) + ' ' + c.client + ': ' + fM(c.exposure.likelyExposure||c.value) + ' (' + (c.probabilityOfLoss||'Reasonably Possible') + ')\n'; });
+    s += '\n';
+  }
+  s += 'Full dashboard: sign in and open Executive → Firm at a Glance for drill-downs into every figure above.\n';
+  return s;
+}
+function weeklyDigestCardV(){
+  const today = new Date();
+  const todayName = today.toLocaleDateString('en-US',{weekday:'long'});
+  const isDigestDayToday = S.weeklyDigestEnabled && S.weeklyDigestDay === todayName;
+  const alreadySentThisWeek = S.weeklyDigestLastSentWeek === isoWeekKey(today);
+
+  let h = '<div class="card" style="margin-bottom:14px;border-left:3px solid var(--pri2);">';
+  h += '<div class="sh"><span>📧 Weekly Executive Email</span></div>';
+
+  if (isDigestDayToday && !alreadySentThisWeek) {
+    h += '<div class="alert-info" style="margin-bottom:12px;">Today (' + todayName + ') is this digest\'s scheduled send day. <button class="btn btn-pri" style="margin-left:8px;font-size:11px;padding:5px 12px;" onclick="sendWeeklyDigestNow()">Send Now</button></div>';
+  }
+
+  h += '<div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;align-items:end;margin-bottom:8px;">';
+  h += '<div class="fld"><label class="lbl">Recipients (comma-separated)</label><input type="text" class="inp" placeholder="cfo@company.com, gc@company.com" value="'+escAttr(S.weeklyDigestRecipients)+'" onchange="st({weeklyDigestRecipients:this.value})"></div>';
+  h += '<div class="fld"><label class="lbl">Send Every</label><select class="inp" onchange="st({weeklyDigestDay:this.value})">'+['Monday','Tuesday','Wednesday','Thursday','Friday'].map(d=>'<option'+(S.weeklyDigestDay===d?' selected':'')+'>'+d+'</option>').join('')+'</select></div>';
+  h += '<div class="fld"><label class="lbl">Status</label><button class="btn '+(S.weeklyDigestEnabled?'btn-pri':'btn-out')+'" style="width:100%;justify-content:center;" onclick="toggleWeeklyDigest()">'+(S.weeklyDigestEnabled?'✓ Scheduled':'Enable')+'</button></div>';
+  h += '</div>';
+
+  h += '<div style="display:flex;gap:8px;align-items:center;">';
+  h += '<button class="btn btn-out" onclick="sendWeeklyDigestNow()">Send This Week\'s Summary Now</button>';
+  if (API_BASE) h += '<button class="btn btn-out" onclick="syncWeeklyDigestSchedule()">Sync Schedule to Server</button>';
+  h += '</div>';
+
+  h += '<div style="font-size:10px;color:var(--dim);margin-top:10px;line-height:1.5;">"Send Now" always works — it opens your email client with this week\'s numbers filled in. True unattended sending (an email that arrives every '+S.weeklyDigestDay+' even if no one has this app open) needs a backend running on a schedule'+(API_BASE?' — click "Sync Schedule to Server" to hand this off to yours.':'; connect one (window.CCP_API_BASE) to enable that. Until then, enabling this just shows a one-click prompt at the top of this card on the scheduled day when someone has the app open.')+'</div>';
+  h += '</div>';
+  return h;
+}
+function toggleWeeklyDigest(){
+  st({weeklyDigestEnabled: !S.weeklyDigestEnabled});
+  if (S.weeklyDigestEnabled && API_BASE) syncWeeklyDigestSchedule();
+}
+function sendWeeklyDigestNow(){
+  const to = (S.weeklyDigestRecipients||'').trim();
+  const body = buildWeeklyExecDigestText();
+  const subject = 'Weekly Executive Litigation Summary — ' + td();
+  const mailto = 'mailto:' + encodeURIComponent(to).replace(/%2C/g,',') + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+  window.location.href = mailto;
+  st({weeklyDigestLastSentWeek: isoWeekKey(new Date())});
+}
+async function syncWeeklyDigestSchedule(){
+  if (!API_BASE) return;
+  try {
+    await apiFetch('/api/reports/schedule-weekly-digest', {
+      method:'POST',
+      body: JSON.stringify({ recipients: S.weeklyDigestRecipients, day: S.weeklyDigestDay, enabled: S.weeklyDigestEnabled })
+    });
+    alert('Schedule synced to your server. Actual weekly sending now depends on that backend running this job on a timer — see server.js.');
+  } catch (e) {
+    alert('Could not sync to server: ' + e.message + '\n\nThe schedule is still saved locally and "Send Now" still works regardless.');
+  }
+}
+
 /* ── 1. FIRM AT A GLANCE ──────────────────────────────────── */
 function execGlanceV(){
-  const totVal = CASES.reduce((s,c) => s + c.value, 0);
-  const totRev = CASES.reduce((s,c) => s + (c.billing.totalBilled||0), 0);
-  const totRes = CASES.reduce((s,c) => s + (c.insurance.reserveAmount||0), 0);
-  const open = CASES.filter(c => c.status !== 'Closed').length;
+  const open = CASES.filter(c => c.status !== 'Closed');
   const closed = CASES.filter(c => c.status === 'Closed');
+  const totExposure = CASES.reduce((s,c) => s + (c.exposure.likelyExposure||c.value||0), 0);
+  const totReserves = CASES.reduce((s,c) => s + (c.insurance.reserveAmount||0), 0);
   const wins = closed.filter(c => (c.exposure.settlementAmount || 0) < (c.exposure.demandAmount || c.value));
   const winRate = closed.length ? Math.round(wins.length/closed.length*100) : 0;
 
-  let h = '<div class="kpi-grid">';
-  h += '<div class="kpi"><div class="kpi-l">Portfolio Value</div><div class="kpi-v">'+fV(totVal)+'</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">Revenue</div><div class="kpi-v" style="color:var(--green);">'+fV(totRev)+'</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">Total Matters</div><div class="kpi-v">'+CASES.length+'</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">Open</div><div class="kpi-v">'+open+'</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">Win Rate</div><div class="kpi-v" style="color:var(--green);">'+winRate+'%</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">Reserves</div><div class="kpi-v" style="color:var(--gold);">'+fV(totRes)+'</div></div>';
+  let h = '';
+
+  /* ── 1. NEEDS YOUR ATTENTION — every open action item across the
+     portfolio, ranked, in one list, instead of scattered across tabs. */
+  const actionItems = [];
+  const now = Date.now();
+  open.forEach(c => {
+    if (c.keyDates.sol) {
+      const days = Math.ceil((new Date(c.keyDates.sol) - now)/864e5);
+      if (days <= 90) actionItems.push({c, urgency:days, label:(days<0?'SOL EXPIRED':'SOL in '+days+'d'), color: days<0?'var(--red)':days<30?'var(--red)':'var(--gold)', tab:'dates'});
+    } else {
+      actionItems.push({c, urgency:9999, label:'No SOL recorded', color:'var(--dim)', tab:'dates'});
+    }
+    if (c.keyDates.trialDate) {
+      const days = Math.ceil((new Date(c.keyDates.trialDate) - now)/864e5);
+      if (days >= 0 && days <= 60) actionItems.push({c, urgency:days, label:'Trial in '+days+'d', color:'var(--red)', tab:'dates'});
+    }
+    (c.authorityRequests||[]).filter(a=>a.status==='Pending').forEach(a => {
+      const daysPending = Math.floor((now - new Date(a.date))/864e5);
+      actionItems.push({c, urgency:100-daysPending, label:'Authority request pending ('+daysPending+'d)', color:'var(--gold)', tab:'closing'});
+    });
+    if (c.billing.budget > 0 && c.billing.totalBilled > c.billing.budget) {
+      actionItems.push({c, urgency:500, label:'Over budget', color:'var(--red)', tab:'billing'});
+    }
+  });
+  actionItems.sort((a,b) => a.urgency - b.urgency);
+  h += '<div class="card" style="margin-bottom:14px;"><div class="sh"><span>🔔 Needs Your Attention</span><span style="color:var(--dim);font-weight:500;">'+actionItems.length+' open item'+(actionItems.length!==1?'s':'')+'</span></div>';
+  if (actionItems.length === 0) {
+    h += '<div style="color:var(--green);font-size:12.5px;font-weight:600;padding:8px 0;">✓ Nothing urgent right now — no SOL/trial deadlines inside their windows, no pending authority requests, no matters over budget.</div>';
+  } else {
+    actionItems.slice(0,10).forEach(({c,label,color,tab}) => {
+      h += '<div class="row-link" onclick="stCase(\''+c.id+'\',\''+tab+'\')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--surf2);">';
+      h += '<div><span style="font-size:11.5px;font-weight:700;color:var(--pri2);">'+esc(c.matterNo||c.id)+'</span> <span style="font-size:12px;color:var(--ink);">'+esc(c.client)+'</span></div>';
+      h += '<span style="font-size:11px;font-weight:700;color:'+color+';">'+label+'</span></div>';
+    });
+    if (actionItems.length > 10) h += '<div style="font-size:11px;color:var(--dim);margin-top:8px;">+ '+(actionItems.length-10)+' more — see Risk &amp; Alerts for the full list.</div>';
+  }
   h += '</div>';
 
-  h += '<div class="grid-2">';
-  // New-matters-filed trend — uses c.filed, which is populated on
-  // every case, unlike billing.totalBilled (real in this seed data
-  // on only 1 of 15 cases — too sparse to ever show a meaningful
-  // revenue-by-month line, so this tracks real filing volume instead).
+  /* ── 2. WHERE THE RISK SITS — concentration by carrier, state, and
+     the single largest matters, so leadership can see at a glance
+     whether risk is spread out or riding on a handful of cases. */
+  h += '<div class="grid-3">';
+
+  h += '<div class="card"><div class="sh"><span>Top Carriers by Exposure</span></div>';
+  const byCarrierG = {};
+  CASES.forEach(c => { const ca = c.insurance.carrier || 'Self-Insured'; byCarrierG[ca] = byCarrierG[ca]||{n:0,exp:0}; byCarrierG[ca].n++; byCarrierG[ca].exp += (c.exposure.likelyExposure||c.value||0); });
+  Object.entries(byCarrierG).sort((a,b)=>b[1].exp-a[1].exp).slice(0,5).forEach(([ca,d]) => {
+    h += '<div class="row-link" onclick="st({showDrill:true,drillType:\'carrier-exposure\',drillValue:\''+escAttr(ca)+'\',drillLabel:\''+escAttr(ca)+' — Exposure\'})" style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--surf2);font-size:11.5px;"><span>'+esc(ca)+' <span style="color:var(--dim);">('+d.n+')</span></span><span style="font-weight:700;color:var(--red);">'+fV(d.exp)+'</span></div>';
+  });
+  h += '</div>';
+
+  h += '<div class="card"><div class="sh"><span>Top States by Exposure</span></div>';
+  const byStateG = {};
+  CASES.forEach(c => { const st = stateFromJurisdiction(c.court && c.court.jurisdiction) || 'Not Set'; byStateG[st] = byStateG[st]||{n:0,exp:0}; byStateG[st].n++; byStateG[st].exp += (c.exposure.likelyExposure||c.value||0); });
+  Object.entries(byStateG).sort((a,b)=>b[1].exp-a[1].exp).slice(0,5).forEach(([st,d]) => {
+    h += '<div class="row-link" onclick="st({showDrill:true,drillType:\'state-exposure\',drillValue:\''+escAttr(st)+'\',drillLabel:\''+escAttr(st)+' — Exposure\'})" style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--surf2);font-size:11.5px;"><span style="color:'+(st==='Not Set'?'var(--dim)':'var(--ink)')+';">'+esc(st)+' <span style="color:var(--dim);">('+d.n+')</span></span><span style="font-weight:700;color:var(--red);">'+fV(d.exp)+'</span></div>';
+  });
+  h += '</div>';
+
+  h += '<div class="card"><div class="sh"><span>Largest Single Matters</span></div>';
+  [...CASES].filter(c=>c.status!=='Closed').sort((a,b)=>(b.exposure.likelyExposure||b.value)-(a.exposure.likelyExposure||a.value)).slice(0,5).forEach(c => {
+    h += '<div class="row-link" onclick="stCase(\''+c.id+'\')" style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--surf2);font-size:11.5px;"><span>'+esc(c.client.length>18?c.client.slice(0,18)+'…':c.client)+'</span><span style="font-weight:700;color:var(--red);">'+fV(c.exposure.likelyExposure||c.value)+'</span></div>';
+  });
+  h += '</div></div>';
+
+  /* ── 3. RESERVE ADEQUACY — the ratio, plus the specific matters
+     dragging it down, not just an aggregate percentage. */
+  const reserveRatio = totExposure ? Math.round(totReserves/totExposure*100) : 0;
+  const underReserved = CASES.filter(c => c.status!=='Closed' && c.exposure.likelyExposure && (c.insurance.reserveAmount/c.exposure.likelyExposure) < 0.7)
+    .map(c => ({c, gap: (c.exposure.likelyExposure||0) - (c.insurance.reserveAmount||0)}))
+    .sort((a,b) => b.gap - a.gap);
+  h += '<div class="card" style="margin-top:14px;"><div class="sh"><span>💰 Reserve Adequacy</span><span style="color:var(--dim);font-weight:500;">Reserves vs. likely exposure, portfolio-wide</span></div>';
+  h += '<div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;margin-bottom:'+(underReserved.length?'14px':'0')+';">';
+  h += '<div style="text-align:center;"><div class="serif" style="font-size:36px;font-weight:700;color:'+(reserveRatio>=90?'var(--green)':reserveRatio>=70?'var(--gold)':'var(--red)')+';">'+reserveRatio+'%</div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px;">Reserves / Exposure</div></div>';
+  h += '<div style="text-align:center;"><div class="serif" style="font-size:22px;font-weight:700;">'+fV(totReserves)+'</div><div style="font-size:10px;color:var(--muted);">Total Reserves</div></div>';
+  h += '<div style="text-align:center;"><div class="serif" style="font-size:22px;font-weight:700;color:var(--red);">'+fV(totExposure)+'</div><div style="font-size:10px;color:var(--muted);">Total Likely Exposure</div></div>';
+  h += '<div style="text-align:center;"><div class="serif" style="font-size:22px;font-weight:700;color:'+(underReserved.length>0?'var(--red)':'var(--green)')+';">'+underReserved.length+'</div><div style="font-size:10px;color:var(--muted);">Under-Reserved Matters</div></div>';
+  h += '</div>';
+  if (underReserved.length > 0) {
+    h += '<div style="overflow-x:auto;"><table><thead><tr><th>Matter</th><th>Client</th><th>Reserve</th><th>Exposure</th><th>Gap</th></tr></thead><tbody>';
+    underReserved.slice(0,6).forEach(({c,gap}) => {
+      h += '<tr class="row-link" onclick="stCase(\''+c.id+'\',\'insurance\')"><td style="font-weight:700;color:var(--pri2);">'+esc(c.matterNo||c.id)+'</td><td>'+esc(c.client)+'</td><td>'+fM(c.insurance.reserveAmount)+'</td><td>'+fM(c.exposure.likelyExposure)+'</td><td style="color:var(--red);font-weight:700;">'+fM(gap)+'</td></tr>';
+    });
+    h += '</tbody></table></div>';
+  }
+  h += '</div>';
+
+  /* ── 4. VOLUME TREND + STATUS MIX ── */
+  h += '<div class="grid-2" style="margin-top:14px;">';
   h += '<div class="card"><div class="sh"><span>New Matters Filed</span><span style="color:var(--dim);font-weight:500;">Last 12 months</span></div>';
   const filedDates = CASES.map(c=>new Date(c.filed).getTime()).filter(t=>!isNaN(t));
   const nowRef = new Date(Math.max(...filedDates));
@@ -4485,7 +4987,23 @@ function execGlanceV(){
   });
   h += '</div></div>';
 
-  h += '<div class="card"><div class="sh"><span>Top Performers</span><span style="color:var(--dim);font-weight:500;">By LES</span></div>';
+  /* ── 5. OUTCOMES SNAPSHOT — are we actually winning? ── */
+  const fa = firmAverages();
+  h += '<div class="card" style="margin-top:14px;"><div class="sh"><span>📈 Outcomes Snapshot</span></div>';
+  h += '<div style="display:flex;gap:28px;flex-wrap:wrap;">';
+  const outcomeStats = [
+    ['Win Rate', winRate+'%', winRate>=60?'var(--green)':'var(--gold)'],
+    ['Settlement Rate', fa.settlePct+'%', 'var(--pri2)'],
+    ['Avg. Resolution Time', fa.avgCycleTime+' days', 'var(--ink)'],
+    ['Portfolio CCI', fa.les ? Math.round(open.reduce((s,c)=>s+cci(c),0)/Math.max(open.length,1)) : 0, cciColor(Math.round(open.reduce((s,c)=>s+cci(c),0)/Math.max(open.length,1)))]
+  ];
+  outcomeStats.forEach(([l,v,c]) => {
+    h += '<div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px;">'+l+'</div><div class="serif" style="font-size:24px;font-weight:700;color:'+c+';">'+v+'</div></div>';
+  });
+  h += '</div></div>';
+
+  /* ── 6. TOP PERFORMERS ── */
+  h += '<div class="card" style="margin-top:14px;"><div class="sh"><span>Top Performers</span><span style="color:var(--dim);font-weight:500;">By LES</span></div>';
   const ranked = ATTY.map(a => attorneyScorecard(a)).sort((x,y)=>y.les-x.les).slice(0,3);
   h += '<div class="grid-3" style="margin-bottom:0;">';
   ranked.forEach((sc,i) => {
@@ -4496,10 +5014,166 @@ function execGlanceV(){
     h += '<div style="font-size:10px;color:var(--muted);">LES '+sc.les+'</div></div>';
   });
   h += '</div></div>';
-  return h;
+  return execEnterpriseSectionsV(h, open, closed, totExposure, totReserves, winRate);
 }
 
-/* ── 2. FINANCIAL DASHBOARD ───────────────────────────────── */
+/* ── ENTERPRISE SECTIONS — appended onto the one Firm-at-a-Glance
+   page rather than a separate tab, per direct instruction: everything
+   on one simple screen, nothing extra to click into. Takes the
+   already-built glance HTML and the figures already computed there
+   so nothing is recalculated twice. ───────────────────────────── */
+function execEnterpriseSectionsV(hIn, open, closed, totExposure, totReserves, winRate){
+  let h = hIn;
+
+  /* ── ENTERPRISE FINANCIAL EXPOSURE (the "Big Numbers") ── */
+  h += '<div class="section-band" style="margin-top:22px;">💼 Enterprise Financial Exposure</div>';
+  h += '<div class="grid-3">';
+
+  h += '<div class="card"><div class="sh"><span>Exposure by Probability of Loss</span></div>';
+  const probBuckets = {Probable:0, 'Reasonably Possible':0, Remote:0};
+  CASES.filter(c=>c.status!=='Closed').forEach(c => { const p = c.probabilityOfLoss||'Reasonably Possible'; probBuckets[p] = (probBuckets[p]||0) + (c.exposure.likelyExposure||c.value||0); });
+  const probColors = {Probable:'var(--red)', 'Reasonably Possible':'var(--gold)', Remote:'var(--green)'};
+  const probTotal = Object.values(probBuckets).reduce((a,b)=>a+b,0) || 1;
+  Object.entries(probBuckets).forEach(([label,amt]) => {
+    const pct = Math.round(amt/probTotal*100);
+    h += '<div style="margin-bottom:9px;cursor:pointer;" onclick="st({showDrill:true,drillType:\'probability-of-loss\',drillValue:\''+escAttr(label)+'\',drillLabel:\''+escAttr(label)+' — Loss Probability\'})"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;"><span style="color:var(--muted);">'+label+'</span><span style="font-weight:700;color:'+probColors[label]+';">'+fV(amt)+'</span></div>';
+    h += '<div style="background:var(--surf3);height:7px;border-radius:3px;overflow:hidden;"><div style="width:'+pct+'%;height:100%;background:'+probColors[label]+';"></div></div></div>';
+  });
+  h += '<div style="font-size:9.5px;color:var(--dim);margin-top:4px;">ASC 450 / SOX-style loss-contingency categorization, set per matter on the Exposure tab.</div>';
+  h += '</div>';
+
+  const totalBilledAll = CASES.reduce((s,c)=>s+(c.billing.totalBilled||0),0);
+  h += '<div class="card"><div class="sh"><span>Legal Spend vs. Forecast</span></div>';
+  h += '<div class="fld"><label class="lbl">Quarterly Budget</label><input type="text" inputmode="decimal" value="'+(S.enterpriseBudgetQuarterly?Number(S.enterpriseBudgetQuarterly).toLocaleString():'')+'" placeholder="Set quarterly target" onchange="st({enterpriseBudgetQuarterly:moneyVal(this.value)})" class="inp"></div>';
+  h += '<div class="fld"><label class="lbl">Annual Budget</label><input type="text" inputmode="decimal" value="'+(S.enterpriseBudgetAnnual?Number(S.enterpriseBudgetAnnual).toLocaleString():'')+'" placeholder="Set annual target" onchange="st({enterpriseBudgetAnnual:moneyVal(this.value)})" class="inp"></div>';
+  if (S.enterpriseBudgetAnnual > 0) {
+    const burnPct = Math.min(100, Math.round(totalBilledAll/S.enterpriseBudgetAnnual*100));
+    h += '<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;"><span style="color:var(--muted);">'+fV(totalBilledAll)+' spent of '+fV(S.enterpriseBudgetAnnual)+' annual</span><span style="font-weight:700;color:'+(burnPct>90?'var(--red)':'var(--ink)')+';">'+burnPct+'%</span></div>';
+    h += '<div style="background:var(--surf3);height:8px;border-radius:4px;overflow:hidden;"><div style="width:'+burnPct+'%;height:100%;background:'+(burnPct>90?'var(--red)':'var(--pri2)')+';"></div></div>';
+  } else {
+    h += '<div style="font-size:11px;color:var(--dim);">Set a budget above to track spend vs. forecast.</div>';
+  }
+  h += '</div>';
+
+  h += '<div class="card"><div class="sh"><span>Accruals &amp; Reserves</span></div>';
+  h += '<div style="text-align:center;padding:8px 0;"><div class="serif" style="font-size:28px;font-weight:700;color:var(--gold);">'+fV(totReserves)+'</div><div style="font-size:10px;color:var(--muted);margin-top:3px;">Total held for pending settlements &amp; adverse judgments</div></div>';
+  h += '<div style="font-size:9.5px;color:var(--dim);margin-top:6px;">Reflects reserves entered on each matter\'s Insurance tab — align with Finance before using for SEC/SOX financial-reporting disclosures.</div>';
+  h += '</div></div>';
+
+  /* ── STRATEGIC COST CONTROL & VENDOR ROI ── */
+  h += '<div class="section-band">📊 Strategic Cost Control &amp; Vendor ROI</div>';
+  h += '<div class="card" style="margin-bottom:14px;"><div class="sh"><span>Outside Counsel Performance</span></div>';
+  h += '<div style="overflow-x:auto;"><table><thead><tr><th>Attorney</th><th>Total Spend</th><th>Open</th><th>Closed</th><th>Win Rate</th><th>Settlement Rate</th><th>LES Grade</th></tr></thead><tbody>';
+  ATTY.map(a=>attorneyScorecard(a)).sort((x,y)=>y.totalBilled-x.totalBilled).forEach(sc => {
+    h += '<tr class="row-link" onclick="st({role:\'scorecard\',scorecardDetail:\''+sc.name+'\'})"><td style="font-weight:700;">'+esc(sc.name)+'</td><td>'+fV(sc.totalBilled)+'</td><td>'+sc.open.length+'</td><td>'+sc.closed.length+'</td><td>'+sc.winPct+'%</td><td>'+sc.settlePct+'%</td><td><span class="serif" style="font-weight:700;color:'+lesGradeColor(sc.les)+';">'+lesGrade(sc.les)+'</span></td></tr>';
+  });
+  h += '</tbody></table></div></div>';
+
+  h += '<div class="grid-2">';
+  h += '<div class="card"><div class="sh"><span>Spend by Matter Type</span></div>';
+  const spendByType = {};
+  CASES.forEach(c => { spendByType[c.type] = (spendByType[c.type]||0) + (c.billing.totalBilled||0); });
+  const maxSpendType = Math.max(...Object.values(spendByType), 1);
+  Object.entries(spendByType).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,8).forEach(([t,v]) => {
+    h += '<div style="margin-bottom:8px;cursor:pointer;" onclick="st({showDrill:true,drillType:\'matter-type-spend\',drillValue:\''+escAttr(t)+'\',drillLabel:\''+escAttr(t)+' — Spend\'})"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;"><span style="color:var(--muted);">'+esc(t)+'</span><span style="font-weight:700;">'+fV(v)+'</span></div>';
+    h += '<div style="background:var(--surf3);height:6px;border-radius:3px;overflow:hidden;"><div style="width:'+Math.round(v/maxSpendType*100)+'%;height:100%;background:var(--pri2);"></div></div></div>';
+  });
+  if (Object.values(spendByType).every(v=>v===0)) h += '<div style="font-size:11px;color:var(--dim);">No billing recorded yet.</div>';
+  h += '</div>';
+
+  h += '<div class="card"><div class="sh"><span>Alternative Fee Arrangement (AFA) Savings</span></div>';
+  const afaCases = CASES.filter(c => c.billing.type && c.billing.type !== 'Hourly');
+  const afaPct = CASES.length ? Math.round(afaCases.length/CASES.length*100) : 0;
+  h += '<div style="text-align:center;padding:8px 0;cursor:pointer;" onclick="st({showDrill:true,drillType:\'afa-matters\',drillLabel:\'AFA-Billed Matters\'})"><div class="serif" style="font-size:32px;font-weight:700;color:var(--green);">'+afaPct+'%</div><div style="font-size:10px;color:var(--muted);margin-top:3px;">of matters billed via a fixed, capped, or contingency arrangement instead of pure hourly</div></div>';
+  h += '<div style="font-size:11px;color:var(--muted);">'+afaCases.length+' of '+CASES.length+' matters. Set the Fee Type on each matter\'s Billing tab to update this.</div>';
+  h += '</div></div>';
+
+  /* ── CORPORATE RISK & PORTFOLIO HEALTH ── */
+  h += '<div class="section-band">🚨 Corporate Risk &amp; Portfolio Health</div>';
+  const materialThreshold = 10000000;
+  const materialMatters = CASES.filter(c => c.status!=='Closed' && (c.exposure.likelyExposure||c.value||0) > materialThreshold).sort((a,b)=>(b.exposure.likelyExposure||b.value)-(a.exposure.likelyExposure||a.value));
+  h += '<div class="card" style="margin-bottom:14px;'+(materialMatters.length?'border-left:3px solid var(--red);':'')+'"><div class="sh"><span>⚠ Material Matters (&gt;'+fV(materialThreshold)+' Exposure)</span><span style="color:var(--dim);font-weight:500;">'+materialMatters.length+' matter'+(materialMatters.length!==1?'s':'')+'</span></div>';
+  if (materialMatters.length === 0) {
+    h += '<div style="color:var(--green);font-size:12px;font-weight:600;">✓ No matters currently exceed the $'+(materialThreshold/1e6)+'M threat threshold.</div>';
+  } else {
+    h += '<div style="overflow-x:auto;"><table><thead><tr><th>Matter</th><th>Client</th><th>Attorney</th><th>Probability</th><th>Exposure</th></tr></thead><tbody>';
+    materialMatters.forEach(c => {
+      h += '<tr class="row-link" onclick="stCase(\''+c.id+'\')"><td style="font-weight:700;color:var(--pri2);">'+esc(c.matterNo||c.id)+'</td><td>'+esc(c.client)+'</td><td>'+esc(c.attorney)+'</td><td><span class="tag" style="background:'+probColors[c.probabilityOfLoss||'Reasonably Possible']+'22;color:'+probColors[c.probabilityOfLoss||'Reasonably Possible']+';">'+esc(c.probabilityOfLoss||'Reasonably Possible')+'</span></td><td style="font-weight:700;color:var(--red);">'+fV(c.exposure.likelyExposure||c.value)+'</td></tr>';
+    });
+    h += '</tbody></table></div>';
+  }
+  h += '</div>';
+
+  h += '<div class="grid-2">';
+  h += '<div class="card"><div class="sh"><span>Litigation Inflow vs. Outflow</span><span style="color:var(--dim);font-weight:500;">Last 12 months</span></div>';
+  const filedDatesIO = CASES.map(c=>new Date(c.filed).getTime()).filter(t=>!isNaN(t));
+  const nowRefIO = new Date(Math.max(...filedDatesIO));
+  const monthsIO = []; for (let i=11;i>=0;i--){ const d=new Date(nowRefIO.getFullYear(),nowRefIO.getMonth()-i,1); monthsIO.push(d); }
+  const inflow = monthsIO.map(d => CASES.filter(c=>{ const f=new Date(c.filed); return !isNaN(f) && f.getFullYear()===d.getFullYear() && f.getMonth()===d.getMonth(); }).length);
+  const outflow = monthsIO.map(d => CASES.filter(c=>{ if (c.status!=='Closed') return false; const cd=new Date(c.deadline); return !isNaN(cd) && cd.getFullYear()===d.getFullYear() && cd.getMonth()===d.getMonth(); }).length);
+  const maxIO = Math.max(...inflow, ...outflow, 1);
+  h += '<svg viewBox="0 0 400 140" style="width:100%;height:150px;">';
+  const lineFrom = (arr,color,dash) => { let p=''; arr.forEach((v,i)=>{ const x=20+i*(360/11); const y=120-(v/maxIO)*100; p += (i===0?'M':'L')+x+' '+y; }); return '<path d="'+p+'" stroke="'+color+'" stroke-width="2.5" fill="none"'+(dash?' stroke-dasharray="5 3"':'')+'/>'; };
+  h += lineFrom(inflow,'var(--red)',false);
+  h += lineFrom(outflow,'var(--green)',true);
+  h += '</svg>';
+  h += '<div style="display:flex;gap:18px;justify-content:center;margin-top:4px;">';
+  h += '<div style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--muted);"><div style="width:14px;height:2.5px;background:var(--red);"></div>New Filings (Inflow)</div>';
+  h += '<div style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--muted);"><div style="width:14px;height:2px;background:var(--green);background-image:linear-gradient(to right,var(--green) 60%,transparent 60%);background-size:5px 2px;"></div>Closed (Outflow)</div>';
+  h += '</div></div>';
+
+  h += '<div class="card"><div class="sh"><span>Regulatory / Compliance Incidents</span></div>';
+  h += '<div style="display:flex;gap:8px;margin-bottom:10px;">';
+  h += '<input type="text" id="regIncName" placeholder="Incident name" class="inp" style="flex:2;">';
+  h += '<select id="regIncAgency" class="inp" style="flex:1;"><option>SEC</option><option>DOJ</option><option>FTC</option><option>State Insurance Dept.</option><option>State AG</option><option>Other</option></select>';
+  h += '<button class="btn btn-pri" onclick="addRegulatoryIncident(document.getElementById(\'regIncName\').value, document.getElementById(\'regIncAgency\').value, 0)">+ Add</button>';
+  h += '</div>';
+  const openIncidents = REGULATORY_INCIDENTS.filter(r=>r.status==='Open');
+  if (openIncidents.length === 0) {
+    h += '<div style="font-size:11.5px;color:var(--green);font-weight:600;">✓ No open regulatory or compliance incidents.</div>';
+  } else {
+    openIncidents.forEach(r => {
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--surf2);">';
+      h += '<div><span class="tag" style="background:var(--red)18;color:var(--red);margin-right:6px;">'+esc(r.agency)+'</span><span style="font-size:11.5px;">'+esc(r.name)+'</span></div>';
+      h += '<button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;" onclick="closeRegulatoryIncident(\''+r.id+'\')">Mark Resolved</button></div>';
+    });
+  }
+  h += '</div></div>';
+
+  /* ── OPERATIONAL VELOCITY & PREVENTION ── */
+  h += '<div class="section-band">⚙ Operational Velocity &amp; Prevention</div>';
+  h += '<div class="grid-2">';
+
+  h += '<div class="card"><div class="sh"><span>Avg. Cycle Time by Claim Type</span></div>';
+  const cycleByType = {};
+  CASES.filter(c=>c.status==='Closed').forEach(c => { cycleByType[c.type] = cycleByType[c.type]||[]; cycleByType[c.type].push(daysOpen(c)); });
+  const cycleEntries = Object.entries(cycleByType).map(([t,arr]) => [t, Math.round(arr.reduce((a,b)=>a+b,0)/arr.length)]).sort((a,b)=>b[1]-a[1]);
+  if (cycleEntries.length === 0) {
+    h += '<div style="font-size:11px;color:var(--dim);">No closed matters yet to measure cycle time.</div>';
+  } else {
+    const maxCycle = Math.max(...cycleEntries.map(e=>e[1]), 1);
+    cycleEntries.slice(0,8).forEach(([t,days]) => {
+      h += '<div style="margin-bottom:8px;cursor:pointer;" onclick="st({showDrill:true,drillType:\'cycle-time-type\',drillValue:\''+escAttr(t)+'\',drillLabel:\''+escAttr(t)+' — Closed Matters\'})"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;"><span style="color:var(--muted);">'+esc(t)+'</span><span style="font-weight:700;">'+days+' days</span></div>';
+      h += '<div style="background:var(--surf3);height:6px;border-radius:3px;overflow:hidden;"><div style="width:'+Math.round(days/maxCycle*100)+'%;height:100%;background:var(--teal);"></div></div></div>';
+    });
+  }
+  h += '</div>';
+
+  h += '<div class="card"><div class="sh"><span>Root Cause Insights</span><span style="color:var(--dim);font-weight:500;">Why the company gets sued</span></div>';
+  const byRootCause = {};
+  CASES.forEach(c => { const rc = c.rootCause || 'Other'; byRootCause[rc] = (byRootCause[rc]||0)+1; });
+  const rcEntries = Object.entries(byRootCause).sort((a,b)=>b[1]-a[1]);
+  const maxRc = Math.max(...rcEntries.map(e=>e[1]), 1);
+  rcEntries.forEach(([rc,n]) => {
+    const pct = Math.round(n/maxRc*100);
+    h += '<div style="margin-bottom:8px;cursor:pointer;" onclick="st({showDrill:true,drillType:\'root-cause\',drillValue:\''+escAttr(rc)+'\',drillLabel:\''+escAttr(rc)+' — Root Cause\'})"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;"><span style="color:var(--muted);">'+esc(rc)+'</span><span style="font-weight:700;">'+n+'</span></div>';
+    h += '<div style="background:var(--surf3);height:6px;border-radius:3px;overflow:hidden;"><div style="width:'+pct+'%;height:100%;background:var(--purple);"></div></div></div>';
+  });
+  h += '<div style="font-size:9.5px;color:var(--dim);margin-top:4px;">Set per matter on the Exposure tab — the top cause here is where a preventative policy change would have the biggest impact.</div>';
+  h += '</div></div>';
+
+  return h;
+}
 function execFinancialV(){
   const totalBilled = CASES.reduce((s,c)=>s+(c.billing.totalBilled||0),0);
   const totalPaid = CASES.reduce((s,c)=>s+(c.billing.totalPaid||0),0);
@@ -4583,6 +5257,41 @@ function execPortfolioV(){
     h += '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--surf2);font-size:12px;"><span>'+esc(client)+'</span><span style="font-weight:700;">'+fV(val)+'</span></div>';
   });
   h += '</div>';
+
+  h += '<div class="section-label" style="order:9;margin-top:6px;">Breakdowns</div>';
+  h += '<div class="grid-2">';
+
+  h += '<div class="card"><div class="sh"><span>By State</span><span style="color:var(--dim);font-weight:500;">from Court &gt; Jurisdiction</span></div>';
+  const byState = {};
+  CASES.forEach(c => { const st = stateFromJurisdiction(c.court && c.court.jurisdiction) || 'Not Set'; byState[st] = byState[st]||{n:0,exp:0}; byState[st].n++; byState[st].exp += (c.exposure.likelyExposure||c.value||0); });
+  const stateEntries = Object.entries(byState).sort((a,b)=>b[1].n-a[1].n);
+  if (stateEntries.length === 0 || (stateEntries.length===1 && stateEntries[0][0]==='Not Set')) {
+    h += '<div style="color:var(--muted);font-size:12px;padding:10px 0;">No court jurisdiction recorded on any matter yet.</div>';
+  } else {
+    stateEntries.slice(0,10).forEach(([st,d]) => {
+      const pct = Math.round(d.n/CASES.length*100);
+      h += '<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;"><span style="color:'+(st==='Not Set'?'var(--dim)':'var(--muted)')+';">'+esc(st)+'</span><span style="font-weight:700;">'+d.n+' matter'+(d.n!==1?'s':'')+' · '+fV(d.exp)+'</span></div>';
+      h += '<div style="background:var(--surf3);height:6px;border-radius:3px;overflow:hidden;"><div style="width:'+pct+'%;height:100%;background:var(--pri2);"></div></div></div>';
+    });
+  }
+  h += '</div>';
+
+  h += '<div class="card"><div class="sh"><span>By Carrier</span></div>';
+  const byCarrierPf = {};
+  CASES.forEach(c => { const ca = c.insurance.carrier || 'Self-Insured'; byCarrierPf[ca] = byCarrierPf[ca]||{n:0,res:0}; byCarrierPf[ca].n++; byCarrierPf[ca].res += (c.insurance.reserveAmount||0); });
+  Object.entries(byCarrierPf).sort((a,b)=>b[1].res-a[1].res).slice(0,10).forEach(([ca,d]) => {
+    h += '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--surf2);font-size:12px;"><span>'+esc(ca)+' <span style="color:var(--dim);">('+d.n+')</span></span><span style="font-weight:700;color:var(--gold);">'+fV(d.res)+'</span></div>';
+  });
+  h += '</div></div>';
+
+  h += '<div class="card"><div class="sh"><span>By Claim Category</span></div>';
+  const byCat = {};
+  CASES.forEach(c => { const cat = c.claimCategory || 'Other'; byCat[cat] = (byCat[cat]||0)+1; });
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
+  Object.entries(byCat).sort((a,b)=>b[1]-a[1]).forEach(([cat,n]) => {
+    h += '<div style="text-align:center;padding:11px 15px;background:var(--surf2);border-radius:9px;min-width:100px;"><div class="serif" style="font-size:20px;font-weight:700;">'+n+'</div><div style="font-size:9.5px;color:var(--muted);margin-top:2px;">'+esc(cat)+'</div></div>';
+  });
+  h += '</div></div>';
   return h;
 }
 
@@ -4629,6 +5338,7 @@ function execRiskV(){
   const trial = CASES.filter(c => c.status === 'Trial' || c.potentialTrialCandidate);
   const aging = CASES.filter(c => c.status !== 'Closed' && daysOpen(c) > 730).sort((a,b)=>daysOpen(b)-daysOpen(a));
   const solRisk = CASES.filter(c => c.keyDates.sol && new Date(c.keyDates.sol) < new Date(Date.now()+180*864e5) && c.status!=='Closed');
+  const missingSol = CASES.filter(c => c.status !== 'Closed' && !c.keyDates.sol);
   const poorReserveAttys = ATTY.map(a=>attorneyScorecard(a)).filter(sc=>sc.reserveAccuracy < 90);
 
   let h = '<div class="kpi-grid">';
@@ -4637,6 +5347,18 @@ function execRiskV(){
   h += '<div class="kpi"><div class="kpi-l">SOL &lt;180 Days</div><div class="kpi-v" style="color:var(--gold);">'+solRisk.length+'</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Aged 24+ Months</div><div class="kpi-v" style="color:var(--red);">'+aging.length+'</div></div>';
   h += '</div>';
+
+  if (missingSol.length > 0) {
+    h += '<div class="card" style="border-left:3px solid var(--gold);margin-bottom:14px;"><div class="sh"><span>⏱ Missing SOL Data</span><span style="color:var(--dim);font-weight:500;">'+missingSol.length+' open matter'+(missingSol.length!==1?'s':'')+'</span></div>';
+    h += '<div style="font-size:11px;color:var(--muted);margin-bottom:9px;">No SOL date recorded. Open each matter\'s Key Dates tab for a general state-based reference estimate — always confirm the real deadline with local counsel.</div>';
+    missingSol.slice(0,8).forEach(c => {
+      const est = getSolEstimate(c);
+      h += '<div class="row-link" onclick="stCase(\''+c.id+'\',\'dates\')" style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--surf2);font-size:12px;">';
+      h += '<span>'+esc(c.matterNo||c.id)+' — '+esc(c.client)+'</span>';
+      h += '<span style="color:'+(est?'var(--gold)':'var(--dim)')+';font-weight:600;">'+(est?'Est. '+esc(est.suggestedDate):'No jurisdiction set')+'</span></div>';
+    });
+    h += '</div>';
+  }
 
   h += '<div class="card"><div class="sh"><span>⚠ Critical Alerts — Trial Dates &amp; High Stakes</span></div>';
   const watch = CASES.filter(c => c.status !== 'Closed' && (c.priority === 'High' || c.value > 1e6 || c.potentialTrialCandidate)).sort((a,b) => b.value - a.value);
@@ -4932,7 +5654,7 @@ function setRating(a){
 
 /* ── REPORTS HUB ───────────────────────────────────────── */
 function reportsHubV(){
-  const cats = ['All', 'Litigation', 'Financial', 'Compliance', 'Strategic', 'Aging'];
+  const cats = ['All', 'Enterprise', 'Litigation', 'Financial', 'Compliance', 'Strategic', 'Aging'];
   const filt = S.rptCat || 'All';
   const filtered = filt === 'All' ? REPORT_TEMPLATES : REPORT_TEMPLATES.filter(r => r.cat === filt);
   const view = S.reportsView || 'templates';
@@ -5131,6 +5853,60 @@ function buildReportData(rptId){
         return [c.matterNo||c.id, c.client, c.closing.dispositionType||'—', openLiens, pendingAuth, c.closing.releaseStatus, c.closing.dismissalStatus, readiness.label, readiness.blockers.join('; ')||'None'];
       });
       break;
+    case 'r22': /* Material Matters Watchlist */
+      cols = ['Matter #','Client','Attorney','Carrier','Probability of Loss','Exposure','CCI'];
+      rows = CASES.filter(c => c.status !== 'Closed' && (c.exposure.likelyExposure||c.value||0) > 10000000)
+        .sort((a,b)=>(b.exposure.likelyExposure||b.value)-(a.exposure.likelyExposure||a.value))
+        .map(c => [c.matterNo||c.id, c.client, c.attorney, c.insurance.carrier||'—', c.probabilityOfLoss||'Reasonably Possible', fM(c.exposure.likelyExposure||c.value), cci(c)]);
+      break;
+    case 'r23': /* Exposure by Probability of Loss */
+      cols = ['Probability of Loss','Matter Count','Total Exposure'];
+      { const pb = {Probable:{n:0,exp:0}, 'Reasonably Possible':{n:0,exp:0}, Remote:{n:0,exp:0}};
+        CASES.filter(c=>c.status!=='Closed').forEach(c => { const p = c.probabilityOfLoss||'Reasonably Possible'; pb[p]=pb[p]||{n:0,exp:0}; pb[p].n++; pb[p].exp += (c.exposure.likelyExposure||c.value||0); });
+        rows = Object.entries(pb).map(([label,d]) => [label, d.n, fM(d.exp)]); }
+      break;
+    case 'r24': /* Outside Counsel Performance Ranking */
+      cols = ['Attorney','Total Spend','Open Matters','Closed Matters','Win Rate','Settlement Rate','LES Grade','Reserve Accuracy'];
+      rows = ATTY.map(a=>attorneyScorecard(a)).sort((x,y)=>y.totalBilled-x.totalBilled)
+        .map(sc => [sc.name, fM(sc.totalBilled), sc.open.length, sc.closed.length, sc.winPct+'%', sc.settlePct+'%', lesGrade(sc.les), sc.reserveAccuracy+'%']);
+      break;
+    case 'r25': /* Spend by Matter Type */
+      cols = ['Matter Type','Total Spend','Matter Count'];
+      { const st = {};
+        CASES.forEach(c => { st[c.type] = st[c.type]||{spend:0,n:0}; st[c.type].spend += (c.billing.totalBilled||0); st[c.type].n++; });
+        rows = Object.entries(st).sort((a,b)=>b[1].spend-a[1].spend).map(([t,d]) => [t, fM(d.spend), d.n]); }
+      break;
+    case 'r26': /* AFA Savings Detail */
+      cols = ['Matter #','Client','Fee Type','Total Billed','Budget'];
+      rows = CASES.filter(c => c.billing.type && c.billing.type !== 'Hourly').map(c => [c.matterNo||c.id, c.client, c.billing.type, fM(c.billing.totalBilled), fM(c.billing.budget)]);
+      break;
+    case 'r27': /* Litigation Inflow vs Outflow */
+      cols = ['Month','New Filings (Inflow)','Closed (Outflow)'];
+      { const fd = CASES.map(c=>new Date(c.filed).getTime()).filter(t=>!isNaN(t));
+        const ref = new Date(Math.max(...fd));
+        const ms = []; for (let i=11;i>=0;i--){ const d=new Date(ref.getFullYear(),ref.getMonth()-i,1); ms.push(d); }
+        rows = ms.map(d => {
+          const inflow = CASES.filter(c=>{ const f=new Date(c.filed); return !isNaN(f) && f.getFullYear()===d.getFullYear() && f.getMonth()===d.getMonth(); }).length;
+          const outflow = CASES.filter(c=>{ if (c.status!=='Closed') return false; const cd=new Date(c.deadline); return !isNaN(cd) && cd.getFullYear()===d.getFullYear() && cd.getMonth()===d.getMonth(); }).length;
+          return [d.toLocaleDateString('en-US',{month:'short',year:'numeric'}), inflow, outflow];
+        }); }
+      break;
+    case 'r28': /* Avg Cycle Time by Claim Type */
+      cols = ['Matter Type','Avg. Days to Resolution','Closed Matter Count'];
+      { const ct = {};
+        CASES.filter(c=>c.status==='Closed').forEach(c => { ct[c.type] = ct[c.type]||[]; ct[c.type].push(daysOpen(c)); });
+        rows = Object.entries(ct).map(([t,arr]) => [t, Math.round(arr.reduce((a,b)=>a+b,0)/arr.length), arr.length]).sort((a,b)=>b[1]-a[1]); }
+      break;
+    case 'r29': /* Root Cause Analysis */
+      cols = ['Root Cause','Matter Count','% of Portfolio'];
+      { const rc = {};
+        CASES.forEach(c => { const r = c.rootCause||'Other'; rc[r] = (rc[r]||0)+1; });
+        rows = Object.entries(rc).sort((a,b)=>b[1]-a[1]).map(([r,n]) => [r, n, Math.round(n/CASES.length*100)+'%']); }
+      break;
+    case 'r30': /* Regulatory / Compliance Incidents */
+      cols = ['ID','Incident','Agency','Status','Opened','Exposure Estimate','Notes'];
+      rows = REGULATORY_INCIDENTS.map(r => [r.id, r.name, r.agency, r.status, r.openedDate, fM(r.exposureEstimate), r.notes||'']);
+      break;
   }
   return {tmpl, rows, cols};
 }
@@ -5261,8 +6037,17 @@ function securityModalV(){
   h += '<button class="x" onclick="st({showSecurityModal:false,security2FASetup:null,security2FABackupCodes:null})">×</button></div>';
   h += '<div class="modal-b">';
 
-  if (!API_BASE) {
-    h += '<div class="alert-warn">This demo isn\'t connected to a real backend, so there\'s no real account to secure. Connect <code>window.CCP_API_BASE</code> to a deployed server.js to enable real 2FA — see SETUP.md.</div>';
+  if (!supabaseClient) {
+    h += '<div class="alert-warn">This demo isn\'t connected to a real backend, so there\'s no real account to secure. Connect <code>window.CCP_SUPABASE_URL</code> / <code>window.CCP_SUPABASE_ANON_KEY</code> to enable a real account.</div>';
+  } else if (true) {
+    // Two-factor auth is intentionally not wired up yet — this UI was
+    // built for a custom backend's own 2FA flow (pendingToken, backup
+    // codes stored in a custom table). Supabase has real MFA support,
+    // but its API shape (factor enrollment, challenge/verify) is
+    // different enough that it needs its own implementation rather
+    // than reusing this screen as-is. Flagged honestly instead of
+    // silently calling an endpoint that doesn't exist.
+    h += '<div class="alert-info">Two-factor authentication isn\'t connected yet. Your account is still protected by your password via Supabase Auth. Ask your developer to wire up Supabase\'s MFA API to enable this screen.</div>';
   } else if (S.security2FABackupCodes) {
     // Just enabled — one-time display of backup codes.
     h += '<div class="alert-good" style="margin-bottom:14px;">Two-factor authentication is now on.</div>';
@@ -5484,14 +6269,17 @@ async function submitAcceptInvite(){
   const password = window._acceptPassword || '';
   if (!name) { st({acceptInviteStatus:'Enter your name.', acceptInviteSuccess:false}); return; }
   if (!password || password.length < 8) { st({acceptInviteStatus:'Password must be at least 8 characters.', acceptInviteSuccess:false}); return; }
-  if (!API_BASE) { st({acceptInviteStatus:'This demo isn\'t connected to a real backend, so there\'s no invite to accept.', acceptInviteSuccess:false}); return; }
+  if (!supabaseClient) { st({acceptInviteStatus:'This demo isn\'t connected to a real backend, so there\'s no invite to accept.', acceptInviteSuccess:false}); return; }
   st({loginLoading:true});
   try {
-    const data = await apiFetch('/api/team/accept-invite', { method:'POST', body: JSON.stringify({ token:S._inviteTokenFromUrl, name, password }) });
-    completeLoginSession(data);
+    // /team/accept-invite creates the account but doesn't log in by
+    // itself — it has no session to hand back (it runs before one
+    // exists). Sign in immediately after with the same credentials.
+    const acceptData = await apiFetch('/team/accept-invite', { method:'POST', body: JSON.stringify({ token:S._inviteTokenFromUrl, name, password }) });
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email: acceptData.email, password });
+    if (error) throw error;
     S._inviteTokenFromUrl = '';
-    await loadCasesFromApi();
-    render();
+    await loadUserContextAfterAuth(data.session);
   } catch (e) {
     st({loginLoading:false, acceptInviteStatus:e.message, acceptInviteSuccess:false});
   }
@@ -5959,7 +6747,7 @@ function goToAdmin(){
 async function fetchAdminOrgs(){
   st({adminLoading:true, adminError:''});
   try {
-    const data = await apiFetch('/api/admin/organizations');
+    const data = await apiFetch('/organizations');
     st({adminOrgs:data.organizations, adminLoading:false});
   } catch (e) {
     st({adminError:e.message, adminLoading:false});
@@ -5991,11 +6779,13 @@ function adminPanelV(){
   const orgs = S.adminOrgs || [];
   const active = orgs.filter(o => o.accessStatus === 'active').length;
   const suspended = orgs.filter(o => o.accessStatus === 'suspended').length;
+  const pending = orgs.filter(o => o.accessStatus === 'pending_activation').length;
   const totalMatters = orgs.reduce((s,o) => s + (o.caseCount||0), 0);
 
   h += '<div class="kpi-grid">';
   h += '<div class="kpi"><div class="kpi-l">Total Organizations</div><div class="kpi-v">'+orgs.length+'</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Active</div><div class="kpi-v" style="color:var(--green);">'+active+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Pending Activation</div><div class="kpi-v" style="color:var(--gold);">'+pending+'</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Suspended</div><div class="kpi-v" style="color:var(--red);">'+suspended+'</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Total Matters (All Orgs)</div><div class="kpi-v">'+totalMatters+'</div></div>';
   h += '</div>';
@@ -6008,20 +6798,23 @@ function adminPanelV(){
     h += '<div style="overflow-x:auto;"><table>';
     h += '<thead><tr><th>Organization</th><th>Type</th><th>Plan</th><th>Matters</th><th>Users</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>';
     orgs.forEach(o => {
-      const statusColor = o.accessStatus === 'active' ? 'var(--green)' : 'var(--red)';
+      const statusColor = o.accessStatus === 'active' ? 'var(--green)' : o.accessStatus === 'pending_activation' ? 'var(--gold)' : 'var(--red)';
+      const statusLabel = o.accessStatus === 'pending_activation' ? 'PENDING ACTIVATION' : o.accessStatus.toUpperCase();
       h += '<tr>';
       h += '<td style="font-weight:700;">'+esc(o.name)+'</td>';
       h += '<td><span class="tag">'+esc(o.persona==='defense'?'Defense Firm':'Carrier')+'</span></td>';
       h += '<td style="font-size:11px;color:var(--muted);text-transform:capitalize;">'+esc(o.planTier)+'</td>';
       h += '<td>'+o.caseCount+'</td>';
       h += '<td>'+o.userCount+'</td>';
-      h += '<td><span class="tag" style="background:'+statusColor+'18;color:'+statusColor+';font-weight:700;">'+esc(o.accessStatus.toUpperCase())+'</span></td>';
+      h += '<td><span class="tag" style="background:'+statusColor+'18;color:'+statusColor+';font-weight:700;">'+esc(statusLabel)+'</span></td>';
       h += '<td style="font-size:11px;color:var(--dim);">'+esc(String(o.createdAt).slice(0,10))+'</td>';
       h += '<td style="white-space:nowrap;">';
       if (o.accessStatus === 'active') {
         h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;color:var(--red);" onclick="suspendOrg(\''+o.id+'\',\''+escAttr(o.name)+'\')">Suspend</button>';
+      } else if (o.accessStatus === 'pending_activation') {
+        h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;color:var(--gold);font-weight:700;" onclick="activateOrg(\''+o.id+'\',\''+escAttr(o.name)+'\')">Activate</button>';
       } else {
-        h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;color:var(--green);" onclick="activateOrg(\''+o.id+'\')">Activate</button>';
+        h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;color:var(--green);" onclick="activateOrg(\''+o.id+'\',\''+escAttr(o.name)+'\')">Reactivate</button>';
       }
       h += '</td></tr>';
     });
@@ -6034,15 +6827,30 @@ function adminPanelV(){
 async function suspendOrg(id, name){
   if (!confirm('Suspend access for "'+name+'"? Every user at this organization will be locked out immediately until you reactivate it.')) return;
   try {
-    await apiFetch('/api/admin/organizations/'+id+'/suspend', { method:'POST' });
+    await apiFetch('/organizations/'+id+'/suspend', { method:'POST' });
     await fetchAdminOrgs();
   } catch (e) {
     alert('Could not suspend: ' + e.message);
   }
 }
-async function activateOrg(id){
+async function activateOrg(id, name){
   try {
-    await apiFetch('/api/admin/organizations/'+id+'/activate', { method:'POST' });
+    // Reactivating a suspended org doesn't need owner info again —
+    // the backend already knows. Only first-time activation (from
+    // pending_activation) needs it, so we only ask if the backend
+    // actually requires it.
+    const org = (S.adminOrgs||[]).find(o => o.id === id);
+    let body = {};
+    if (org && org.accessStatus === 'pending_activation') {
+      const ownerEmail = prompt('Owner email for '+(name||'this organization')+' — this creates their login. Confirm accounting has received the implementation fee before continuing:');
+      if (!ownerEmail) return;
+      const ownerName = prompt('Owner name (optional):') || '';
+      body = { ownerEmail, ownerName };
+    }
+    const result = await apiFetch('/organizations/'+id+'/activate', { method:'POST', body: JSON.stringify(body) });
+    if (result.apiKey) {
+      st({activateOrgResult: result});
+    }
     await fetchAdminOrgs();
   } catch (e) {
     alert('Could not activate: ' + e.message);
@@ -6065,11 +6873,11 @@ function createOrgModalV(){
 
   if (S.createOrgResult) {
     const r = S.createOrgResult;
-    h += '<div class="alert-good" style="margin-bottom:16px;">Organization created — send these credentials to the customer through your usual channel (this password is only ever shown once).</div>';
+    h += '<div class="alert-warn" style="margin-bottom:16px;">Organization created as <strong>Pending Activation</strong>. Nothing is usable yet — no login exists, no API key exists. Have your accounting team invoice and collect the implementation fee through your usual process. Once payment is confirmed, come back to this table and click <strong>Activate</strong> — that\'s the step that actually creates their login.</div>';
     h += '<div style="background:var(--surf2);border:1px solid var(--line);border-radius:8px;padding:16px;font-size:12.5px;line-height:2;">';
     h += '<div><strong>Organization:</strong> '+esc(r.organization.name)+'</div>';
-    h += '<div><strong>Owner login:</strong> '+esc(r.owner.email)+'</div>';
-    h += '<div><strong>Temporary password:</strong> <span style="font-family:monospace;background:#fff;padding:2px 8px;border-radius:5px;border:1px solid var(--line);">'+esc(r.temporaryPassword)+'</span></div>';
+    h += '<div><strong>Status:</strong> Pending Activation</div>';
+    h += '<div><strong>Intended owner:</strong> '+esc(r.ownerEmailForActivation||'—')+'</div>';
     h += '</div>';
     h += '<button class="btn btn-pri" style="width:100%;justify-content:center;margin-top:16px;" onclick="closeCreateOrgModal()">Done</button>';
   } else {
@@ -6080,6 +6888,7 @@ function createOrgModalV(){
     h += inp('Organization Name', '', 'window._coOrgName=this.value', 'text', 'placeholder="Acme Insurance Co"');
     h += inp('Owner Name', '', 'window._coOwnerName=this.value', 'text', 'placeholder="Jane Doe"');
     h += inp('Owner Email', '', 'window._coOwnerEmail=this.value', 'email', 'placeholder="jane@acmeinsurance.com"');
+    h += inp('Implementation Fee (reference only — billed by accounting, not this app)', '', 'window._coFee=this.value', 'number', 'placeholder="2500.00"');
     if (S.createOrgError) h += '<div class="alert-bad" style="margin-top:10px;">'+esc(S.createOrgError)+'</div>';
     h += '<button class="btn btn-pri" style="width:100%;justify-content:center;margin-top:14px;" onclick="submitCreateOrg()" '+(S.createOrgLoading?'disabled':'')+'>'+(S.createOrgLoading?'Creating…':'Create Organization')+'</button>';
   }
@@ -6092,18 +6901,41 @@ async function submitCreateOrg(){
   const ownerEmail = (window._coOwnerEmail||'').trim();
   const persona = window._coPersona || 'carrier';
   const planTier = window._coTier || 'starter';
+  const feeAmount = parseFloat(window._coFee || '0') || 0;
   if (!orgName) { st({createOrgError:'Enter an organization name.'}); return; }
   if (!ownerEmail || !ownerEmail.includes('@')) { st({createOrgError:'Enter a valid owner email.'}); return; }
   st({createOrgLoading:true, createOrgError:''});
   try {
-    const data = await apiFetch('/api/admin/organizations', {
+    const data = await apiFetch('/organizations', {
       method:'POST',
-      body: JSON.stringify({ orgName, ownerName, ownerEmail, persona, planTier })
+      body: JSON.stringify({ orgName, ownerName, ownerEmail, persona, planTier, implementationFeeAmountCents: Math.round(feeAmount*100) })
     });
     st({createOrgLoading:false, createOrgResult:data});
   } catch (e) {
     st({createOrgLoading:false, createOrgError:e.message});
   }
+}
+
+/* Shown exactly once, right after first-time activation — the raw
+   API key is never retrievable again after this (only its hash is
+   stored), so this is the customer's one chance to copy it. */
+function activateOrgResultModalV(){
+  const r = S.activateOrgResult;
+  if (!r) return '';
+  let h = '<div class="modal-bg" onclick="if(event.target===this)st({activateOrgResult:null})">';
+  h += '<div class="modal" style="max-width:520px;">';
+  h += '<div class="modal-h"><div class="serif" style="font-size:18px;font-weight:700;">✓ Organization Activated</div>';
+  h += '<button class="x" onclick="st({activateOrgResult:null})">×</button></div>';
+  h += '<div class="modal-b">';
+  h += '<div class="alert-good" style="margin-bottom:14px;">The owner\'s login invite has been emailed automatically by Supabase. This API key is shown <strong>this one time only</strong> — copy it and send it to the customer now.</div>';
+  h += '<div style="background:var(--surf2);border:1px solid var(--line);border-radius:8px;padding:16px;">';
+  h += '<label class="lbl">API Key (for bulk-importing closed case history)</label>';
+  h += '<div style="font-family:monospace;font-size:12.5px;background:#fff;border:1px solid var(--line);border-radius:6px;padding:10px;word-break:break-all;">'+esc(r.apiKey)+'</div>';
+  h += '</div>';
+  h += '<div style="font-size:10.5px;color:var(--dim);margin-top:10px;">If this key is lost before being sent, generate a fresh one from this org\'s row rather than trying to recover it — only its hash is stored.</div>';
+  h += '<button class="btn btn-pri" style="width:100%;justify-content:center;margin-top:16px;" onclick="if(confirm(\'Have you copied and sent this key? It cannot be shown again.\'))st({activateOrgResult:null})">I\'ve Saved This — Done</button>';
+  h += '</div></div></div>';
+  return h;
 }
 
 /* ── window.CaseAPI — public data API ─────────────────────
@@ -6139,9 +6971,17 @@ window.CaseAPI = {
     CASES.push(...created);
     render();
     if (API_BASE) {
+      // NOTE: this in-app "paste JSON and import for myself" path is
+      // authenticated by the logged-in user's session, but the
+      // deployed cases-import Edge Function expects an org API key
+      // instead (it's built for a customer's own external script, a
+      // different auth model). This call will fail harmlessly
+      // (caught below) until a session-authenticated bulk-import
+      // route is added to the `cases` function to match. The import
+      // still works locally in the browser either way.
       apiFetch('/api/cases/import', { method:'POST', body: JSON.stringify(records) })
         .then(res => console.log('Server-side import: ' + res.imported + ' saved, ' + res.failed + ' failed'))
-        .catch(e => console.error('Background import sync failed:', e.message));
+        .catch(e => console.error('Background import sync failed (expected until a session-authenticated import route exists):', e.message));
     }
     return created;
   },
@@ -6517,6 +7357,25 @@ function tabDates(c){
   h += '<div>'+inp('SOL Date', c.keyDates.sol, 'un(\'keyDates\',\'sol\',this.value)','date')+'</div>';
   h += '<div>'+sel('SOL Status', 'un(\'keyDates\',\'solStatus\',this.value)', SOL_STATUSES, c.keyDates.solStatus)+'</div>';
   h += '</div>';
+
+  /* SOL Estimator — reference only, never auto-writes the SOL date without
+     an explicit click, and never claims to be the authoritative answer. */
+  const est = getSolEstimate(c);
+  h += '<div class="card" style="background:var(--surf2);border-left:3px solid var(--gold);margin-bottom:14px;">';
+  h += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">';
+  h += '<div>';
+  h += '<div style="font-size:10px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">⏱ SOL Estimator — General Reference Only</div>';
+  if (est) {
+    h += '<div style="font-size:12.5px;color:var(--ink);line-height:1.6;">'+esc(est.state)+' general default for <strong>'+esc(est.categoryLabel)+'</strong> claims: <strong>'+est.years+' year'+(est.years!==1?'s':'')+'</strong> from the filed date ('+esc(c.filed)+'). Suggested date: <strong style="color:var(--gold);">'+esc(est.suggestedDate)+'</strong>.</div>';
+  } else {
+    h += '<div style="font-size:12px;color:var(--muted);">Set a Court Jurisdiction (State - ...) on the Court tab and a Filed date to see a general SOL estimate here.</div>';
+  }
+  h += '</div>';
+  if (est) h += '<button class="btn btn-out" style="flex-shrink:0;" onclick="un(\'keyDates\',\'sol\',\''+est.suggestedDate+'\')">Use This Date</button>';
+  h += '</div>';
+  h += '<div style="font-size:10px;color:var(--dim);margin-top:9px;line-height:1.5;">General default period only — not legal advice. Discovery-rule tolling, claims against government entities, minors, wrongful death, and contract terms can all change the real deadline. Always confirm the actual SOL with local counsel before relying on this date.</div>';
+  h += '</div>';
+
   h += '<div class="section-band">Litigation Calendar</div>';
   h += '<div class="grid-3">';
   h += '<div>'+inp('Answer Due', c.keyDates.answerDue, 'un(\'keyDates\',\'answerDue\',this.value)','date')+'</div>';
@@ -6548,6 +7407,13 @@ function tabExposure(c){
   h += '<div>'+inpMoney('Worst Case', c.exposure.worstCase, 'un(\'exposure\',\'worstCase\',moneyVal(this.value))')+'</div>';
   h += '</div>';
   h += '<div>'+ta('Exposure Notes', c.exposure.notes, 'un(\'exposure\',\'notes\',this.value)','Reasoning behind exposure assessment')+'</div>';
+
+  h += '<div class="section-band">Enterprise Risk Classification</div>';
+  h += '<div class="grid-2">';
+  h += '<div>'+sel('Probability of Loss', 'uf(\'probabilityOfLoss\',this.value)', ['Remote','Reasonably Possible','Probable'], c.probabilityOfLoss||'Reasonably Possible')+'</div>';
+  h += '<div>'+sel('Root Cause', 'uf(\'rootCause\',this.value)', ROOT_CAUSES, c.rootCause||'Other')+'</div>';
+  h += '</div>';
+  h += '<div style="font-size:10px;color:var(--dim);margin:-4px 0 12px;">Feeds the Enterprise dashboard\'s exposure-by-probability breakdown and root-cause prevention chart.</div>';
   return h;
 }
 
@@ -6755,6 +7621,14 @@ function tabBilling(c){
   h += '<div class="kpi"><div class="kpi-l">Total Paid</div><div class="kpi-v" style="color:var(--green);">'+fV(c.billing.totalPaid)+'</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Budget</div><div class="kpi-v" style="color:var(--gold);">'+fV(c.billing.budget)+'</div></div>';
   h += '</div>';
+
+  h += '<div class="section-band">Billing Arrangement</div>';
+  h += '<div class="grid-3">';
+  h += '<div>'+sel('Fee Type', 'un(\'billing\',\'type\',this.value)', ['Hourly','Flat Fee','Contingency','Blended / Capped'], c.billing.type)+'</div>';
+  h += '<div>'+inpMoney('Matter Budget', c.billing.budget, 'un(\'billing\',\'budget\',moneyVal(this.value))')+'</div>';
+  h += '<div>'+inpMoney('Flat/Capped Fee (if applicable)', c.billing.flatFee, 'un(\'billing\',\'flatFee\',moneyVal(this.value))')+'</div>';
+  h += '</div>';
+  h += '<div style="font-size:10px;color:var(--dim);margin:-4px 0 12px;">Fee Type feeds the Enterprise dashboard\'s Alternative Fee Arrangement (AFA) savings metric — anything other than "Hourly" counts as an AFA matter.</div>';
 
   h += '<div class="section-band">Time Entry (LEDES Compatible)</div>';
   h += '<div style="display:grid;grid-template-columns:1fr 1fr 2fr 1fr 1fr auto;gap:7px;align-items:end;margin-bottom:14px;">';
