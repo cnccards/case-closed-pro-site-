@@ -21,6 +21,10 @@ CREATE TABLE organizations (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name            TEXT NOT NULL,
   persona         TEXT NOT NULL DEFAULT 'carrier' CHECK (persona IN ('carrier','defense')),
+  -- Reference only — what the pricing calculator would suggest for
+  -- this org's matter volume. Never billed against automatically;
+  -- your accounting team invoices and collects payment entirely
+  -- outside this system. See GET /api/billing/status in server.js.
   plan_tier       TEXT NOT NULL DEFAULT 'starter' CHECK (plan_tier IN ('starter','growth','enterprise')),
   -- Platform-admin controlled on/off switch. Self-service registration
   -- still creates an org that's immediately 'active' (unchanged
@@ -28,9 +32,6 @@ CREATE TABLE organizations (
   -- suspend access on any org, or provision a brand-new customer
   -- directly from the admin panel, without touching the database.
   access_status   TEXT NOT NULL DEFAULT 'active' CHECK (access_status IN ('active','suspended')),
-  stripe_customer_id      TEXT UNIQUE,
-  stripe_subscription_id  TEXT UNIQUE,
-  subscription_status     TEXT DEFAULT 'trialing', -- trialing | active | past_due | canceled
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -41,7 +42,10 @@ CREATE TABLE organizations (
 -- persona='defense', then grant them access to specific carrier
 -- matters via case_access (below) rather than merging orgs — this
 -- keeps a firm's login working across multiple carrier clients
--- without ever mixing two carriers' data.
+-- without ever mixing two carriers' data. This is also why
+-- self-service defense-firm registration matters here: it's the
+-- actual mechanism behind "free for defense counsel," not just a
+-- nice-to-have signup flow.
 -- ---------------------------------------------------------------
 CREATE TABLE users (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -104,7 +108,7 @@ CREATE INDEX idx_team_invites_email ON team_invites(email);
 
 -- ---------------------------------------------------------------
 -- Cases (matters). org_id = the CARRIER that owns the matter.
--- Core fields are real columns (filtering/sorting/billing-relevant).
+-- Core fields are real columns (filtering/sorting relevant).
 -- Everything else lives in `data` as JSONB — same shape the
 -- frontend already uses (insurance, exposure, closing, court, etc).
 -- ---------------------------------------------------------------
@@ -156,6 +160,8 @@ CREATE TABLE case_access (
 
 -- ---------------------------------------------------------------
 -- Saved report snapshots (mirrors the frontend's Saved Reports).
+-- Now actually reachable — GET/POST /api/reports/saved and
+-- DELETE /api/reports/saved/:id in server.js.
 -- ---------------------------------------------------------------
 CREATE TABLE saved_reports (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -173,9 +179,42 @@ CREATE TABLE saved_reports (
 CREATE INDEX idx_saved_reports_org ON saved_reports(org_id);
 
 -- ---------------------------------------------------------------
--- Audit log — every meaningful mutation, who did it, when.
--- Append-only; never update or delete rows here.
+-- Payees and Payables — accounts PAYABLE. The org paying its own
+-- outside counsel, claims adjusters, expert witnesses, and other
+-- vendors. Deliberately separate from `cases.data.billing` (which
+-- is accounts RECEIVABLE — the org billing the carrier/client).
 -- ---------------------------------------------------------------
+CREATE TABLE payees (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id          UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  name            TEXT NOT NULL,
+  type            TEXT NOT NULL DEFAULT 'Other' CHECK (type IN ('Outside Counsel','Claims Adjuster','Expert Witness','Court Reporter','Investigator','Vendor','Other')),
+  email           TEXT,
+  default_rate    NUMERIC(10,2) DEFAULT 0,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_payees_org ON payees(org_id);
+
+CREATE TABLE payables (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id          UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  payee_id        UUID NOT NULL REFERENCES payees(id),
+  related_case_id UUID REFERENCES cases(id),
+  amount          NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+  description     TEXT,
+  due_date        DATE,
+  submitted_date  DATE,
+  status          TEXT NOT NULL DEFAULT 'Draft' CHECK (status IN ('Draft','Submitted','Approved','Paid','Rejected')),
+  approved_by     UUID REFERENCES users(id),
+  paid_date       DATE,
+  payment_method  TEXT DEFAULT 'ACH' CHECK (payment_method IN ('ACH','Check','Wire','Other')),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_payables_org ON payables(org_id);
+CREATE INDEX idx_payables_status ON payables(org_id, status);
+
+
 CREATE TABLE audit_log (
   id              BIGSERIAL PRIMARY KEY,
   org_id          UUID NOT NULL,
@@ -200,24 +239,74 @@ CREATE TRIGGER trg_cases_updated BEFORE UPDATE ON cases
   FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 CREATE TRIGGER trg_orgs_updated BEFORE UPDATE ON organizations
   FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+CREATE TRIGGER trg_payables_updated BEFORE UPDATE ON payables
+  FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 
 -- ---------------------------------------------------------------
 -- Row-Level Security — belt-and-suspenders on top of the app-layer
 -- org_id filtering in every query. Even a bug in application code
 -- can't leak cross-tenant data if RLS is enforced at the DB level.
--- The app connects as `app_user` (not a superuser) and sets
--- `app.current_org_id` per request via SET LOCAL.
+--
+-- FIXED (previously present in comments but not actually true):
+-- 1. FORCE ROW LEVEL SECURITY is now set on both tables. Without
+--    it, Postgres exempts the table's OWNING role from its own
+--    policies — and on a typical simple deploy, that owning role is
+--    exactly the role this app connects as, which made the policies
+--    below decorative for this app's own queries. FORCE closes that.
+-- 2. server.js now actually sets `app.current_org_id` via
+--    SET LOCAL on a per-request, transaction-scoped connection
+--    (see withTenantScope in server.js) — previously nothing set
+--    this value, so current_setting() always returned null and the
+--    USING clause below never matched anything for a normal app
+--    connection either.
+-- 3. Added a second, platform-admin-only policy so the admin panel's
+--    cross-org directory (GET /api/admin/organizations, which counts
+--    cases across every org) can still work under FORCE RLS, via a
+--    separate SET LOCAL app.is_platform_admin flag rather than
+--    bypassing RLS for the connection entirely.
+--
+-- Run the actual app as a non-superuser role (e.g. `app_user`) —
+-- RLS provides no protection at all against a superuser connection,
+-- which always bypasses it regardless of FORCE.
 -- ---------------------------------------------------------------
 ALTER TABLE cases ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cases FORCE ROW LEVEL SECURITY;
 CREATE POLICY cases_tenant_isolation ON cases
   USING (org_id = current_setting('app.current_org_id', true)::uuid);
+CREATE POLICY cases_platform_admin_bypass ON cases
+  FOR SELECT
+  USING (current_setting('app.is_platform_admin', true) = 'true');
 
 ALTER TABLE saved_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE saved_reports FORCE ROW LEVEL SECURITY;
 CREATE POLICY saved_reports_tenant_isolation ON saved_reports
   USING (org_id = current_setting('app.current_org_id', true)::uuid);
 
--- Note: RLS policies above only cover single-org access. The
--- case_access grant table means defense-firm reads need an explicit
--- application-layer query (see server.js) rather than relying on
--- RLS alone, since a firm's org_id legitimately differs from the
--- case's owning org_id.
+ALTER TABLE payees ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payees FORCE ROW LEVEL SECURITY;
+CREATE POLICY payees_tenant_isolation ON payees
+  USING (org_id = current_setting('app.current_org_id', true)::uuid);
+
+ALTER TABLE payables ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payables FORCE ROW LEVEL SECURITY;
+CREATE POLICY payables_tenant_isolation ON payables
+  USING (org_id = current_setting('app.current_org_id', true)::uuid);
+
+-- Note: RLS policies above only cover single-org access for normal
+-- (non-platform-admin) connections. The case_access grant table
+-- means defense-firm reads need an explicit application-layer query
+-- (see server.js scopedCaseQuery) rather than relying on RLS alone,
+-- since a firm's org_id legitimately differs from the case's owning
+-- org_id — RLS only ever sees the tenant-scoped org_id, not the
+-- separate grant relationship.
+
+-- ---------------------------------------------------------------
+-- Recommended: create the actual app role RLS assumes. Replace the
+-- password below before running in production, and use this role's
+-- credentials (not a superuser) in DATABASE_URL.
+-- ---------------------------------------------------------------
+-- CREATE ROLE app_user WITH LOGIN PASSWORD 'change-me-before-deploying';
+-- GRANT CONNECT ON DATABASE your_database_name TO app_user;
+-- GRANT USAGE ON SCHEMA public TO app_user;
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;
+-- GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;
