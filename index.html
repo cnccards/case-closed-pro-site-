@@ -71,6 +71,19 @@ section{padding:84px 0;}
 .feat h3{font-family:var(--serif);font-size:16.5px;font-weight:600;margin-bottom:8px;}
 .feat p{font-size:13px;color:var(--muted);line-height:1.6;}
 
+/* ---------- CAREERS ---------- */
+.job-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;}
+@media(max-width:900px){.job-grid{grid-template-columns:1fr;}}
+.job-card{background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:26px 24px;display:flex;flex-direction:column;transition:transform .15s,box-shadow .15s;}
+.job-card:hover{transform:translateY(-3px);box-shadow:0 14px 34px rgba(0,28,65,.09);}
+.job-badge{font-size:10.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--pri2);margin-bottom:12px;}
+.job-card h3{font-family:var(--serif);font-size:17px;font-weight:600;margin-bottom:10px;}
+.job-card p{font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:18px;flex-grow:1;}
+.job-perks{list-style:none;font-size:12px;color:var(--dim);margin-bottom:20px;}
+.job-perks li{padding:4px 0;}
+.job-apply{align-self:flex-start;background:var(--pri);color:#fff;border:none;padding:10px 20px;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;display:inline-block;transition:background .15s;}
+.job-apply:hover{background:var(--pri2);}
+
 /* ---------- CALCULATOR (shared with pricing.html) ---------- */
 .calc-wrap{background:linear-gradient(160deg,#001C41 0%,#012a5e 45%,#0056D2 130%);border-radius:22px;padding:52px 8px;color:#fff;}
 .calc{background:#fff;border-radius:18px;margin:0 auto;max-width:640px;box-shadow:0 30px 70px rgba(0,10,30,.35);overflow:hidden;color:var(--ink);}
@@ -175,6 +188,7 @@ footer{padding:44px 0 36px;}
       <a href="roi-calculator.html">ROI Calculator</a>
       <a href="#counsel">For Defense Counsel</a>
       <a href="pricing.html">Full Pricing Details</a>
+      <a href="#careers">Careers</a>
     </div>
     <div class="nav-r">
       <a href="case-closed-pro.html" class="nav-login">Sign In</a>
@@ -323,6 +337,51 @@ footer{padding:44px 0 36px;}
   </div>
 </section>
 
+<section id="careers">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-eyebrow">Join Us</div>
+      <h2>We're Hiring</h2>
+      <p>Help us build the litigation platform trusted by carriers and the defense firms they work with.</p>
+    </div>
+    <div class="job-grid">
+      <div class="job-card">
+        <div class="job-badge">Full-time · Remote-friendly</div>
+        <h3>Backend Engineer</h3>
+        <p>Build scalable infrastructure for AI-powered case management. Work with our API, database, and integrations layer.</p>
+        <ul class="job-perks">
+          <li>• Competitive salary + equity</li>
+          <li>• Remote-friendly</li>
+          <li>• Early-stage, real product traction</li>
+        </ul>
+        <a href="mailto:sales@cclosed.com?subject=Job%20Application%20-%20Backend%20Engineer" class="job-apply">Apply Now</a>
+      </div>
+      <div class="job-card">
+        <div class="job-badge">Full-time · Remote-friendly</div>
+        <h3>Full-Stack Developer</h3>
+        <p>Create intuitive UIs for litigation professionals. Ship features carriers and defense firms use every day.</p>
+        <ul class="job-perks">
+          <li>• Competitive salary + equity</li>
+          <li>• Remote-friendly</li>
+          <li>• Early-stage, real product traction</li>
+        </ul>
+        <a href="mailto:sales@cclosed.com?subject=Job%20Application%20-%20Full-Stack%20Developer" class="job-apply">Apply Now</a>
+      </div>
+      <div class="job-card">
+        <div class="job-badge">Full-time · Remote-friendly</div>
+        <h3>Sales Development Rep</h3>
+        <p>Reach out to carriers and TPAs to build our customer base. Own your territory, uncapped commission.</p>
+        <ul class="job-perks">
+          <li>• Base + uncapped commission</li>
+          <li>• Remote-friendly</li>
+          <li>• Early-stage, real product traction</li>
+        </ul>
+        <a href="mailto:sales@cclosed.com?subject=Job%20Application%20-%20Sales%20Development%20Rep" class="job-apply">Apply Now</a>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section id="footcta">
   <div class="wrap">
     <div class="footcta">
@@ -354,6 +413,7 @@ footer{padding:44px 0 36px;}
       <div class="foot-links">
         <a href="#features">Product</a>
         <a href="pricing.html">Pricing</a>
+        <a href="#careers">Careers</a>
         <a href="case-closed-pro.html">Sign In</a>
         <a href="javascript:void(0)" onclick="openContactModal()">Talk to Sales</a>
       </div>
