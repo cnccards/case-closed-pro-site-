@@ -7,6 +7,10 @@
  * access to a carrier's matters is explicit (case_access table),
  * never implicit.
  *
+ * Billing is NOT automated here on purpose — your accounting team
+ * invoices and collects payment outside this system. See
+ * GET /api/billing/status for a reference-only number.
+ *
  * Run the schema first:
  *   psql "$DATABASE_URL" -f db/schema.sql
  *
@@ -22,7 +26,6 @@ import pkg from 'pg';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
-import Stripe from 'stripe';
 import crypto from 'crypto';
 
 const { Pool } = pkg;
@@ -66,6 +69,59 @@ async function q(text, params) {
 }
 
 // ---------------------------------------------------------------
+// TENANT-SCOPED DATABASE ACCESS (real Row-Level Security enforcement)
+// ---------------------------------------------------------------
+// Every request that touches `cases` or `saved_reports` — the two
+// RLS-protected tables — runs its queries on a dedicated connection
+// with `app.current_org_id` set via SET LOCAL, inside a transaction.
+// This makes the database itself the enforcement point: even a bug
+// in a route handler that forgets a `WHERE org_id = $1` clause still
+// can't return another tenant's rows, because Postgres's RLS policy
+// (see db/schema.sql) rejects them before this app ever sees them.
+// Previously this was aspirational — the policies existed in the
+// schema but nothing ever set app.current_org_id, and without FORCE
+// ROW LEVEL SECURITY the app's own connection was exempt from its
+// own policies anyway. Both are fixed: this middleware sets the
+// setting, and the schema now has FORCE on both tables.
+//
+// req.db.query(...) is what every cases/saved_reports route below
+// uses instead of the plain pool-wide q() — q() is still fine for
+// routes that only touch organizations/users/etc, which aren't
+// RLS-protected.
+async function withTenantScope(req, res, next) {
+  const client = await pool.connect();
+  req.db = client;
+  try {
+    await client.query('BEGIN');
+    if (req.user?.platformAdmin) {
+      // Platform-admin routes read across every org on purpose (the
+      // admin panel's org directory) — see the matching permissive
+      // policy in schema.sql keyed off this same setting, rather
+      // than skipping RLS for this connection entirely.
+      await client.query(`SET LOCAL app.is_platform_admin = 'true'`);
+    } else {
+      await client.query(`SET LOCAL app.current_org_id = $1`, [req.orgId]);
+    }
+  } catch (e) {
+    client.release();
+    return res.status(500).json({ error: 'Could not establish tenant scope: ' + e.message });
+  }
+
+  const finish = async (commit) => {
+    try {
+      await client.query(commit ? 'COMMIT' : 'ROLLBACK');
+    } catch (e) {
+      console.error('Failed to close tenant-scoped transaction:', e.message);
+    } finally {
+      client.release();
+    }
+  };
+  res.on('finish', () => finish(res.statusCode < 400));
+  res.on('close', () => { if (!res.writableEnded) finish(false); });
+  next();
+}
+
+// ---------------------------------------------------------------
 // Email (optional) — same as before, only used by /api/reports/email.
 // ---------------------------------------------------------------
 const SMTP_CONFIGURED = !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
@@ -77,26 +133,17 @@ const mailer = SMTP_CONFIGURED ? nodemailer.createTransport({
 }) : null;
 
 // ---------------------------------------------------------------
-// Billing (Stripe) — optional. Create two recurring Prices in your
-// Stripe Dashboard (Starter, Growth) and set their IDs below via
-// env vars. Enterprise has no self-serve checkout — it's a
-// "contact sales" tier by design, matching the pricing calculator.
+// Billing: deliberately NOT automated. Your accounting team invoices
+// and collects payment entirely outside this system, through
+// whatever process you already use — this app never charges anyone,
+// never talks to a payment processor, and holds no card data.
+// planTier and matterCount are kept as reference numbers only (what
+// the pricing calculator would suggest), for accounting's benefit.
 // ---------------------------------------------------------------
-const STRIPE_CONFIGURED = !!process.env.STRIPE_SECRET_KEY;
-const stripe = STRIPE_CONFIGURED ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
-const STRIPE_PRICE_STARTER = process.env.STRIPE_PRICE_STARTER;
-const STRIPE_PRICE_GROWTH = process.env.STRIPE_PRICE_GROWTH;
-const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
-
 function tierForMatterCount(n) {
   if (n <= 250) return 'starter';
   if (n <= 750) return 'growth';
   return 'enterprise';
-}
-function priceIdForTier(tier) {
-  if (tier === 'starter') return STRIPE_PRICE_STARTER;
-  if (tier === 'growth') return STRIPE_PRICE_GROWTH;
-  return null; // enterprise = contact sales, no self-serve price
 }
 
 // ---------------------------------------------------------------
@@ -320,55 +367,6 @@ function buildClosingSummaryText(c) {
 // App
 // ---------------------------------------------------------------
 const app = express();
-
-// Stripe webhook MUST be registered before express.json() below —
-// signature verification needs the raw, unparsed request body.
-app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  if (!STRIPE_CONFIGURED) return res.status(503).send('Billing not configured');
-  let event;
-  try {
-    event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'], STRIPE_WEBHOOK_SECRET);
-  } catch (e) {
-    console.error('Stripe webhook signature verification failed:', e.message);
-    return res.status(400).send(`Webhook Error: ${e.message}`);
-  }
-
-  try {
-    switch (event.type) {
-      case 'checkout.session.completed': {
-        const session = event.data.object;
-        const orgId = session.client_reference_id || session.metadata?.orgId;
-        if (orgId) {
-          await q(
-            `UPDATE organizations SET stripe_customer_id = $1, stripe_subscription_id = $2, subscription_status = 'active' WHERE id = $3`,
-            [session.customer, session.subscription, orgId]
-          );
-          await audit(orgId, null, 'billing.checkout_completed', 'organization', orgId, { sessionId: session.id }, null);
-        }
-        break;
-      }
-      case 'customer.subscription.updated': {
-        const sub = event.data.object;
-        await q(`UPDATE organizations SET subscription_status = $1 WHERE stripe_subscription_id = $2`, [sub.status, sub.id]);
-        break;
-      }
-      case 'customer.subscription.deleted': {
-        const sub = event.data.object;
-        await q(`UPDATE organizations SET subscription_status = 'canceled' WHERE stripe_subscription_id = $1`, [sub.id]);
-        break;
-      }
-      case 'invoice.payment_failed': {
-        const invoice = event.data.object;
-        await q(`UPDATE organizations SET subscription_status = 'past_due' WHERE stripe_customer_id = $1`, [invoice.customer]);
-        break;
-      }
-    }
-    res.json({ received: true });
-  } catch (e) {
-    console.error('Webhook handler error:', e);
-    res.status(500).send('Webhook handler failed');
-  }
-});
 
 app.use(express.json({ limit: '5mb' }));
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || '*' }));
@@ -699,6 +697,11 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+// Every route below this line that touches `cases` or `saved_reports`
+// runs inside a per-request, RLS-scoped transaction (see
+// withTenantScope above) — req.db.query(...), not the plain q(...).
+app.use('/api', withTenantScope);
+
 // ---------------------------------------------------------------
 // Platform admin panel — matt@/mike@/sales@cclosed.com (or whoever
 // PLATFORM_ADMIN_EMAILS lists). Every route here requires
@@ -715,8 +718,11 @@ function requirePlatformAdmin(req, res, next) {
 // List every customer organization — this is the whole "cabinet"
 // directory. Includes a live matter count and user count per org so
 // you can see program size at a glance without opening each one.
+// The case-count subquery reads across every org on purpose — that's
+// exactly what the app.is_platform_admin bypass policy in
+// schema.sql is for.
 app.get('/api/admin/organizations', requirePlatformAdmin, async (req, res) => {
-  const result = await q(`
+  const result = await req.db.query(`
     SELECT o.*,
       (SELECT COUNT(*) FROM cases c WHERE c.org_id = o.id) AS case_count,
       (SELECT COUNT(*) FROM users u WHERE u.org_id = o.id) AS user_count
@@ -727,7 +733,7 @@ app.get('/api/admin/organizations', requirePlatformAdmin, async (req, res) => {
     count: result.rows.length,
     organizations: result.rows.map(o => ({
       id: o.id, name: o.name, persona: o.persona, planTier: o.plan_tier,
-      accessStatus: o.access_status, subscriptionStatus: o.subscription_status,
+      accessStatus: o.access_status,
       caseCount: Number(o.case_count), userCount: Number(o.user_count),
       createdAt: o.created_at
     }))
@@ -952,11 +958,14 @@ app.post('/api/auth/2fa/disable', async (req, res) => {
 // ---------------------------------------------------------------
 // Cases — every query scoped by org. Carrier users see cases their
 // org owns; defense-persona users see only cases explicitly shared
-// with their firm via case_access.
+// with their firm via case_access. req.db is the per-request,
+// RLS-scoped connection from withTenantScope above — the database
+// itself rejects any row outside app.current_org_id, on top of the
+// WHERE org_id = $1 already in these queries.
 // ---------------------------------------------------------------
 async function scopedCaseQuery(req, extraWhere = '', extraParams = []) {
   if (req.user?.persona === 'defense') {
-    return q(
+    return req.db.query(
       `SELECT c.* FROM cases c
        JOIN case_access ca ON ca.case_id = c.id
        WHERE ca.firm_org_id = $1 ${extraWhere}
@@ -964,64 +973,28 @@ async function scopedCaseQuery(req, extraWhere = '', extraParams = []) {
       [req.orgId, ...extraParams]
     );
   }
-  return q(`SELECT * FROM cases WHERE org_id = $1 ${extraWhere} ORDER BY created_at DESC`, [req.orgId, ...extraParams]);
+  return req.db.query(`SELECT * FROM cases WHERE org_id = $1 ${extraWhere} ORDER BY created_at DESC`, [req.orgId, ...extraParams]);
 }
 
 // ---------------------------------------------------------------
-// Billing — create a Checkout session for the org's plan. The
-// tier is derived from the org's actual open-matter count, same
-// bands as the pricing calculator, so the price shown always
-// matches what they'd see there. Enterprise has no self-serve
-// checkout by design — return a "contact sales" signal instead.
+// Billing reference — NOT automated. This just reports what the
+// pricing calculator would suggest for this org's current matter
+// count, for accounting's benefit. Nothing here creates a charge,
+// a subscription, or talks to any payment processor.
 // ---------------------------------------------------------------
-app.post('/api/billing/create-checkout-session', async (req, res) => {
-  if (!STRIPE_CONFIGURED) return res.status(503).json({ error: 'Billing is not configured on this server. Set STRIPE_SECRET_KEY, STRIPE_PRICE_STARTER, STRIPE_PRICE_GROWTH.' });
-  if (req.user?.persona === 'defense') return res.status(403).json({ error: 'Defense-firm accounts are never billed — nothing to check out.' });
-
-  const countResult = await q(`SELECT COUNT(*)::int AS n FROM cases WHERE org_id = $1 AND status != 'Closed'`, [req.orgId]);
-  const matterCount = countResult.rows[0].n;
-  const tier = tierForMatterCount(matterCount);
-  const priceId = priceIdForTier(tier);
-  if (!priceId) {
-    return res.status(200).json({ tier, matterCount, contactSalesRequired: true, message: 'This org is in the Enterprise band — checkout is handled by sales, not self-serve.' });
-  }
-
-  const orgResult = await q('SELECT * FROM organizations WHERE id = $1', [req.orgId]);
-  const org = orgResult.rows[0];
-  let customerId = org.stripe_customer_id;
-  if (!customerId) {
-    const customer = await stripe.customers.create({ name: org.name, metadata: { orgId: org.id } });
-    customerId = customer.id;
-    await q('UPDATE organizations SET stripe_customer_id = $1 WHERE id = $2', [customerId, org.id]);
-  }
-
-  const session = await stripe.checkout.sessions.create({
-    mode: 'subscription',
-    customer: customerId,
-    client_reference_id: org.id,
-    line_items: [{ price: priceId, quantity: 1 }],
-    success_url: (process.env.APP_URL || 'http://localhost:3000') + '/case-closed-pro.html?billing=success',
-    cancel_url: (process.env.APP_URL || 'http://localhost:3000') + '/case-closed-pro.html?billing=canceled',
-    metadata: { orgId: org.id, tier }
-  });
-  res.json({ url: session.url, tier, matterCount });
-});
-
 app.get('/api/billing/status', async (req, res) => {
   const orgResult = await q('SELECT * FROM organizations WHERE id = $1', [req.orgId]);
   const org = orgResult.rows[0];
   if (!org) return res.status(404).json({ error: 'Organization not found' });
-  const countResult = await q(`SELECT COUNT(*)::int AS n FROM cases WHERE org_id = $1 AND status != 'Closed'`, [req.orgId]);
+  const countResult = await req.db.query(`SELECT COUNT(*)::int AS n FROM cases WHERE org_id = $1 AND status != 'Closed'`, [req.orgId]);
   const matterCount = countResult.rows[0].n;
   res.json({
     planTier: org.plan_tier,
     suggestedTier: tierForMatterCount(matterCount),
     matterCount,
-    subscriptionStatus: org.subscription_status,
-    billingConfigured: STRIPE_CONFIGURED
+    note: 'Billed externally by your accounting team — this figure is a reference only, not an invoice.'
   });
 });
-
 
 app.get('/api/cases', async (req, res) => {
   const { status } = req.query;
@@ -1052,7 +1025,7 @@ app.post('/api/cases', async (req, res) => {
   const b = req.body || {};
   if (!b.client) return res.status(400).json({ error: 'client is required' });
   const data = { ...defaultCaseData(), ...(b.data || {}) };
-  const result = await q(
+  const result = await req.db.query(
     `INSERT INTO cases (org_id, matter_no, client, type, status, litigation_stage, attorney, carrier, claim_no, reserve_amount, filed_date, deadline_date, value, data)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
     [req.orgId, b.matterNo || null, b.client, b.type || 'Other', b.status || 'Active', b.litigationStage || 'Pre-Suit',
@@ -1070,44 +1043,34 @@ app.post('/api/cases/import', async (req, res) => {
 
   const created = [];
   const errors = [];
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    for (let i = 0; i < records.length; i++) {
-      const b = records[i];
-      try {
-        if (!b.client) throw new Error('client is required');
-        const data = { ...defaultCaseData(), ...(b.data || {}) };
-        if (b.settlementAmount != null) data.exposure.settlementAmount = b.settlementAmount;
-        const result = await client.query(
-          `INSERT INTO cases (org_id, matter_no, client, type, status, litigation_stage, attorney, carrier, claim_no, reserve_amount, filed_date, deadline_date, value, data)
-           VALUES ($1,$2,$3,$4,'Closed','Closed',$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-          [req.orgId, b.matterNo || null, b.client, b.type || 'Other', b.attorney || null, b.carrier || null,
-           b.claimNo || null, b.reserveAmount || 0, b.filed || null, b.deadline || null, b.value || 0, JSON.stringify(data)]
-        );
-        created.push(rowToCase(result.rows[0]));
-      } catch (e) {
-        errors.push({ index: i, error: e.message });
-      }
+  for (let i = 0; i < records.length; i++) {
+    const b = records[i];
+    try {
+      if (!b.client) throw new Error('client is required');
+      const data = { ...defaultCaseData(), ...(b.data || {}) };
+      if (b.settlementAmount != null) data.exposure.settlementAmount = b.settlementAmount;
+      const result = await req.db.query(
+        `INSERT INTO cases (org_id, matter_no, client, type, status, litigation_stage, attorney, carrier, claim_no, reserve_amount, filed_date, deadline_date, value, data)
+         VALUES ($1,$2,$3,$4,'Closed','Closed',$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+        [req.orgId, b.matterNo || null, b.client, b.type || 'Other', b.attorney || null, b.carrier || null,
+         b.claimNo || null, b.reserveAmount || 0, b.filed || null, b.deadline || null, b.value || 0, JSON.stringify(data)]
+      );
+      created.push(rowToCase(result.rows[0]));
+    } catch (e) {
+      errors.push({ index: i, error: e.message });
     }
-    await client.query('COMMIT');
-  } catch (e) {
-    await client.query('ROLLBACK');
-    return res.status(500).json({ error: 'Import failed: ' + e.message });
-  } finally {
-    client.release();
   }
   await audit(req.orgId, req.user?.sub, 'case.import', 'case', null, { imported: created.length, failed: errors.length }, req.ip);
   res.status(201).json({ imported: created.length, failed: errors.length, errors, cases: created });
 });
 
 app.patch('/api/cases/:id', async (req, res) => {
-  const existing = await q('SELECT * FROM cases WHERE id = $1 AND org_id = $2', [req.params.id, req.orgId]);
+  const existing = await req.db.query('SELECT * FROM cases WHERE id = $1 AND org_id = $2', [req.params.id, req.orgId]);
   if (!existing.rows[0]) return res.status(404).json({ error: 'Case not found' });
   const current = existing.rows[0];
   const b = req.body || {};
   const mergedData = { ...current.data, ...(b.data || {}) };
-  const result = await q(
+  const result = await req.db.query(
     `UPDATE cases SET
        matter_no = COALESCE($1, matter_no), client = COALESCE($2, client), type = COALESCE($3, type),
        status = COALESCE($4, status), litigation_stage = COALESCE($5, litigation_stage), attorney = COALESCE($6, attorney),
@@ -1122,22 +1085,129 @@ app.patch('/api/cases/:id', async (req, res) => {
 });
 
 app.delete('/api/cases/:id', async (req, res) => {
-  const result = await q('DELETE FROM cases WHERE id = $1 AND org_id = $2 RETURNING id', [req.params.id, req.orgId]);
+  const result = await req.db.query('DELETE FROM cases WHERE id = $1 AND org_id = $2 RETURNING id', [req.params.id, req.orgId]);
   if (!result.rows[0]) return res.status(404).json({ error: 'Case not found' });
   await audit(req.orgId, req.user?.sub, 'case.delete', 'case', req.params.id, null, req.ip);
   res.json({ deleted: true, id: req.params.id });
 });
+
+// ---------------------------------------------------------------
+// Payees & Payables — accounts PAYABLE. The org paying its own
+// outside counsel, claims adjusters, expert witnesses, and other
+// vendors. Kept fully separate from the cases.data.billing fields
+// above (accounts RECEIVABLE — billing the carrier/client). Every
+// query below runs on req.db, the same per-request RLS-scoped
+// connection the cases routes use.
+// ---------------------------------------------------------------
+app.get('/api/payees', async (req, res) => {
+  const result = await req.db.query('SELECT * FROM payees WHERE org_id = $1 ORDER BY name ASC', [req.orgId]);
+  res.json({ payees: result.rows.map(p => ({ id:p.id, name:p.name, type:p.type, email:p.email, defaultRate: p.default_rate != null ? Number(p.default_rate) : 0 })) });
+});
+app.post('/api/payees', async (req, res) => {
+  const { name, type, email, defaultRate } = req.body || {};
+  if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
+  const result = await req.db.query(
+    `INSERT INTO payees (org_id, name, type, email, default_rate) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+    [req.orgId, name.trim(), type || 'Other', email || null, defaultRate || 0]
+  );
+  await audit(req.orgId, req.user?.sub, 'payee.create', 'payee', result.rows[0].id, { name }, req.ip);
+  res.status(201).json({ id: result.rows[0].id, name: result.rows[0].name, type: result.rows[0].type });
+});
+
+function rowToPayable(row) {
+  return {
+    id: row.id, payeeId: row.payee_id, payeeName: row.payee_name, payeeType: row.payee_type,
+    relatedCaseId: row.related_case_id, amount: Number(row.amount), description: row.description,
+    dueDate: row.due_date, submittedDate: row.submitted_date, status: row.status,
+    approvedBy: row.approved_by_name || null, paidDate: row.paid_date, paymentMethod: row.payment_method
+  };
+}
+app.get('/api/payables', async (req, res) => {
+  const { status } = req.query;
+  const extra = status ? ' AND pb.status = $2' : '';
+  const params = [req.orgId]; if (status) params.push(status);
+  const result = await req.db.query(
+    `SELECT pb.*, py.name AS payee_name, py.type AS payee_type, u.name AS approved_by_name
+     FROM payables pb
+     JOIN payees py ON py.id = pb.payee_id
+     LEFT JOIN users u ON u.id = pb.approved_by
+     WHERE pb.org_id = $1 ${extra}
+     ORDER BY pb.created_at DESC`,
+    params
+  );
+  res.json({ count: result.rows.length, payables: result.rows.map(rowToPayable) });
+});
+app.post('/api/payables', async (req, res) => {
+  const { payeeId, relatedCaseId, amount, description, dueDate } = req.body || {};
+  if (!payeeId) return res.status(400).json({ error: 'payeeId is required' });
+  if (!amount || amount <= 0) return res.status(400).json({ error: 'amount must be greater than 0' });
+  const payeeCheck = await req.db.query('SELECT id FROM payees WHERE id = $1 AND org_id = $2', [payeeId, req.orgId]);
+  if (!payeeCheck.rows[0]) return res.status(404).json({ error: 'Payee not found in your organization' });
+  const result = await req.db.query(
+    `INSERT INTO payables (org_id, payee_id, related_case_id, amount, description, due_date, submitted_date, status)
+     VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE,'Submitted') RETURNING *`,
+    [req.orgId, payeeId, relatedCaseId || null, amount, description || '', dueDate || null]
+  );
+  await audit(req.orgId, req.user?.sub, 'payable.create', 'payable', result.rows[0].id, { payeeId, amount }, req.ip);
+  res.status(201).json({ id: result.rows[0].id, status: result.rows[0].status });
+});
+// Status transitions — Approve/Reject require admin+ (same rank
+// check as team management above); Paid can follow Approve only.
+app.patch('/api/payables/:id/status', requireOrgRole('admin'), async (req, res) => {
+  const { status } = req.body || {};
+  if (!PAYABLES_VALID_STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  const existing = await req.db.query('SELECT * FROM payables WHERE id = $1 AND org_id = $2', [req.params.id, req.orgId]);
+  if (!existing.rows[0]) return res.status(404).json({ error: 'Payable not found' });
+
+  const fields = ['status = $1'];
+  const params = [status];
+  if (status === 'Approved') { fields.push('approved_by = $' + (params.length+1)); params.push(req.user.sub); }
+  if (status === 'Paid') { fields.push('paid_date = CURRENT_DATE'); }
+  params.push(req.params.id, req.orgId);
+  const result = await req.db.query(
+    `UPDATE payables SET ${fields.join(', ')} WHERE id = $${params.length-1} AND org_id = $${params.length} RETURNING *`,
+    params
+  );
+  await audit(req.orgId, req.user?.sub, 'payable.status_changed', 'payable', req.params.id, { newStatus: status }, req.ip);
+  res.json({ id: result.rows[0].id, status: result.rows[0].status });
+});
+const PAYABLES_VALID_STATUSES = ['Draft','Submitted','Approved','Paid','Rejected'];
 
 // Grant a defense firm access to a specific matter (carrier-side action only).
 app.post('/api/cases/:id/share', async (req, res) => {
   if (req.user?.persona === 'defense') return res.status(403).json({ error: 'Only the owning carrier can share a matter' });
   const { firmOrgId } = req.body || {};
   if (!firmOrgId) return res.status(400).json({ error: 'firmOrgId is required' });
-  const caseCheck = await q('SELECT id FROM cases WHERE id = $1 AND org_id = $2', [req.params.id, req.orgId]);
+  const caseCheck = await req.db.query('SELECT id FROM cases WHERE id = $1 AND org_id = $2', [req.params.id, req.orgId]);
   if (!caseCheck.rows[0]) return res.status(404).json({ error: 'Case not found' });
   await q('INSERT INTO case_access (case_id, firm_org_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [req.params.id, firmOrgId]);
   await audit(req.orgId, req.user?.sub, 'case.share', 'case', req.params.id, { firmOrgId }, req.ip);
   res.json({ shared: true });
+});
+
+// ---------------------------------------------------------------
+// Saved reports — mirrors the frontend's Saved Reports panel.
+// Previously in the schema with no route to actually reach it —
+// wired up here.
+// ---------------------------------------------------------------
+app.get('/api/reports/saved', async (req, res) => {
+  const result = await req.db.query('SELECT * FROM saved_reports WHERE org_id = $1 ORDER BY created_at DESC', [req.orgId]);
+  res.json({ reports: result.rows.map(r => ({ id:r.id, reportId:r.report_id, name:r.name, category:r.category, rowCount:r.row_count, cols:r.cols, rows:r.rows, aiSummary:r.ai_summary, createdAt:r.created_at })) });
+});
+app.post('/api/reports/saved', async (req, res) => {
+  const b = req.body || {};
+  if (!b.reportId || !b.name) return res.status(400).json({ error: 'reportId and name are required' });
+  const result = await req.db.query(
+    `INSERT INTO saved_reports (org_id, created_by_user_id, report_id, name, category, row_count, cols, rows, ai_summary)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    [req.orgId, req.user?.sub || null, b.reportId, b.name, b.category || null, b.rowCount || (b.rows ? b.rows.length : 0), JSON.stringify(b.cols || []), JSON.stringify(b.rows || []), b.aiSummary || null]
+  );
+  res.status(201).json({ id: result.rows[0].id, createdAt: result.rows[0].created_at });
+});
+app.delete('/api/reports/saved/:id', async (req, res) => {
+  const result = await req.db.query('DELETE FROM saved_reports WHERE id = $1 AND org_id = $2 RETURNING id', [req.params.id, req.orgId]);
+  if (!result.rows[0]) return res.status(404).json({ error: 'Report not found' });
+  res.json({ deleted: true });
 });
 
 // ---------------------------------------------------------------
