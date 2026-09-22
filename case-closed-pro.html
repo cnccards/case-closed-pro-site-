@@ -2309,7 +2309,35 @@ function settlementIntelligenceV() {
   h += '</div>';
   h += '</div>';
   
-  // Settlement offer form
+  // Sentinel AI Suite — the 5 proprietary AI capabilities, branded
+  // as one cohesive suite. Lives here specifically because this
+  // whole tab is already password-gated (premiumLoginV) — this
+  // panel is never reachable without that login, which is what
+  // "hidden" actually means for something proprietary, not just a
+  // collapsed section on a page anyone can load.
+  h += '<div class="card" style="background:linear-gradient(135deg,#0F172A 0%,#1E293B 100%);color:#fff;padding:26px 28px;margin-bottom:24px;border:none;">';
+  h += '<div style="display:flex;align-items:center;gap:9px;margin-bottom:4px;">';
+  h += '<span style="font-size:20px;">🛡️</span><span style="font-weight:700;font-size:16px;letter-spacing:-.2px;">Sentinel AI Suite</span>';
+  h += '<span style="font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,.12);padding:3px 9px;border-radius:20px;margin-left:4px;">Proprietary</span>';
+  h += '</div>';
+  h += '<div style="font-size:12px;color:#94A3B8;margin-bottom:20px;">Five AI models, one system, watching every matter in your portfolio.</div>';
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;">';
+  const sentinelFeatures = [
+    ['🎯','Sentinel Match','Assigns every new matter to your best-fit attorney — specialization, track record, and workload, weighed automatically.'],
+    ['💰','Sentinel Settle','Recommends the settlement number the data actually supports, not a gut-feel figure.'],
+    ['🚩','Sentinel Watch','Flags a problem matter before it becomes an expensive one — reserve gaps, stalled cases, missed deadlines.'],
+    ['🧭','Sentinel Strategy','Reads opposing counsel\'s pattern and models their likely next move before they make it.'],
+    ['⏱️','Sentinel Horizon','Forecasts when a matter actually closes and what it costs to get there — not a guess, a model.'],
+  ];
+  sentinelFeatures.forEach(([icon,name,desc]) => {
+    h += '<div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:16px;">';
+    h += '<div style="font-size:22px;margin-bottom:8px;">'+icon+'</div>';
+    h += '<div style="font-weight:700;font-size:13.5px;margin-bottom:6px;">'+name+'</div>';
+    h += '<div style="font-size:11.5px;color:#CBD5E1;line-height:1.5;">'+desc+'</div>';
+    h += '</div>';
+  });
+  h += '</div></div>';
+  
   if (S.showSettlementForm) {
     h += settlementOfferFormV();
   }
