@@ -1971,7 +1971,7 @@ function tasksForAttorney(attorneyName) {
   return (S.tasks || []).filter(t => t.attorney === attorneyName);
 }
 
-function createTask(caseId, attorneyName, taskType, message) {
+function createTask(caseId, attorneyName, taskType, message, dueDate){
   const task = {
     id: 't' + Date.now(),
     caseId: caseId,
@@ -1980,6 +1980,7 @@ function createTask(caseId, attorneyName, taskType, message) {
     type: taskType,
     status: 'pending',
     createdAt: new Date().toISOString().split('T')[0],
+    dueDate: dueDate || null,
     message: message
   };
   st({tasks: [...(S.tasks || []), task]});
@@ -2044,24 +2045,31 @@ function taskResponseFormV(taskId) {
 
 function myCasesV() {
   initTasks();
-  const attorneyName = S.attorneyName;
+  // Two ways to land here: the dedicated attorney login screen sets
+  // S.attorneyName explicitly, OR (the bug this fixes) someone
+  // already logged in clicks "My Cases" from the main nav — that
+  // path never set attorneyName at all, so this fell back to
+  // filtering against nothing and looked broken. Now it defaults to
+  // whoever's actually signed in.
+  const attorneyName = S.attorneyName || S.currentUser?.name;
   const myCases = CASES.filter(c => c.attorney === attorneyName);
-  
+
   let h = '<div style="padding:20px;">';
   h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid var(--line);padding-bottom:15px;">';
   h += '<div>';
   h += '<div class="sh">My Cases</div>';
-  h += '<div style="font-size:12px;color:var(--muted);margin-top:4px;">'+myCases.length+' assigned cases — Manage and update</div>';
+  h += '<div style="font-size:12px;color:var(--muted);margin-top:4px;">'+(attorneyName?esc(attorneyName)+' — ':'')+myCases.length+' assigned cases — Manage and update</div>';
   h += '</div>';
-  h += '<button onclick="st({isAuthenticated:false, attorneyId:null, attorneyName:null})" class="btn btn-out">Sign Out</button>';
+  h += (S.attorneyId
+    ? '<button onclick="st({isAuthenticated:false, attorneyId:null, attorneyName:null})" class="btn btn-out">Sign Out</button>'
+    : '<button onclick="st({role:\'litigation\'})" class="btn btn-out">← Back to Dashboard</button>');
   h += '</div>';
-  
-  /* Task notifications */
   h += attorneyTaskNotificationsV();
   
   if (myCases.length === 0) {
     h += '<div class="card" style="text-align:center;padding:40px;color:var(--muted);">';
     h += '<div style="font-size:14px;">No cases assigned yet</div>';
+    h += '<div style="font-size:11.5px;margin-top:8px;">Cases show up here when the "Attorney" field on a matter matches your name'+(attorneyName?' ("'+esc(attorneyName)+'")':'')+'. Try one of the seeded demo attorneys ('+ATTY.slice(0,3).map(esc).join(', ')+', etc.) on a case in the Litigation Dashboard to see this populated.</div>';
     h += '</div>';
     h += '</div>';
     if (S.showTaskForm && S.selectedTask) h += taskResponseFormV(S.selectedTask);
@@ -3177,6 +3185,7 @@ function render(){
   else if (S.role === 'activity') html += activityHubV();
   else if (S.role === 'billing') html += invoiceHubV();
   else if (S.role === 'payables') html += payablesHubV();
+  else if (S.role === 'claims') html += claimsDeskV();
   else if (S.role === 'api') html += apiHubV();
   else if (S.role === 'admin') html += adminPanelV();
   html += '</div>';
@@ -3189,6 +3198,7 @@ function render(){
   if (S.showTeamModal) html += teamModalV();
   if (S.showCreateOrgModal) html += createOrgModalV();
   if (S.activateOrgResult) html += activateOrgResultModalV();
+  if (S.showScheduleTaskModal) html += scheduleTaskModalV();
   /* AI Intake Modal */
   if (S.showAiIntake) html += aiClaimIntakeModalV();
     if (S.showPrivacy) html += '<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:100;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;"><div style="background:#fff;width:90%;max-width:900px;margin:20px 0;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,.3);"><div style="position:sticky;top:0;background:#fff;border-bottom:1px solid var(--line);padding:20px;display:flex;justify-content:space-between;align-items:center;"><div style="font-weight:700;font-size:18px;">Privacy Policy</div><button onclick="st({showPrivacy:false})" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);">&times;</button></div>'+privacyPolicyV()+'</div></div>';
@@ -3232,6 +3242,7 @@ function hdr(){
     { label:'', items:[
       ['litigation','Litigation'],
       ['attorney','My Cases'],
+      ['claims','Claims Desk'],
       ['activity','Activity Hub'],
       ['billing','Invoice Hub'],
       ['payables','Payables']
@@ -3243,9 +3254,9 @@ function hdr(){
       ['premium','🔒 Settlement Intelligence']
     ]},
     { label:'Admin', items:[
-      ['tpa','TPA / Account Exec'],
+      ['tpa','Account Executive'],
       ['carrier','Carrier Portal'],
-      ['partner','Partner View'],
+      ['partner','TPA Leadership'],
       ['api','API & Import']
     ]}
   ];
@@ -3289,7 +3300,7 @@ function hdr(){
     '<div style="padding:8px 18px;border-top:1px solid var(--line);font-size:11px;color:var(--muted);display:flex;gap:20px;">'+
       '<button onclick="st({showPrivacy:!S.showPrivacy})" style="background:none;border:none;color:var(--muted);cursor:pointer;text-decoration:underline;">Privacy Policy</button>'+
       '<button onclick="st({showTerms:!S.showTerms})" style="background:none;border:none;color:var(--muted);cursor:pointer;text-decoration:underline;">Terms of Service</button>'+
-      '<a href="mailto:support@cclosed.com" style="color:var(--muted);text-decoration:underline;">support@cclosed.com</a>'+
+      '<a href="mailto:sales@cclosed.com" style="color:var(--muted);text-decoration:underline;">sales@cclosed.com</a>'+
     '</div>'+
   '</div>';
 }
@@ -4413,6 +4424,22 @@ function caseCard(c){
 }
 
 /* ── TPA / CARRIER VIEW ────────────────────────────────── */
+/* ── ACCOUNT EXECUTIVE — "My Clients" & account health ────────
+   Each carrier/client is assigned round-robin to one of these AEs
+   for demo purposes (no real AE-assignment field exists yet on
+   carriers — this is the same simulate-a-real-field pattern used
+   elsewhere for demo data). Swap the selector for a real logged-in
+   AE identity once accounts carry a real owner field. ── */
+const ACCOUNT_EXECS = ['Alex Rivera','Morgan Lee','Taylor Kim'];
+function aeForCarrier(carrierName){
+  // Deterministic assignment from the carrier name itself, so the
+  // same carrier always maps to the same AE across renders.
+  let hash = 0;
+  for (let i=0;i<carrierName.length;i++) hash = (hash*31 + carrierName.charCodeAt(i)) >>> 0;
+  return ACCOUNT_EXECS[hash % ACCOUNT_EXECS.length];
+}
+let CARRIER_INDEX_CACHE = null;
+
 function tpaV(){
   const carriers = {};
   CASES.forEach(c => {
@@ -4423,34 +4450,49 @@ function tpaV(){
     carriers[ca].billed += c.billing.totalBilled || 0;
     carriers[ca].paid += c.billing.totalPaid || 0;
   });
-  const carrierList = Object.entries(carriers).sort((a,b) => b[1].reserve - a[1].reserve);
-  const totalCases = CASES.length;
-  const totalReserves = Object.values(carriers).reduce((s,c) => s + c.reserve, 0);
+  CARRIER_INDEX_CACHE = carriers;
+
+  const selectedAE = S.selectedAE || ACCOUNT_EXECS[0];
+  const myCarrierNames = Object.keys(carriers).filter(name => aeForCarrier(name) === selectedAE);
+  const carrierList = myCarrierNames.map(name => [name, carriers[name]]).sort((a,b) => b[1].reserve - a[1].reserve);
+  const totalCases = carrierList.reduce((s,[,d])=>s+d.cases.length, 0);
+  const totalReserves = carrierList.reduce((s,[,d])=>s+d.reserve, 0);
+  const totalBilled = carrierList.reduce((s,[,d])=>s+d.billed, 0);
+  const healthyCount = carrierList.filter(([,d]) => {
+    const burn = d.reserve ? (d.billed/d.reserve)*100 : 0;
+    const avgIdx = d.cases.length ? d.cases.reduce((s,c)=>s+cci(c),0)/d.cases.length : 50;
+    return !(burn > 70 || avgIdx < 50);
+  }).length;
 
   let h = '<div class="wrap">';
   h += '<div class="hero">';
-  h += '<div class="hero-l"><div class="hero-eyebrow">Carrier / TPA Portfolio</div>';
-  h += '<h1 class="hero-title">Carrier Oversight</h1>';
-  h += '<p class="hero-sub">'+carrierList.length+' carriers · '+totalCases+' matters · '+fM(totalReserves)+' aggregate reserves</p></div></div>';
-
-  h += '<div class="kpi-grid">';
-  h += '<div class="kpi"><div class="kpi-l">Carriers</div><div class="kpi-v">'+carrierList.length+'</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">Total Reserves</div><div class="kpi-v" style="color:var(--gold);">'+fV(totalReserves)+'</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">Billed YTD</div><div class="kpi-v">'+fV(Object.values(carriers).reduce((s,c)=>s+c.billed,0))+'</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">AOB Matters</div><div class="kpi-v" style="color:var(--red);">'+CASES.filter(c=>c.aob==='Yes').length+'</div></div>';
+  h += '<div class="hero-l"><div class="hero-eyebrow">Account Executive · My Clients</div>';
+  h += '<h1 class="hero-title">'+esc(selectedAE)+'\'s Book of Business</h1>';
+  h += '<p class="hero-sub">'+carrierList.length+' client'+(carrierList.length!==1?'s':'')+' · '+totalCases+' matters · '+fM(totalReserves)+' reserves under management</p></div>';
+  h += '<div class="hero-r">'+sel('', 'st({selectedAE:this.value})', ACCOUNT_EXECS, selectedAE)+'</div>';
   h += '</div>';
 
-  /* Reserve Adequacy Table */
+  h += '<div class="kpi-grid">';
+  h += '<div class="kpi"><div class="kpi-l">My Clients</div><div class="kpi-v">'+carrierList.length+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Total Reserves</div><div class="kpi-v" style="color:var(--gold);">'+fV(totalReserves)+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Billed YTD</div><div class="kpi-v">'+fV(totalBilled)+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Healthy Accounts</div><div class="kpi-v" style="color:'+(healthyCount===carrierList.length?'var(--green)':'var(--gold)')+';">'+healthyCount+' / '+carrierList.length+'</div></div>';
+  h += '</div>';
+
+  /* Reserve Adequacy Table — scoped to this AE's clients only */
   h += '<div class="card">';
-  h += '<div class="sh"><span>Carrier Portfolio — Reserve Adequacy</span></div>';
+  h += '<div class="sh"><span>My Client Accounts — Health at a Glance</span></div>';
+  if (carrierList.length === 0) {
+    h += '<div style="padding:18px;color:var(--muted);font-size:12px;text-align:center;">No clients assigned to '+esc(selectedAE)+' in this demo data.</div>';
+  } else {
   h += '<div style="overflow-x:auto;"><table>';
-  h += '<thead><tr><th>Carrier</th><th>Matters</th><th>Total Reserves</th><th>Billed</th><th>Paid</th><th>Burn %</th><th>Avg CCI</th><th>Risk</th></tr></thead><tbody>';
+  h += '<thead><tr><th>Client</th><th>Matters</th><th>Total Reserves</th><th>Billed</th><th>Paid</th><th>Burn %</th><th>Avg CCI</th><th>Account Health</th></tr></thead><tbody>';
   carrierList.forEach(([name, data]) => {
     const burn = data.reserve ? Math.round((data.billed/data.reserve)*100) : 0;
     const avgIdx = Math.round(data.cases.reduce((s,c)=>s+cci(c),0)/data.cases.length);
     const burnCol = burn > 70 ? 'var(--red)' : burn > 50 ? 'var(--gold)' : 'var(--green)';
-    const risk = burn > 70 || avgIdx < 50 ? '⚠ Review' : burn > 50 ? '◐ Monitor' : '✓ Healthy';
-    const riskCol = risk.includes('Review') ? 'var(--red)' : risk.includes('Monitor') ? 'var(--gold)' : 'var(--green)';
+    const risk = burn > 70 || avgIdx < 50 ? '⚠ Needs Attention' : burn > 50 ? '◐ Monitor' : '✓ Healthy';
+    const riskCol = risk.includes('Attention') ? 'var(--red)' : risk.includes('Monitor') ? 'var(--gold)' : 'var(--green)';
     h += '<tr>';
     h += '<td style="font-weight:700;color:var(--gold);">'+esc(name)+'</td>';
     h += '<td style="font-weight:600;">'+data.cases.length+'</td>';
@@ -4462,14 +4504,17 @@ function tpaV(){
     h += '<td style="color:'+riskCol+';font-weight:600;font-size:11px;">'+risk+'</td>';
     h += '</tr>';
   });
-  h += '</tbody></table></div></div>';
+  h += '</tbody></table></div>';
+  }
+  h += '</div>';
 
-  /* SOL Tracker */
+  /* SOL Tracker — scoped to my clients */
+  const myCases = carrierList.flatMap(([,d]) => d.cases);
   h += '<div class="card">';
-  h += '<div class="sh"><span>SOL Watch — Statute of Limitations Alerts</span></div>';
-  const solCases = CASES.filter(c => c.keyDates.sol).sort((a,b) => new Date(a.keyDates.sol) - new Date(b.keyDates.sol));
+  h += '<div class="sh"><span>SOL Watch — My Clients</span></div>';
+  const solCases = myCases.filter(c => c.keyDates.sol).sort((a,b) => new Date(a.keyDates.sol) - new Date(b.keyDates.sol));
   if (solCases.length === 0) {
-    h += '<div style="padding:18px;color:var(--muted);font-size:12px;text-align:center;">No SOL dates tracked yet.</div>';
+    h += '<div style="padding:18px;color:var(--muted);font-size:12px;text-align:center;">No SOL dates tracked yet for these accounts.</div>';
   } else {
     h += '<div style="overflow-x:auto;"><table>';
     h += '<thead><tr><th>Matter</th><th>Client</th><th>Carrier</th><th>SOL Date</th><th>Days</th><th>Status</th></tr></thead><tbody>';
@@ -4489,13 +4534,14 @@ function tpaV(){
   }
   h += '</div>';
 
-  /* Adjuster Dashboard */
+  /* Recent activity across my clients */
   h += '<div class="card">';
-  h += '<div class="sh"><span>Adjuster Activity — Recent Updates</span></div>';
+  h += '<div class="sh"><span>Recent Activity — My Clients</span></div>';
   const recentUpdates = [];
-  CASES.forEach(c => {
-    (c.updates||[]).slice(-2).forEach(u => recentUpdates.push({...u, case:c}));
-  });
+  myCases.forEach(c => { (c.updates||[]).slice(-2).forEach(u => recentUpdates.push({...u, case:c})); });
+  if (recentUpdates.length === 0) {
+    h += '<div style="padding:18px;color:var(--muted);font-size:12px;text-align:center;">No recent activity.</div>';
+  }
   recentUpdates.sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0,8).forEach(u => {
     h += '<div class="activity-item" onclick="stCase(\''+u.case.id+'\')">';
     h += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:4px;">';
@@ -4511,28 +4557,266 @@ function tpaV(){
 }
 
 /* ── PARTNER VIEW ──────────────────────────────────────── */
+/* ── TPA LEADERSHIP — comprehensive executive view of EVERY
+   customer/carrier the TPA works with, plus how each Account
+   Executive's book is performing. This is the "see everything,
+   nothing filtered" counterpart to the Account Executive view
+   above, which is deliberately scoped to just one AE's clients. ── */
 function partV(){
+  const carriers = {};
+  CASES.forEach(c => {
+    const ca = c.insurance.carrier || 'Self-Insured';
+    if (!carriers[ca]) carriers[ca] = {cases:[], reserve:0, billed:0, paid:0};
+    carriers[ca].cases.push(c);
+    carriers[ca].reserve += c.insurance.reserveAmount || 0;
+    carriers[ca].billed += c.billing.totalBilled || 0;
+    carriers[ca].paid += c.billing.totalPaid || 0;
+  });
+  const carrierList = Object.entries(carriers).sort((a,b) => b[1].reserve - a[1].reserve);
+  const totalCases = CASES.length;
   const open = CASES.filter(c => c.status !== 'Closed');
-  const totRev = CASES.reduce((s,c) => s + (c.billing.totalBilled||0), 0);
-  const totColl = CASES.reduce((s,c) => s + (c.billing.totalPaid||0), 0);
-  const collDisplay = fCollRate(totColl, totRev);
+  const totalReserves = Object.values(carriers).reduce((s,c) => s + c.reserve, 0);
+  const totalBilled = Object.values(carriers).reduce((s,c) => s + c.billed, 0);
+  const totalPaid = Object.values(carriers).reduce((s,c) => s + c.paid, 0);
+  const atRisk = carrierList.filter(([,d]) => {
+    const burn = d.reserve ? (d.billed/d.reserve)*100 : 0;
+    const avgIdx = d.cases.length ? d.cases.reduce((s,c)=>s+cci(c),0)/d.cases.length : 50;
+    return burn > 70 || avgIdx < 50;
+  });
 
   let h = '<div class="wrap">';
   h += '<div class="hero">';
-  h += '<div class="hero-l"><div class="hero-eyebrow">Partner View · Firm Operations</div>';
-  h += '<h1 class="hero-title">Practice Performance</h1>';
-  h += '<p class="hero-sub">'+open.length+' active matters · '+fM(totRev)+' billed · '+collDisplay.text+' collected</p></div></div>';
+  h += '<div class="hero-l"><div class="hero-eyebrow">TPA Leadership · Executive Dashboard</div>';
+  h += '<h1 class="hero-title">Every Customer, One View</h1>';
+  h += '<p class="hero-sub">'+carrierList.length+' customers · '+totalCases+' matters · '+fM(totalReserves)+' total reserves under management</p></div></div>';
 
   h += '<div class="kpi-grid">';
-  h += '<div class="kpi"><div class="kpi-l">Active Matters</div><div class="kpi-v">'+open.length+'</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">Revenue YTD</div><div class="kpi-v" style="color:var(--green);">'+fV(totRev)+'</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">Collected</div><div class="kpi-v">'+fV(totColl)+'</div></div>';
-  h += '<div class="kpi"><div class="kpi-l">Collection Rate</div><div class="kpi-v">'+collDisplay.text+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Total Customers</div><div class="kpi-v">'+carrierList.length+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Total Reserves</div><div class="kpi-v" style="color:var(--gold);">'+fV(totalReserves)+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Billed / Paid YTD</div><div class="kpi-v">'+fV(totalBilled)+'</div><div class="kpi-sub">'+fV(totalPaid)+' collected</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Accounts At Risk</div><div class="kpi-v" style="color:'+(atRisk.length?'var(--red)':'var(--green)')+';">'+atRisk.length+'</div></div>';
   h += '</div>';
 
-  /* Attorney performance */
+  /* ── WHAT C-LEVEL ACTUALLY LOOKS AT ─────────────────────────
+     Fee revenue/collection health, client concentration risk,
+     SLA/cycle-time performance against the company's own 100-200
+     day promise, and whether the book is growing faster than it's
+     being closed. Different questions than an AE or attorney asks. */
+  h += '<div class="section-band" style="margin-top:4px;">💼 For Leadership</div>';
+
+  h += '<div class="grid-3">';
+
+  /* Collection health — this is the TPA's actual income, not case value */
+  h += '<div class="card"><div class="sh"><span>Fee Revenue &amp; Collection Health</span></div>';
+  const collRate = totalBilled ? Math.round((totalPaid/totalBilled)*100) : 0;
+  h += '<div style="text-align:center;padding:6px 0 14px;">';
+  h += '<div class="serif" style="font-size:32px;font-weight:700;color:'+(collRate>=85?'var(--green)':collRate>=65?'var(--gold)':'var(--red)')+';">'+collRate+'%</div>';
+  h += '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:3px;">Collection Rate</div></div>';
+  h += '<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:6px 0;border-top:1px solid var(--surf2);"><span style="color:var(--muted);">Billed YTD</span><span style="font-weight:700;">'+fV(totalBilled)+'</span></div>';
+  h += '<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:6px 0;"><span style="color:var(--muted);">Collected</span><span style="font-weight:700;color:var(--green);">'+fV(totalPaid)+'</span></div>';
+  h += '<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:6px 0;"><span style="color:var(--muted);">Outstanding</span><span style="font-weight:700;color:'+(totalBilled-totalPaid>0?'var(--gold)':'var(--dim)')+';">'+fV(totalBilled-totalPaid)+'</span></div>';
+  h += '</div>';
+
+  /* Client concentration — a classic C-level risk question: how
+     much of the book depends on any single client walking away */
+  h += '<div class="card"><div class="sh"><span>Client Concentration Risk</span></div>';
+  const topClients = carrierList.slice(0,3);
+  const top3Reserves = topClients.reduce((s,[,d])=>s+d.reserve, 0);
+  const concentrationPct = totalReserves ? Math.round((top3Reserves/totalReserves)*100) : 0;
+  h += '<div style="text-align:center;padding:6px 0 14px;">';
+  h += '<div class="serif" style="font-size:32px;font-weight:700;color:'+(concentrationPct>60?'var(--red)':concentrationPct>40?'var(--gold)':'var(--green)')+';">'+concentrationPct+'%</div>';
+  h += '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:3px;">of Book in Top 3 Clients</div></div>';
+  topClients.forEach(([name,d]) => {
+    const pct = totalReserves ? Math.round((d.reserve/totalReserves)*100) : 0;
+    h += '<div style="display:flex;justify-content:space-between;font-size:11px;padding:5px 0;border-top:1px solid var(--surf2);"><span>'+esc(name)+'</span><span style="font-weight:700;">'+pct+'%</span></div>';
+  });
+  if (concentrationPct > 60) h += '<div style="font-size:9.5px;color:var(--red);margin-top:8px;">⚠ High dependency — losing any one of these would materially impact the book.</div>';
+  h += '</div>';
+
+  /* SLA / cycle time — measured against the company's own public
+     promise of 100-200 days, not a generic benchmark */
+  h += '<div class="card"><div class="sh"><span>Cycle Time vs. SLA Target</span></div>';
+  const closedCases = CASES.filter(c => c.status === 'Closed');
+  const avgCycle = closedCases.length ? Math.round(closedCases.reduce((s,c)=>s+daysOpen(c),0)/closedCases.length) : 0;
+  const withinTarget = closedCases.filter(c => daysOpen(c) <= 200).length;
+  const targetPct = closedCases.length ? Math.round((withinTarget/closedCases.length)*100) : 0;
+  h += '<div style="text-align:center;padding:6px 0 14px;">';
+  h += '<div class="serif" style="font-size:32px;font-weight:700;color:'+(avgCycle<=200&&avgCycle>0?'var(--green)':avgCycle>0?'var(--red)':'var(--dim)')+';">'+(avgCycle||'—')+'</div>';
+  h += '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:3px;">Avg. Days to Close</div></div>';
+  h += '<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:6px 0;border-top:1px solid var(--surf2);"><span style="color:var(--muted);">Target (public promise)</span><span style="font-weight:700;">100–200 days</span></div>';
+  h += '<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:6px 0;"><span style="color:var(--muted);">Closed Within Target</span><span style="font-weight:700;color:'+(targetPct>=70?'var(--green)':'var(--gold)')+';">'+targetPct+'%</span></div>';
+  h += '<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:6px 0;"><span style="color:var(--muted);">Closed Matters (n)</span><span style="font-weight:700;">'+closedCases.length+'</span></div>';
+  h += '</div>';
+
+  h += '</div>';
+
+  /* Book growth — is litigation inflow outpacing what's actually
+     getting resolved (a growing backlog) or shrinking */
+  h += '<div class="card"><div class="sh"><span>Book Growth — New Litigation vs. Resolved</span><span style="color:var(--dim);font-weight:500;">Last 12 months</span></div>';
+  const fd = CASES.map(c=>new Date(c.filed).getTime()).filter(t=>!isNaN(t));
+  if (fd.length) {
+    const ref = new Date(Math.max(...fd));
+    const months = []; for (let i=11;i>=0;i--){ const d=new Date(ref.getFullYear(),ref.getMonth()-i,1); months.push(d); }
+    const inflow = months.map(d => CASES.filter(c=>{ const f=new Date(c.filed); return !isNaN(f) && f.getFullYear()===d.getFullYear() && f.getMonth()===d.getMonth(); }).length);
+    const outflow = months.map(d => CASES.filter(c=>{ if (c.status!=='Closed') return false; const cd=new Date(c.deadline); return !isNaN(cd) && cd.getFullYear()===d.getFullYear() && cd.getMonth()===d.getMonth(); }).length);
+    const maxIO = Math.max(...inflow, ...outflow, 1);
+    h += '<svg viewBox="0 0 800 140" style="width:100%;height:150px;">';
+    const lineFrom = (arr,color,dash) => { let p=''; arr.forEach((v,i)=>{ const x=20+i*(760/11); const y=120-(v/maxIO)*100; p += (i===0?'M':'L')+x+' '+y; }); return '<path d="'+p+'" stroke="'+color+'" stroke-width="2.5" fill="none"'+(dash?' stroke-dasharray="5 3"':'')+'/>'; };
+    h += lineFrom(inflow,'var(--red)',false);
+    h += lineFrom(outflow,'var(--green)',true);
+    h += '</svg>';
+    h += '<div style="display:flex;gap:18px;justify-content:center;margin-top:4px;">';
+    h += '<div style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--muted);"><div style="width:14px;height:2.5px;background:var(--red);"></div>New Litigation Filed</div>';
+    h += '<div style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--muted);"><div style="width:14px;height:2px;background:var(--green);background-image:linear-gradient(to right,var(--green) 60%,transparent 60%);background-size:5px 2px;"></div>Resolved</div>';
+    h += '</div>';
+    const totalInflow = inflow.reduce((a,b)=>a+b,0), totalOutflow = outflow.reduce((a,b)=>a+b,0);
+    if (totalInflow > totalOutflow * 1.2) h += '<div style="font-size:10.5px;color:var(--gold);margin-top:8px;text-align:center;">Inflow is outpacing resolution — backlog is growing.</div>';
+  } else {
+    h += '<div style="padding:18px;color:var(--muted);font-size:12px;text-align:center;">Not enough filed-date data to chart this yet.</div>';
+  }
+  h += '</div>';
+
+  /* ── WHAT THEY CARE ABOUT ON CLAIMS & LITIGATION SPECIFICALLY ──
+     Different lens than the business KPIs above — this is "is our
+     claims-handling actually good" and "where's the real risk,"
+     drawn directly from features this product already tracks
+     (probability of loss, root cause, CCI, SOL) rather than generic
+     benchmarks. This is the part a TPA can point to and say "this
+     is why our platform earns its keep," not just report numbers. */
+  h += '<div class="section-band">⚖ Claims &amp; Litigation Risk — Portfolio-Wide</div>';
+  h += '<div class="grid-2">';
+
+  /* Exposure by probability of loss — the honest risk picture, not
+     just total dollars, across every client at once */
+  h += '<div class="card"><div class="sh"><span>Litigation Exposure by Probability of Loss</span><span style="color:var(--dim);font-weight:500;">All clients</span></div>';
+  const probBuckets = {Probable:0, 'Reasonably Possible':0, Remote:0};
+  open.forEach(c => { const p = c.probabilityOfLoss||'Reasonably Possible'; probBuckets[p] = (probBuckets[p]||0) + (c.exposure.likelyExposure||c.value||0); });
+  const probColors = {Probable:'var(--red)', 'Reasonably Possible':'var(--gold)', Remote:'var(--green)'};
+  const probTotal = Object.values(probBuckets).reduce((a,b)=>a+b,0) || 1;
+  Object.entries(probBuckets).forEach(([label,amt]) => {
+    const pct = Math.round(amt/probTotal*100);
+    h += '<div style="margin-bottom:9px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;"><span style="color:var(--muted);">'+label+'</span><span style="font-weight:700;color:'+probColors[label]+';">'+fV(amt)+'</span></div>';
+    h += '<div style="background:var(--surf3);height:7px;border-radius:3px;overflow:hidden;"><div style="width:'+pct+'%;height:100%;background:'+probColors[label]+';"></div></div></div>';
+  });
+  h += '<div style="font-size:9.5px;color:var(--dim);margin-top:4px;">This is the number a board or reinsurer actually wants — not raw exposure, but how much of it is likely to materialize.</div>';
+  h += '</div>';
+
+  /* Catastrophic / material matters across the WHOLE TPA book —
+     a huge single claim for even a small client is real risk to
+     the TPA's own relationship and reputation with that carrier */
+  h += '<div class="card"><div class="sh"><span>Catastrophic Claims Watchlist</span><span style="color:var(--dim);font-weight:500;">&gt;$5M, any client</span></div>';
+  const catThreshold = 5000000;
+  const catClaims = open.filter(c => (c.exposure.likelyExposure||c.value||0) > catThreshold).sort((a,b)=>(b.exposure.likelyExposure||b.value)-(a.exposure.likelyExposure||a.value));
+  if (catClaims.length === 0) {
+    h += '<div style="color:var(--green);font-size:12px;font-weight:600;padding:8px 0;">✓ No claims currently exceed $5M across any client.</div>';
+  } else {
+    catClaims.slice(0,6).forEach(c => {
+      h += '<div class="row-link" onclick="stCase(\''+c.id+'\')" style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--surf2);font-size:11.5px;">';
+      h += '<span>'+esc(c.insurance.carrier||'—')+' — '+esc(c.client)+'</span><span style="font-weight:700;color:var(--red);">'+fV(c.exposure.likelyExposure||c.value)+'</span></div>';
+    });
+  }
+  h += '</div>';
+  h += '</div>';
+
+  h += '<div class="grid-2">';
+
+  /* Are claims actually being handled well? The direct answer to
+     "why should a carrier keep paying us" */
+  h += '<div class="card"><div class="sh"><span>Litigation Outcomes Quality</span></div>';
+  const closedForOutcomes = CASES.filter(c => c.status === 'Closed');
+  const wins = closedForOutcomes.filter(c => (c.exposure.settlementAmount || 0) < (c.exposure.demandAmount || c.value));
+  const winRate = closedForOutcomes.length ? Math.round((wins.length/closedForOutcomes.length)*100) : 0;
+  const avgCCI = open.length ? Math.round(open.reduce((s,c)=>s+cci(c),0)/open.length) : 0;
+  h += '<div style="display:flex;gap:24px;flex-wrap:wrap;">';
+  h += '<div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px;">Win Rate</div><div class="serif" style="font-size:26px;font-weight:700;color:'+(winRate>=60?'var(--green)':'var(--gold)')+';">'+winRate+'%</div></div>';
+  h += '<div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px;">Portfolio CCI</div><div class="serif" style="font-size:26px;font-weight:700;color:'+cciColor(avgCCI)+';">'+avgCCI+'</div></div>';
+  h += '<div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px;">Closed Matters</div><div class="serif" style="font-size:26px;font-weight:700;">'+closedForOutcomes.length+'</div></div>';
+  h += '</div>';
+  h += '<div style="font-size:9.5px;color:var(--dim);margin-top:10px;">This is the evidence a renewal conversation runs on — outcomes, not just activity.</div>';
+  h += '</div>';
+
+  /* Root cause across every client — what a TPA can actually take
+     back to a carrier as a loss-prevention conversation, which is
+     real advisory value beyond just handling the claims */
+  h += '<div class="card"><div class="sh"><span>Why Clients Are Being Sued</span><span style="color:var(--dim);font-weight:500;">All clients, ranked</span></div>';
+  const byRootCause = {};
+  CASES.forEach(c => { const rc = c.rootCause || 'Other'; byRootCause[rc] = (byRootCause[rc]||0)+1; });
+  const rcEntries = Object.entries(byRootCause).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const maxRc = Math.max(...rcEntries.map(e=>e[1]), 1);
+  rcEntries.forEach(([rc,n]) => {
+    const pct = Math.round(n/maxRc*100);
+    h += '<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;"><span style="color:var(--muted);">'+esc(rc)+'</span><span style="font-weight:700;">'+n+'</span></div>';
+    h += '<div style="background:var(--surf3);height:6px;border-radius:3px;overflow:hidden;"><div style="width:'+pct+'%;height:100%;background:var(--purple, #6D28D9);"></div></div></div>';
+  });
+  h += '<div style="font-size:9.5px;color:var(--dim);margin-top:4px;">The top cause here is a real, specific talking point for the next client renewal or QBR — not a guess.</div>';
+  h += '</div>';
+  h += '</div>';
+
+  /* SOL/deadline risk — one of the product's signature features,
+     rolled up to a single skimmable line for an executive, not the
+     full case-by-case table the AE/claims-desk views already have */
+  const solDue = open.filter(c => c.keyDates.sol && new Date(c.keyDates.sol) < new Date(Date.now()+90*864e5));
+  const missingSol = open.filter(c => !c.keyDates.sol);
+  if (solDue.length > 0 || missingSol.length > 0) {
+    h += '<div class="card" style="border-left:3px solid var(--gold);">';
+    h += '<div class="sh"><span>⏱ Deadline Risk — Portfolio-Wide</span></div>';
+    h += '<div style="display:flex;gap:28px;flex-wrap:wrap;">';
+    h += '<div><div class="serif" style="font-size:24px;font-weight:700;color:'+(solDue.length?'var(--red)':'var(--green)')+';">'+solDue.length+'</div><div style="font-size:10px;color:var(--muted);">SOL inside 90 days, any client</div></div>';
+    h += '<div><div class="serif" style="font-size:24px;font-weight:700;color:'+(missingSol.length?'var(--gold)':'var(--green)')+';">'+missingSol.length+'</div><div style="font-size:10px;color:var(--muted);">Open matters missing an SOL date</div></div>';
+    h += '</div></div>';
+  }
+
+  /* Account Executive rollup — how each AE's book is performing */
   h += '<div class="card">';
-  h += '<div class="sh"><span>Attorney Performance</span></div>';
+  h += '<div class="sh"><span>Account Executive Performance</span></div>';
+  h += '<div style="overflow-x:auto;"><table>';
+  h += '<thead><tr><th>Account Executive</th><th>Clients</th><th>Matters</th><th>Reserves Managed</th><th>At-Risk Accounts</th></tr></thead><tbody>';
+  ACCOUNT_EXECS.forEach(ae => {
+    const aeCarriers = carrierList.filter(([name]) => aeForCarrier(name) === ae);
+    const aeMatters = aeCarriers.reduce((s,[,d])=>s+d.cases.length, 0);
+    const aeReserves = aeCarriers.reduce((s,[,d])=>s+d.reserve, 0);
+    const aeAtRisk = aeCarriers.filter(([,d]) => {
+      const burn = d.reserve ? (d.billed/d.reserve)*100 : 0;
+      const avgIdx = d.cases.length ? d.cases.reduce((s,c)=>s+cci(c),0)/d.cases.length : 50;
+      return burn > 70 || avgIdx < 50;
+    }).length;
+    h += '<tr class="row-link" onclick="st({role:\'tpa\',selectedAE:\''+ae+'\'})">';
+    h += '<td style="font-weight:700;">'+esc(ae)+'</td>';
+    h += '<td>'+aeCarriers.length+'</td>';
+    h += '<td>'+aeMatters+'</td>';
+    h += '<td>'+fV(aeReserves)+'</td>';
+    h += '<td style="color:'+(aeAtRisk?'var(--red)':'var(--green)')+';font-weight:700;">'+aeAtRisk+'</td>';
+    h += '</tr>';
+  });
+  h += '</tbody></table></div></div>';
+
+  /* Every customer, comprehensively — the full book, unfiltered */
+  h += '<div class="card">';
+  h += '<div class="sh"><span>All Customers — Portfolio-Wide</span><span style="color:var(--dim);font-weight:500;">'+carrierList.length+' total</span></div>';
+  h += '<div style="overflow-x:auto;"><table>';
+  h += '<thead><tr><th>Customer</th><th>Account Exec</th><th>Matters</th><th>Reserves</th><th>Billed</th><th>Burn %</th><th>Avg CCI</th><th>Health</th></tr></thead><tbody>';
+  carrierList.forEach(([name, data]) => {
+    const burn = data.reserve ? Math.round((data.billed/data.reserve)*100) : 0;
+    const avgIdx = Math.round(data.cases.reduce((s,c)=>s+cci(c),0)/data.cases.length);
+    const burnCol = burn > 70 ? 'var(--red)' : burn > 50 ? 'var(--gold)' : 'var(--green)';
+    const risk = burn > 70 || avgIdx < 50 ? '⚠ At Risk' : burn > 50 ? '◐ Monitor' : '✓ Healthy';
+    const riskCol = risk.includes('Risk') ? 'var(--red)' : risk.includes('Monitor') ? 'var(--gold)' : 'var(--green)';
+    h += '<tr>';
+    h += '<td style="font-weight:700;color:var(--gold);">'+esc(name)+'</td>';
+    h += '<td style="font-size:11px;color:var(--muted);">'+esc(aeForCarrier(name))+'</td>';
+    h += '<td style="font-weight:600;">'+data.cases.length+'</td>';
+    h += '<td>'+fV(data.reserve)+'</td>';
+    h += '<td>'+fV(data.billed)+'</td>';
+    h += '<td style="color:'+burnCol+';font-weight:700;">'+burn+'%</td>';
+    h += '<td><span class="cci-pill" style="background:'+cciColor(avgIdx)+'22;color:'+cciColor(avgIdx)+';">'+avgIdx+'</span></td>';
+    h += '<td style="color:'+riskCol+';font-weight:600;font-size:11px;">'+risk+'</td>';
+    h += '</tr>';
+  });
+  h += '</tbody></table></div></div>';
+
+  /* Firm-wide attorney performance — still relevant at the leadership level */
+  h += '<div class="card">';
+  h += '<div class="sh"><span>Attorney Performance — Firm-Wide</span></div>';
   h += '<div style="overflow-x:auto;"><table>';
   h += '<thead><tr><th>Attorney</th><th>Active</th><th>Closed</th><th>Win Rate</th><th>Billed</th><th>Avg CCI</th><th>Workload</th></tr></thead><tbody>';
   ATTY.forEach(a => {
@@ -4555,30 +4839,6 @@ function partV(){
     h += '</tr>';
   });
   h += '</tbody></table></div></div>';
-
-  /* Practice mix */
-  h += '<div class="grid-2">';
-  h += '<div class="card"><div class="sh"><span>Practice Area Mix</span></div>';
-  const practiceMix = {};
-  CASES.forEach(c => practiceMix[c.type] = (practiceMix[c.type]||0) + 1);
-  Object.entries(practiceMix).sort((a,b)=>b[1]-a[1]).slice(0,8).forEach(([t,n]) => {
-    h += '<div class="bar-row"><span style="font-size:11px;color:var(--ink);min-width:130px;font-weight:500;">'+esc(t)+'</span>';
-    h += '<div class="bar-bg"><div class="bar-fill" style="width:'+(n/CASES.length*100)+'%;background:linear-gradient(90deg,var(--pri),var(--pri2));"></div></div>';
-    h += '<span style="font-size:11px;color:var(--muted);font-weight:600;min-width:18px;text-align:right;">'+n+'</span></div>';
-  });
-  h += '</div>';
-
-  h += '<div class="card"><div class="sh"><span>Status Distribution</span></div>';
-  STATS.forEach(s => {
-    const n = CASES.filter(c => c.status === s).length;
-    if (n > 0) {
-      h += '<div class="bar-row"><span style="font-size:11px;color:var(--ink);min-width:90px;font-weight:500;">'+esc(s)+'</span>';
-      h += '<div class="bar-bg"><div class="bar-fill" style="width:'+(n/CASES.length*100)+'%;background:'+SM[s]+';"></div></div>';
-      h += '<span style="font-size:11px;color:var(--muted);font-weight:600;min-width:18px;text-align:right;">'+n+'</span></div>';
-    }
-  });
-  h += '</div>';
-  h += '</div>';
 
   h += '</div>';
   return h;
@@ -6252,6 +6512,40 @@ async function sendReportViaApi(){
 }
 
 /* ── ACTIVITY HUB ──────────────────────────────────────── */
+/* Schedule a task for any attorney on any matter, with a real due
+   date — used by Activity Hub's "+ Schedule Task" and by the
+   Claims Desk view below. Reuses the existing task/notification
+   system (createTask, attorneyTaskNotificationsV) rather than
+   building a second, parallel task model. */
+function scheduleTaskModalV(){
+  let h = '<div class="modal-bg" onclick="if(event.target===this)st({showScheduleTaskModal:false})">';
+  h += '<div class="modal" style="max-width:480px;">';
+  h += '<div class="modal-h"><div class="serif" style="font-size:18px;font-weight:700;">📅 Schedule Task</div>';
+  h += '<button class="x" onclick="st({showScheduleTaskModal:false})">×</button></div>';
+  h += '<div class="modal-b">';
+  h += sel('Matter', 'window._schedCaseId=this.value', CASES.map(c=>(c.matterNo||c.id)+' — '+c.client+'||'+c.id), '');
+  h += sel('Assign To', 'window._schedAttorney=this.value', ATTY, '');
+  h += sel('Task Type', 'window._schedType=this.value', ['Settlement Offer','Status Update','Costs Update','Discovery Response','Client Communication','Court Filing','Other'], '');
+  h += inp('Due Date', '', 'window._schedDue=this.value', 'date');
+  h += ta('Message / Instructions', '', 'window._schedMsg=this.value', 'What needs to happen and by when');
+  h += '<button class="btn btn-pri" style="width:100%;justify-content:center;margin-top:6px;" onclick="submitScheduleTask()">Schedule &amp; Notify</button>';
+  h += '</div></div></div>';
+  return h;
+}
+function submitScheduleTask(){
+  const rawCase = window._schedCaseId || '';
+  const caseId = rawCase.includes('||') ? rawCase.split('||')[1] : rawCase;
+  const attorney = window._schedAttorney || '';
+  const type = window._schedType || 'Other';
+  const due = window._schedDue || '';
+  const msg = window._schedMsg || '';
+  if (!caseId) { alert('Select a matter.'); return; }
+  if (!attorney) { alert('Select who to assign this to.'); return; }
+  createTask(caseId, attorney, type, msg, due);
+  window._schedCaseId=''; window._schedAttorney=''; window._schedType=''; window._schedDue=''; window._schedMsg='';
+  st({showScheduleTaskModal:false});
+}
+
 function activityHubV(){
   const allActivity = [];
   CASES.forEach(c => {
@@ -6274,7 +6568,8 @@ function activityHubV(){
   let h = '<div class="wrap">';
   h += '<div class="hero"><div class="hero-l"><div class="hero-eyebrow">Activity Hub</div>';
   h += '<h1 class="hero-title">Cross-Matter Activity Feed</h1>';
-  h += '<p class="hero-sub">'+filtered.length+' of '+allActivity.length+' activities · Real-time updates across all cases</p></div></div>';
+  h += '<p class="hero-sub">'+filtered.length+' of '+allActivity.length+' activities · Real-time updates across all cases</p></div>';
+  h += '<div class="hero-r"><button class="btn btn-pri" onclick="st({showScheduleTaskModal:true})">+ Schedule Task</button></div></div>';
 
   h += '<div style="display:grid;grid-template-columns:240px 1fr;gap:18px;">';
 
@@ -6288,8 +6583,21 @@ function activityHubV(){
   });
   h += '</div>';
 
-  h += '<div class="card" style="padding:14px;">';
-  h += '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1.3px;font-weight:700;margin-bottom:9px;">Activity Type</div>';
+  h += '<div class="card" style="padding:14px;margin-bottom:12px;">';
+  h += '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1.3px;font-weight:700;margin-bottom:9px;">Upcoming Scheduled Tasks</div>';
+  const upcoming = (S.tasks||[]).filter(t => t.status==='pending' && t.dueDate).sort((a,b)=>new Date(a.dueDate)-new Date(b.dueDate));
+  if (upcoming.length === 0) {
+    h += '<div style="font-size:11px;color:var(--dim);">Nothing scheduled.</div>';
+  } else {
+    upcoming.slice(0,6).forEach(t => {
+      const overdue = new Date(t.dueDate) < new Date();
+      h += '<div style="padding:7px 0;border-bottom:1px solid var(--surf2);font-size:11px;">';
+      h += '<div style="font-weight:600;color:var(--ink);">'+esc(t.type)+' — '+esc(t.attorney)+'</div>';
+      h += '<div style="color:'+(overdue?'var(--red)':'var(--dim)')+';font-size:10px;margin-top:2px;">'+(overdue?'Overdue: ':'Due ')+esc(t.dueDate)+' · '+esc(t.matter)+'</div>';
+      h += '</div>';
+    });
+  }
+  h += '</div>';
   const counts = {};
   allActivity.forEach(a => counts[a.type] = (counts[a.type]||0)+1);
   h += '<div onclick="st({actFilter:\'all\'})" style="padding:6px 9px;border-radius:5px;cursor:pointer;font-size:11px;display:flex;justify-content:space-between;'+(filt==='all'?'background:var(--pri2);color:#fff;font-weight:600;':'color:var(--ink);')+'"><span>All Types</span><span>'+allActivity.length+'</span></div>';
@@ -6533,6 +6841,94 @@ function invoiceHubV(){
    Submitted → Approved → Paid (or Rejected at any point before
    Paid). This is the org's own accounts-payable operation, kept
    fully separate from invoiceHubV()'s receivables view above. ── */
+/* ── CLAIMS DESK — the claims adjuster's own working view: every
+   open claim, what's been done, and three concrete actions from
+   right here: schedule a task, message the assigned attorney, and
+   jump straight to the Closing tab to actually move a file toward
+   done. Reuses the existing task/messaging system rather than
+   building a second one. ── */
+function claimsDeskV(){
+  const open = CASES.filter(c => c.status !== 'Closed');
+  const readyToClose = open.filter(c => { const r = closingReadiness(c); return r.label === 'Ready to Close'; });
+  const stale = open.filter(c => { const last = (c.updates||[]).slice(-1)[0]; return !last || (Date.now() - new Date(last.date)) > 14*864e5; });
+  const pendingAuth = open.flatMap(c => (c.authorityRequests||[]).filter(a=>a.status==='Pending').map(a=>({c,a})));
+
+  let h = '<div class="wrap">';
+  h += '<div class="hero"><div class="hero-l"><div class="hero-eyebrow">Claims Desk</div>';
+  h += '<h1 class="hero-title">My Open Claims</h1>';
+  h += '<p class="hero-sub">'+open.length+' open · '+readyToClose.length+' ready to close · '+stale.length+' with no activity in 14+ days</p></div>';
+  h += '<div class="hero-r"><button class="btn btn-pri" onclick="st({showScheduleTaskModal:true})">📅 Schedule Task</button></div></div>';
+
+  h += '<div class="kpi-grid">';
+  h += '<div class="kpi"><div class="kpi-l">Open Claims</div><div class="kpi-v">'+open.length+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Ready to Close</div><div class="kpi-v" style="color:var(--green);">'+readyToClose.length+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Needs Attention</div><div class="kpi-v" style="color:'+(stale.length?'var(--red)':'var(--green)')+';">'+stale.length+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Pending Authority</div><div class="kpi-v" style="color:'+(pendingAuth.length?'var(--gold)':'var(--green)')+';">'+pendingAuth.length+'</div></div>';
+  h += '</div>';
+
+  h += '<div class="card">';
+  h += '<div class="sh"><span>Open Claims — What\'s Been Done, What\'s Next</span></div>';
+  if (open.length === 0) {
+    h += '<div style="padding:30px;text-align:center;color:var(--muted);font-size:12.5px;">No open claims.</div>';
+  } else {
+    h += '<div style="overflow-x:auto;"><table><thead><tr><th>Matter</th><th>Client</th><th>Attorney</th><th>Status</th><th>Last Activity</th><th>Readiness</th><th></th></tr></thead><tbody>';
+    open.forEach(c => {
+      const last = (c.updates||[]).slice(-1)[0];
+      const readiness = closingReadiness(c);
+      const readyColor = readiness.label === 'Ready to Close' ? 'var(--green)' : readiness.blockers.length > 2 ? 'var(--red)' : 'var(--gold)';
+      const isStale = !last || (Date.now() - new Date(last.date)) > 14*864e5;
+      h += '<tr>';
+      h += '<td class="row-link" onclick="stCase(\''+c.id+'\')" style="font-weight:700;color:var(--pri2);">'+esc(c.matterNo||c.id)+'</td>';
+      h += '<td>'+esc(c.client)+'</td>';
+      h += '<td>'+esc(c.attorney||'—')+'</td>';
+      h += '<td><span class="tag">'+esc(c.status)+'</span></td>';
+      h += '<td style="font-size:11px;color:'+(isStale?'var(--red)':'var(--dim)')+';">'+(last?esc(last.date)+' — '+esc(last.type):'No activity logged')+'</td>';
+      h += '<td style="color:'+readyColor+';font-weight:700;font-size:11px;">'+esc(readiness.label)+'</td>';
+      h += '<td style="white-space:nowrap;">';
+      h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 7px;" onclick="window._schedCaseId=\''+c.matterNo+' — '+escAttr(c.client)+'||'+c.id+'\';window._schedAttorney=\''+escAttr(c.attorney||'')+'\';st({showScheduleTaskModal:true})">Schedule</button> ';
+      h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 7px;" onclick="window._msgCaseId=\''+c.id+'\';st({showMessageAttorneyModal:true})">Message</button> ';
+      h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 7px;color:var(--green);" onclick="stCase(\''+c.id+'\',\'closing\')">Close →</button>';
+      h += '</td></tr>';
+    });
+    h += '</tbody></table></div>';
+  }
+  h += '</div>';
+
+  if (pendingAuth.length > 0) {
+    h += '<div class="card"><div class="sh"><span>Pending Settlement Authority</span></div>';
+    pendingAuth.forEach(({c,a}) => {
+      h += '<div class="row-link" onclick="stCase(\''+c.id+'\',\'closing\')" style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--surf2);font-size:12px;">';
+      h += '<span>'+esc(c.matterNo||c.id)+' — '+esc(c.client)+'</span><span style="font-weight:700;color:var(--gold);">'+fV(a.amountRequested)+' requested '+esc(a.date)+'</span></div>';
+    });
+    h += '</div>';
+  }
+
+  if (S.showMessageAttorneyModal) h += messageAttorneyModalV();
+  h += '</div>';
+  return h;
+}
+
+function messageAttorneyModalV(){
+  const c = CASES.find(x => x.id === window._msgCaseId);
+  let h = '<div class="modal-bg" onclick="if(event.target===this)st({showMessageAttorneyModal:false})">';
+  h += '<div class="modal" style="max-width:460px;">';
+  h += '<div class="modal-h"><div class="serif" style="font-size:18px;font-weight:700;">💬 Message '+(c?esc(c.attorney):'Attorney')+'</div>';
+  h += '<button class="x" onclick="st({showMessageAttorneyModal:false})">×</button></div>';
+  h += '<div class="modal-b">';
+  if (c) h += '<div style="font-size:11.5px;color:var(--dim);margin-bottom:10px;">Re: '+esc(c.matterNo||c.id)+' — '+esc(c.client)+'</div>';
+  h += ta('Message', '', 'window._msgText=this.value', 'What do you need from them?');
+  h += '<button class="btn btn-pri" style="width:100%;justify-content:center;margin-top:6px;" onclick="sendMessageToAttorney()">Send</button>';
+  h += '</div></div></div>';
+  return h;
+}
+function sendMessageToAttorney(){
+  const c = CASES.find(x => x.id === window._msgCaseId);
+  if (!c) { st({showMessageAttorneyModal:false}); return; }
+  createTask(c.id, c.attorney, 'Client Communication', window._msgText || '', '');
+  window._msgText = '';
+  st({showMessageAttorneyModal:false});
+}
+
 function payablesHubV(){
   const outstanding = PAYABLES.filter(p => p.status !== 'Paid' && p.status !== 'Rejected');
   const totalOutstanding = outstanding.reduce((s,p) => s+p.amount, 0);
