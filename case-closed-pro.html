@@ -4618,6 +4618,37 @@ function partV(){
   h += '<h1 class="hero-title">Every Customer, One View</h1>';
   h += '<p class="hero-sub">'+carrierList.length+' customers · '+totalCases+' matters · '+fM(totalReserves)+' total reserves under management</p></div></div>';
 
+  /* ── THE WOW BANNER ──────────────────────────────────────────
+     Four numbers, big, first thing anyone sees. This is the
+     "sell the room in 5 seconds" moment — everything below is the
+     receipts. Reuses the same navy gradient as the public landing
+     hero so the product feels like one coherent brand, not a
+     bolted-together dashboard. */
+  const closedForOutcomes0 = CASES.filter(c => c.status === 'Closed');
+  const wins0 = closedForOutcomes0.filter(c => (c.exposure.settlementAmount || 0) < (c.exposure.demandAmount || c.value));
+  const winRate0 = closedForOutcomes0.length ? Math.round((wins0.length/closedForOutcomes0.length)*100) : 0;
+  const avgCycle0 = closedForOutcomes0.length ? Math.round(closedForOutcomes0.reduce((s,c)=>s+daysOpen(c),0)/closedForOutcomes0.length) : 0;
+  const cycleVsPromise = avgCycle0 && avgCycle0 < 300 ? Math.round((1 - avgCycle0/300)*100) : 0;
+  h += '<div style="background:linear-gradient(160deg,#001C41 0%,#012a5e 45%,#0056D2 130%);border-radius:18px;padding:38px 40px;margin-bottom:22px;color:#fff;position:relative;overflow:hidden;">';
+  h += '<div style="position:absolute;top:-100px;right:-100px;width:320px;height:320px;border-radius:50%;background:radial-gradient(circle,rgba(0,201,219,.16) 0%,transparent 70%);"></div>';
+  h += '<div style="font-size:10.5px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:#7FD4E8;margin-bottom:18px;position:relative;">The Book, At a Glance</div>';
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:28px;position:relative;">';
+  const wowStats = [
+    [fV(totalReserves), 'Under Active Management', null],
+    [winRate0+'%', 'Win Rate, Firm-Wide', winRate0>=60],
+    [(avgCycle0||'—')+(avgCycle0?' days':''), 'Avg. Time to Close', avgCycle0>0 && avgCycle0<=200],
+    [carrierList.length, 'Customers Served', null],
+  ];
+  wowStats.forEach(([val,label,good]) => {
+    h += '<div>';
+    h += '<div class="serif" style="font-size:40px;font-weight:700;letter-spacing:-1px;line-height:1;">'+val+(good===true?' <span style="font-size:16px;color:#6EE7B7;">▲</span>':good===false?' <span style="font-size:16px;color:#FCA5A5;">▼</span>':'')+'</div>';
+    h += '<div style="font-size:11.5px;color:#9FB6D9;margin-top:6px;">'+label+'</div>';
+    h += '</div>';
+  });
+  h += '</div>';
+  if (cycleVsPromise > 0) h += '<div style="margin-top:22px;padding-top:18px;border-top:1px solid rgba(255,255,255,.15);font-size:12.5px;color:#C3D4EE;position:relative;">Closing matters <strong style="color:#7FD4E8;">'+cycleVsPromise+'% faster</strong> than the 300-day industry baseline this platform was built to beat.</div>';
+  h += '</div>';
+
   h += '<div class="kpi-grid">';
   h += '<div class="kpi"><div class="kpi-l">Total Customers</div><div class="kpi-v">'+carrierList.length+'</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Total Reserves</div><div class="kpi-v" style="color:var(--gold);">'+fV(totalReserves)+'</div></div>';
@@ -4651,12 +4682,33 @@ function partV(){
   const topClients = carrierList.slice(0,3);
   const top3Reserves = topClients.reduce((s,[,d])=>s+d.reserve, 0);
   const concentrationPct = totalReserves ? Math.round((top3Reserves/totalReserves)*100) : 0;
-  h += '<div style="text-align:center;padding:6px 0 14px;">';
-  h += '<div class="serif" style="font-size:32px;font-weight:700;color:'+(concentrationPct>60?'var(--red)':concentrationPct>40?'var(--gold)':'var(--green)')+';">'+concentrationPct+'%</div>';
-  h += '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:3px;">of Book in Top 3 Clients</div></div>';
-  topClients.forEach(([name,d]) => {
+  const concColor = concentrationPct>60?'#DC2626':concentrationPct>40?'#B45309':'#059669';
+  // Real SVG donut, not just a number — segments for each of the
+  // top 3 clients plus "everyone else," so the shape of the risk is
+  // visible at a glance, not just a percentage to read.
+  const donutSegs = topClients.map(([name,d]) => ({name, pct: totalReserves ? (d.reserve/totalReserves)*100 : 0}));
+  const otherPct = Math.max(0, 100 - donutSegs.reduce((s,d)=>s+d.pct,0));
+  const donutColors = ['#0056D2','#00C9DB','#A16207','#94A3B8'];
+  let cumulative = 0;
+  const R = 15.9155; // circumference-normalized radius trick for stroke-dasharray percentages
+  h += '<div style="display:flex;align-items:center;gap:18px;padding:6px 0 12px;">';
+  h += '<svg viewBox="0 0 42 42" style="width:110px;height:110px;flex-shrink:0;transform:rotate(-90deg);">';
+  h += '<circle cx="21" cy="21" r="'+R+'" fill="transparent" stroke="var(--surf3)" stroke-width="6"></circle>';
+  [...donutSegs, {name:'Everyone Else', pct:otherPct}].forEach((seg,i) => {
+    if (seg.pct <= 0) return;
+    const dash = (seg.pct/100) * (2*Math.PI*R);
+    const gap = (2*Math.PI*R) - dash;
+    h += '<circle cx="21" cy="21" r="'+R+'" fill="transparent" stroke="'+donutColors[i]+'" stroke-width="6" stroke-dasharray="'+dash+' '+gap+'" stroke-dashoffset="'+(-cumulative)+'"></circle>';
+    cumulative += dash;
+  });
+  h += '</svg>';
+  h += '<div>';
+  h += '<div class="serif" style="font-size:32px;font-weight:700;color:'+concColor+';line-height:1;">'+concentrationPct+'%</div>';
+  h += '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:3px;">of Book in Top 3 Clients</div>';
+  h += '</div></div>';
+  topClients.forEach(([name,d],i) => {
     const pct = totalReserves ? Math.round((d.reserve/totalReserves)*100) : 0;
-    h += '<div style="display:flex;justify-content:space-between;font-size:11px;padding:5px 0;border-top:1px solid var(--surf2);"><span>'+esc(name)+'</span><span style="font-weight:700;">'+pct+'%</span></div>';
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:5px 0;border-top:1px solid var(--surf2);"><span style="display:flex;align-items:center;gap:7px;"><span style="width:8px;height:8px;border-radius:2px;background:'+donutColors[i]+';display:inline-block;"></span>'+esc(name)+'</span><span style="font-weight:700;">'+pct+'%</span></div>';
   });
   if (concentrationPct > 60) h += '<div style="font-size:9.5px;color:var(--red);margin-top:8px;">⚠ High dependency — losing any one of these would materially impact the book.</div>';
   h += '</div>';
@@ -4938,7 +4990,33 @@ function execTotalLitigationSummaryV(){
   const trialCount = CASES.filter(c => c.status !== 'Closed' && (c.status === 'Trial' || c.potentialTrialCandidate)).length;
   const missingSol = open.filter(c => !c.keyDates.sol).length;
 
-  let h = '<div class="card" style="margin-bottom:18px;background:linear-gradient(135deg,var(--surf) 0%,var(--surf2) 100%);border:1px solid var(--line);">';
+  let h = '';
+
+  /* ── THE WOW BANNER — same treatment as TPA Leadership, so the
+     product feels like one coherent brand across both dashboards
+     leadership will actually be shown in a sales conversation. ── */
+  const cciTrend = avgIdx >= 60;
+  h += '<div style="background:linear-gradient(160deg,#001C41 0%,#012a5e 45%,#0056D2 130%);border-radius:18px;padding:38px 40px;margin-bottom:18px;color:#fff;position:relative;overflow:hidden;">';
+  h += '<div style="position:absolute;top:-100px;right:-100px;width:320px;height:320px;border-radius:50%;background:radial-gradient(circle,rgba(0,201,219,.16) 0%,transparent 70%);"></div>';
+  h += '<div style="font-size:10.5px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:#7FD4E8;margin-bottom:18px;position:relative;">Company-Wide Litigation, In One Glance</div>';
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:28px;position:relative;">';
+  const execWowStats = [
+    [fV(totExposure), 'Total Exposure', null],
+    [fV(totReserves), 'Total Reserves Held', null],
+    [winRate+'%', 'Firm-Wide Win Rate', winRate>=60],
+    [avgIdx, 'Portfolio Favorability (CCI)', cciTrend],
+  ];
+  execWowStats.forEach(([val,label,good]) => {
+    h += '<div>';
+    h += '<div class="serif" style="font-size:40px;font-weight:700;letter-spacing:-1px;line-height:1;">'+val+(good===true?' <span style="font-size:16px;color:#6EE7B7;">▲</span>':good===false?' <span style="font-size:16px;color:#FCA5A5;">▼</span>':'')+'</div>';
+    h += '<div style="font-size:11.5px;color:#9FB6D9;margin-top:6px;">'+label+'</div>';
+    h += '</div>';
+  });
+  h += '</div>';
+  h += '<div style="margin-top:22px;padding-top:18px;border-top:1px solid rgba(255,255,255,.15);font-size:12.5px;color:#C3D4EE;position:relative;">'+CASES.length+' total matters · '+open.length+' open · '+closed.length+' closed — every number below updates live as the portfolio changes.</div>';
+  h += '</div>';
+
+  h += '<div class="card" style="margin-bottom:18px;background:linear-gradient(135deg,var(--surf) 0%,var(--surf2) 100%);border:1px solid var(--line);">';
   h += '<div class="sh"><span>📊 Total Litigation Summary — Company-Wide</span><span style="color:var(--dim);font-weight:500;">Live snapshot · updates automatically</span></div>';
   h += '<div class="kpi-grid" style="margin-bottom:0;">';
   const kpis = [
