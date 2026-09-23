@@ -2362,6 +2362,29 @@ function verifyPremiumPassword() {
   }
 }
 
+/* Calls the real Sentinel AI endpoints on server.js. Each one is a
+   genuine Claude API call, server-side — this just triggers it and
+   displays whatever comes back. Requires window.CCP_API_BASE to be
+   set and ANTHROPIC_API_KEY configured on the backend; if either is
+   missing, the error message from the server explains which. */
+async function runSentinel(key, needsCaseStr){
+  const needsCase = needsCaseStr === 'true';
+  if (needsCase && !S.sentinelSelectedCaseId) { alert('Select a matter first.'); return; }
+  if (!API_BASE) { alert('This demo isn\'t connected to a real backend, so there\'s no AI to call. Connect window.CCP_API_BASE to a deployed server.js with ANTHROPIC_API_KEY set.'); return; }
+
+  S.sentinelLoading = { ...(S.sentinelLoading||{}), [key]: true };
+  render();
+  try {
+    const endpoint = needsCase ? '/api/ai/sentinel-' + key + '/' + S.sentinelSelectedCaseId : '/api/ai/sentinel-' + key;
+    const data = await apiFetch(endpoint, { method: 'POST' });
+    S.sentinelResults = { ...(S.sentinelResults||{}), [key]: data.analysis };
+  } catch (e) {
+    S.sentinelResults = { ...(S.sentinelResults||{}), [key]: 'Error: ' + e.message };
+  }
+  S.sentinelLoading = { ...(S.sentinelLoading||{}), [key]: false };
+  render();
+}
+
 function settlementIntelligenceV() {
   let h = '<div style="padding:20px;max-width:1400px;margin:0 auto;">';
   h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:30px;border-bottom:1px solid var(--line);padding-bottom:20px;">';
@@ -2386,20 +2409,36 @@ function settlementIntelligenceV() {
   h += '<span style="font-size:20px;">🛡️</span><span style="font-weight:700;font-size:16px;letter-spacing:-.2px;">Sentinel AI Suite</span>';
   h += '<span style="font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,.12);padding:3px 9px;border-radius:20px;margin-left:4px;">Proprietary</span>';
   h += '</div>';
-  h += '<div style="font-size:12px;color:#94A3B8;margin-bottom:20px;">Five AI models, one system, watching every matter in your portfolio.</div>';
-  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;">';
+  h += '<div style="font-size:12px;color:#94A3B8;margin-bottom:16px;">Five AI models, one system, watching every matter in your portfolio.</div>';
+
+  // Shared case selector — the 4 per-matter Sentinels all run
+  // against whichever case is picked here. Sentinel Watch is
+  // portfolio-wide and doesn't need one.
+  h += '<div style="margin-bottom:18px;">';
+  h += '<select onchange="st({sentinelSelectedCaseId:this.value})" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#fff;font-size:12.5px;">';
+  h += '<option value="" style="color:#000;">Select a matter to analyze…</option>';
+  CASES.forEach(c => { h += '<option value="'+c.id+'" style="color:#000;" '+(S.sentinelSelectedCaseId===c.id?'selected':'')+'>'+esc((c.matterNo||c.id)+' — '+c.client)+'</option>'; });
+  h += '</select></div>';
+
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;">';
   const sentinelFeatures = [
-    ['🎯','Sentinel Match','Assigns every new matter to your best-fit attorney — specialization, track record, and workload, weighed automatically.'],
-    ['💰','Sentinel Settle','Recommends the settlement number the data actually supports, not a gut-feel figure.'],
-    ['🚩','Sentinel Watch','Flags a problem matter before it becomes an expensive one — reserve gaps, stalled cases, missed deadlines.'],
-    ['🧭','Sentinel Strategy','Reads opposing counsel\'s pattern and models their likely next move before they make it.'],
-    ['⏱️','Sentinel Horizon','Forecasts when a matter actually closes and what it costs to get there — not a guess, a model.'],
+    ['🎯','Sentinel Match','Assigns every new matter to your best-fit attorney — specialization, track record, and workload, weighed automatically.', 'match', true],
+    ['💰','Sentinel Settle','Recommends the settlement number the data actually supports, not a gut-feel figure.', 'settle', true],
+    ['🚩','Sentinel Watch','Flags a problem matter before it becomes an expensive one — reserve gaps, stalled cases, missed deadlines.', 'watch', false],
+    ['🧭','Sentinel Strategy','Reads opposing counsel\'s pattern and models their likely next move before they make it.', 'strategy', true],
+    ['⏱️','Sentinel Horizon','Forecasts when a matter actually closes and what it costs to get there — not a guess, a model.', 'horizon', true],
   ];
-  sentinelFeatures.forEach(([icon,name,desc]) => {
-    h += '<div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:16px;">';
+  sentinelFeatures.forEach(([icon,name,desc,key,needsCase]) => {
+    const loading = S.sentinelLoading && S.sentinelLoading[key];
+    const result = S.sentinelResults && S.sentinelResults[key];
+    h += '<div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:16px;display:flex;flex-direction:column;">';
     h += '<div style="font-size:22px;margin-bottom:8px;">'+icon+'</div>';
     h += '<div style="font-weight:700;font-size:13.5px;margin-bottom:6px;">'+name+'</div>';
-    h += '<div style="font-size:11.5px;color:#CBD5E1;line-height:1.5;">'+desc+'</div>';
+    h += '<div style="font-size:11.5px;color:#CBD5E1;line-height:1.5;margin-bottom:12px;flex-grow:1;">'+desc+'</div>';
+    h += '<button onclick="runSentinel(\''+key+'\',\''+needsCase+'\')" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;padding:8px 14px;border-radius:7px;font-weight:700;font-size:11.5px;cursor:pointer;" '+(loading?'disabled':'')+'>'+(loading?'Analyzing…':'▶ Run '+name)+'</button>';
+    if (result) {
+      h += '<div style="margin-top:12px;padding:11px;background:rgba(0,0,0,.25);border-radius:7px;font-size:11.5px;line-height:1.6;color:#E2E8F0;white-space:pre-wrap;">'+esc(result)+'</div>';
+    }
     h += '</div>';
   });
   h += '</div></div>';
