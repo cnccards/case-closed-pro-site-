@@ -3401,7 +3401,7 @@ function hdr(){
   if (S.currentUser?.platformAdmin) groups[groups.length-1].items.push(['admin','⚙ Admin']);
 
   const btn = ([r, l]) =>
-    '<button onclick="'+(r==='admin' ? 'goToAdmin()' : r==='scorecard' ? "st({role:'scorecard',caseId:null,scorecardDetail:null})" : "st({role:'"+r+"',caseId:null})")+'" class="role-tab'+(S.role===r?' on':'')+(r==='admin'?' admin-tab':'')+'">'+l+'</button>';
+    '<button onclick="'+(r==='admin' ? 'goToAdmin()' : r==='scorecard' ? "st({role:'scorecard',caseId:null,scorecardDetail:null,showWelcome:false})" : "st({role:'"+r+"',caseId:null,showWelcome:false})")+'" class="role-tab'+(S.role===r?' on':'')+(r==='admin'?' admin-tab':'')+'">'+l+'</button>';
 
   const roleBtns = groups.map((g,gi) =>
     (gi>0 ? '<div class="nav-divider"></div>' : '') +
@@ -7466,7 +7466,7 @@ function apiHubV(){
    what the UI shows, so hiding the tab is a convenience, not the
    actual security boundary. */
 function goToAdmin(){
-  st({role:'admin', caseId:null, showUserMenu:false});
+  st({role:'admin', caseId:null, showUserMenu:false, showWelcome:false});
   if (API_BASE && authToken) fetchAdminOrgs();
 }
 async function fetchAdminOrgs(){
