@@ -3619,12 +3619,31 @@ async function attemptLogin(){
   st({loginError:'', loginLoading:true});
 
   if (supabaseClient) {
-    // Real auth path — Supabase Auth verifies the password directly;
-    // no custom backend endpoint needed for this part at all.
+    // Supabase Auth path — only used if window.CCP_SUPABASE_URL is
+    // set. Not the current backend (server.js/Neon), kept only in
+    // case that direction is revisited later.
     const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
     if (error) { st({loginError: error.message, loginLoading:false}); return; }
     await loadUserContextAfterAuth(data.session);
     window._loginEmail = ''; window._loginPassword = '';
+    return;
+  }
+
+  if (API_BASE) {
+    // Real backend path — server.js, actual credential verification.
+    try {
+      const data = await apiFetch('/api/auth/login', { method:'POST', body: JSON.stringify({ email, password }) });
+      if (data.twoFactorRequired) {
+        // Password was correct, but the account has 2FA on — one more step.
+        st({loginLoading:false, show2FAPrompt:true, _pending2FAToken:data.pendingToken, loginError:''});
+        return;
+      }
+      completeLoginSession(data);
+      await loadCasesFromApi();
+      render();
+    } catch (e) {
+      st({loginError: e.message, loginLoading:false});
+    }
     return;
   }
 
@@ -3730,13 +3749,25 @@ function forgotPasswordScreenV(){
 async function submitForgotPassword(){
   const email = (window._forgotEmail || '').trim();
   if (!email || !email.includes('@')) { st({loginError:'Enter a valid email address.'}); return; }
-  if (!supabaseClient) return; // nothing to call in demo mode — message already shown above
   st({loginLoading:true, forgotStatus:''});
-  await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + window.location.pathname });
-  // Same "don't confirm or deny an account exists" framing regardless
-  // of whether the email actually matched an account — Supabase's
-  // own API already behaves this way; this message just matches it.
-  st({loginLoading:false, forgotStatus:'If an account exists for that email, a reset link has been sent.'});
+
+  if (supabaseClient) {
+    await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + window.location.pathname });
+    st({loginLoading:false, forgotStatus:'If an account exists for that email, a reset link has been sent.'});
+    return;
+  }
+  if (API_BASE) {
+    try {
+      const data = await apiFetch('/api/auth/forgot-password', { method:'POST', body: JSON.stringify({ email }) });
+      st({loginLoading:false, forgotStatus: data.message || 'If an account exists for that email, a reset link has been sent.'});
+    } catch (e) {
+      // Still show the generic message rather than a raw error — matches
+      // the backend's own "don't confirm or deny an account exists" behavior.
+      st({loginLoading:false, forgotStatus:'If an account exists for that email, a reset link has been sent.'});
+    }
+    return;
+  }
+  st({loginLoading:false}); // nothing to call in demo mode — message already shown above
 }
 
 function resetPasswordScreenV(){
@@ -3759,16 +3790,29 @@ function resetPasswordScreenV(){
 async function submitResetPassword(){
   const newPassword = window._newPassword || '';
   if (!newPassword || newPassword.length < 8) { st({resetStatus:'Password must be at least 8 characters.', resetSuccess:false}); return; }
-  if (!supabaseClient) { st({resetStatus:'This demo isn\'t connected to a real backend, so there\'s no account to reset.', resetSuccess:false}); return; }
   st({loginLoading:true});
-  const { data, error } = await supabaseClient.auth.updateUser({ password: newPassword });
-  if (error) { st({loginLoading:false, resetStatus: error.message, resetSuccess:false}); return; }
-  S._forcePasswordSetup = false;
-  S.resetStatus = 'Password set — signing you in…';
-  S.resetSuccess = true;
-  render();
-  const { data: sessionData } = await supabaseClient.auth.getSession();
-  if (sessionData?.session) await loadUserContextAfterAuth(sessionData.session);
+
+  if (supabaseClient) {
+    const { error } = await supabaseClient.auth.updateUser({ password: newPassword });
+    if (error) { st({loginLoading:false, resetStatus: error.message, resetSuccess:false}); return; }
+    S._forcePasswordSetup = false;
+    S.resetStatus = 'Password set — signing you in…';
+    S.resetSuccess = true;
+    render();
+    const { data: sessionData } = await supabaseClient.auth.getSession();
+    if (sessionData?.session) await loadUserContextAfterAuth(sessionData.session);
+    return;
+  }
+  if (API_BASE) {
+    try {
+      const data = await apiFetch('/api/auth/reset-password', { method:'POST', body: JSON.stringify({ token: S._resetTokenFromUrl, newPassword }) });
+      st({loginLoading:false, resetStatus: data.message || 'Password updated.', resetSuccess:true});
+    } catch (e) {
+      st({loginLoading:false, resetStatus: e.message, resetSuccess:false});
+    }
+    return;
+  }
+  st({loginLoading:false, resetStatus:'This demo isn\'t connected to a real backend, so there\'s no account to reset.', resetSuccess:false});
 }
 
 /* ── WELCOME / ONBOARDING ──────────────────────────────────
@@ -6393,17 +6437,15 @@ function securityModalV(){
   h += '<button class="x" onclick="st({showSecurityModal:false,security2FASetup:null,security2FABackupCodes:null})">×</button></div>';
   h += '<div class="modal-b">';
 
-  if (!supabaseClient) {
-    h += '<div class="alert-warn">This demo isn\'t connected to a real backend, so there\'s no real account to secure. Connect <code>window.CCP_SUPABASE_URL</code> / <code>window.CCP_SUPABASE_ANON_KEY</code> to enable a real account.</div>';
-  } else if (true) {
-    // Two-factor auth is intentionally not wired up yet — this UI was
-    // built for a custom backend's own 2FA flow (pendingToken, backup
-    // codes stored in a custom table). Supabase has real MFA support,
-    // but its API shape (factor enrollment, challenge/verify) is
-    // different enough that it needs its own implementation rather
-    // than reusing this screen as-is. Flagged honestly instead of
-    // silently calling an endpoint that doesn't exist.
-    h += '<div class="alert-info">Two-factor authentication isn\'t connected yet. Your account is still protected by your password via Supabase Auth. Ask your developer to wire up Supabase\'s MFA API to enable this screen.</div>';
+  if (!API_BASE && !supabaseClient) {
+    h += '<div class="alert-warn">This demo isn\'t connected to a real backend, so there\'s no real account to secure. Connect <code>window.CCP_API_BASE</code> to enable real 2FA.</div>';
+  } else if (supabaseClient) {
+    // Two-factor auth isn't wired up for the Supabase path — its real
+    // MFA API (factor enrollment, challenge/verify) has a different
+    // shape than this screen, which matches server.js's TOTP flow
+    // instead. Flagged honestly rather than silently calling an
+    // endpoint that doesn't exist for this path.
+    h += '<div class="alert-info">Two-factor authentication isn\'t connected for Supabase yet. Your account is still protected by your password. Ask your developer to wire up Supabase\'s MFA API to enable this screen on that path.</div>';
   } else if (S.security2FABackupCodes) {
     // Just enabled — one-time display of backup codes.
     h += '<div class="alert-good" style="margin-bottom:14px;">Two-factor authentication is now on.</div>';
@@ -6625,20 +6667,38 @@ async function submitAcceptInvite(){
   const password = window._acceptPassword || '';
   if (!name) { st({acceptInviteStatus:'Enter your name.', acceptInviteSuccess:false}); return; }
   if (!password || password.length < 8) { st({acceptInviteStatus:'Password must be at least 8 characters.', acceptInviteSuccess:false}); return; }
-  if (!supabaseClient) { st({acceptInviteStatus:'This demo isn\'t connected to a real backend, so there\'s no invite to accept.', acceptInviteSuccess:false}); return; }
   st({loginLoading:true});
-  try {
-    // /team/accept-invite creates the account but doesn't log in by
-    // itself — it has no session to hand back (it runs before one
-    // exists). Sign in immediately after with the same credentials.
-    const acceptData = await apiFetch('/team/accept-invite', { method:'POST', body: JSON.stringify({ token:S._inviteTokenFromUrl, name, password }) });
-    const { data, error } = await supabaseClient.auth.signInWithPassword({ email: acceptData.email, password });
-    if (error) throw error;
-    S._inviteTokenFromUrl = '';
-    await loadUserContextAfterAuth(data.session);
-  } catch (e) {
-    st({loginLoading:false, acceptInviteStatus:e.message, acceptInviteSuccess:false});
+
+  if (supabaseClient) {
+    try {
+      // /team/accept-invite creates the account but doesn't log in by
+      // itself — it has no session to hand back (it runs before one
+      // exists). Sign in immediately after with the same credentials.
+      const acceptData = await apiFetch('/team/accept-invite', { method:'POST', body: JSON.stringify({ token:S._inviteTokenFromUrl, name, password }) });
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email: acceptData.email, password });
+      if (error) throw error;
+      S._inviteTokenFromUrl = '';
+      await loadUserContextAfterAuth(data.session);
+    } catch (e) {
+      st({loginLoading:false, acceptInviteStatus:e.message, acceptInviteSuccess:false});
+    }
+    return;
   }
+  if (API_BASE) {
+    try {
+      // server.js's /api/team/accept-invite returns a full session
+      // directly ({token, user}) — no separate sign-in step needed.
+      const data = await apiFetch('/api/team/accept-invite', { method:'POST', body: JSON.stringify({ token:S._inviteTokenFromUrl, name, password }) });
+      S._inviteTokenFromUrl = '';
+      completeLoginSession(data);
+      await loadCasesFromApi();
+      render();
+    } catch (e) {
+      st({loginLoading:false, acceptInviteStatus:e.message, acceptInviteSuccess:false});
+    }
+    return;
+  }
+  st({loginLoading:false, acceptInviteStatus:'This demo isn\'t connected to a real backend, so there\'s no invite to accept.', acceptInviteSuccess:false});
 }
 
 function sendReportMailto(){
