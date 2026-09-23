@@ -21,6 +21,11 @@
 </script>
 <script src="https://browser.sentry-cdn.com/latest/bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+  // Points the app at the real backend on Render — this is what
+  // switches everything from demo mode to real logins, real data.
+  window.CCP_API_BASE = 'https://case-closed-pro-site.onrender.com';
+</script>
 <style>
 :root{
   --ink:#0F172A;--ink2:#1E293B;--muted:#5B6B85;--dim:#8B96AB;--line:#E1E7EF;--line2:#C9D2E0;
