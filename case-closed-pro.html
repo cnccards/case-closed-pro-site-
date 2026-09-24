@@ -2478,7 +2478,7 @@ function settlementIntelligenceV() {
   CASES.forEach(c => { h += '<option value="'+c.id+'" style="color:#000;" '+(S.sentinelSelectedCaseId===c.id?'selected':'')+'>'+esc((c.matterNo||c.id)+' — '+c.client)+'</option>'; });
   h += '</select></div>';
 
-  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;">';
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;align-items:start;">';
   const sentinelFeatures = [
     ['🎯','Sentinel Match','Assigns every new matter to your best-fit attorney — specialization, track record, and workload, weighed automatically.', 'match', true],
     ['💰','Sentinel Settle','Recommends the settlement number the data actually supports, not a gut-feel figure.', 'settle', true],
