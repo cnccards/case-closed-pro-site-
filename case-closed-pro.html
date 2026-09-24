@@ -1461,7 +1461,7 @@ window.addEventListener('unhandledrejection', (e) => {
    rather than leaving the user with a blank app. */
 async function loadCasesFromApi() {
   try {
-    const { cases } = await apiFetch('/cases');
+    const { cases } = await apiFetch('/api/cases');
     if (Array.isArray(cases) && cases.length >= 0) {
       CASES.length = 0;
       cases.forEach(c => CASES.push(c));
@@ -1481,7 +1481,7 @@ function syncCaseToApi(c) {
   if (!API_BASE || !authToken) return;
   const { id, matterNo, client, type, status, litigationStage, attorney, value, ...rest } = c;
   const { insurance, ...data } = rest;
-  apiFetch('/cases/' + id, {
+  apiFetch('/api/cases/' + id, {
     method: 'PATCH',
     body: JSON.stringify({
       matterNo, client, type, status, litigationStage, attorney, value,
@@ -3307,7 +3307,10 @@ function render(){
   let html = '';
   if (S.verifyEmailResult) html += verifyResultBannerV();
   if (S.isDemoMode) html += demoModeBannerV();
-  else if (API_BASE && S.currentUser && S.currentUser.emailVerified === false) html += unverifiedEmailBannerV();
+  // Email verification isn't implemented in the current backend
+  // (server.js has no verification column or endpoint) — the banner
+  // that used to show here is removed rather than left showing a
+  // "please verify" message that can never be satisfied.
   if (S.role !== 'attorney') html += hdr();
   else html += '<div style="padding:15px;text-align:right;"><button onclick="st({isAuthenticated:false, attorneyId:null, attorneyName:null})" class="btn btn-out">Sign Out</button></div>';
   html += '<div id="ct">';
@@ -7472,7 +7475,7 @@ function goToAdmin(){
 async function fetchAdminOrgs(){
   st({adminLoading:true, adminError:''});
   try {
-    const data = await apiFetch('/organizations');
+    const data = await apiFetch('/api/admin/organizations');
     st({adminOrgs:data.organizations, adminLoading:false});
   } catch (e) {
     st({adminError:e.message, adminLoading:false});
@@ -7552,7 +7555,7 @@ function adminPanelV(){
 async function suspendOrg(id, name){
   if (!confirm('Suspend access for "'+name+'"? Every user at this organization will be locked out immediately until you reactivate it.')) return;
   try {
-    await apiFetch('/organizations/'+id+'/suspend', { method:'POST' });
+    await apiFetch('/api/admin/organizations/'+id+'/suspend', { method:'POST' });
     await fetchAdminOrgs();
   } catch (e) {
     alert('Could not suspend: ' + e.message);
@@ -7572,7 +7575,7 @@ async function activateOrg(id, name){
       const ownerName = prompt('Owner name (optional):') || '';
       body = { ownerEmail, ownerName };
     }
-    const result = await apiFetch('/organizations/'+id+'/activate', { method:'POST', body: JSON.stringify(body) });
+    const result = await apiFetch('/api/admin/organizations/'+id+'/activate', { method:'POST', body: JSON.stringify(body) });
     if (result.apiKey) {
       st({activateOrgResult: result});
     }
@@ -7598,12 +7601,13 @@ function createOrgModalV(){
 
   if (S.createOrgResult) {
     const r = S.createOrgResult;
-    h += '<div class="alert-warn" style="margin-bottom:16px;">Organization created as <strong>Pending Activation</strong>. Nothing is usable yet — no login exists, no API key exists. Have your accounting team invoice and collect the implementation fee through your usual process. Once payment is confirmed, come back to this table and click <strong>Activate</strong> — that\'s the step that actually creates their login.</div>';
+    h += '<div class="alert-good" style="margin-bottom:16px;">Organization created and active immediately — send these credentials to the customer through your usual channel. This password is only ever shown once.</div>';
     h += '<div style="background:var(--surf2);border:1px solid var(--line);border-radius:8px;padding:16px;font-size:12.5px;line-height:2;">';
     h += '<div><strong>Organization:</strong> '+esc(r.organization.name)+'</div>';
-    h += '<div><strong>Status:</strong> Pending Activation</div>';
-    h += '<div><strong>Intended owner:</strong> '+esc(r.ownerEmailForActivation||'—')+'</div>';
+    h += '<div><strong>Owner login:</strong> '+esc(r.owner.email)+'</div>';
+    h += '<div><strong>Temporary password:</strong> <span style="font-family:monospace;background:#fff;padding:2px 8px;border-radius:5px;border:1px solid var(--line);">'+esc(r.temporaryPassword)+'</span></div>';
     h += '</div>';
+    h += '<div style="font-size:10.5px;color:var(--dim);margin-top:10px;">Billed by your accounting team through your usual process — nothing here charges them anything.</div>';
     h += '<button class="btn btn-pri" style="width:100%;justify-content:center;margin-top:16px;" onclick="closeCreateOrgModal()">Done</button>';
   } else {
     h += '<div class="grid-2">';
@@ -7613,7 +7617,6 @@ function createOrgModalV(){
     h += inp('Organization Name', '', 'window._coOrgName=this.value', 'text', 'placeholder="Acme Insurance Co"');
     h += inp('Owner Name', '', 'window._coOwnerName=this.value', 'text', 'placeholder="Jane Doe"');
     h += inp('Owner Email', '', 'window._coOwnerEmail=this.value', 'email', 'placeholder="jane@acmeinsurance.com"');
-    h += inp('Implementation Fee (reference only — billed by accounting, not this app)', '', 'window._coFee=this.value', 'number', 'placeholder="2500.00"');
     if (S.createOrgError) h += '<div class="alert-bad" style="margin-top:10px;">'+esc(S.createOrgError)+'</div>';
     h += '<button class="btn btn-pri" style="width:100%;justify-content:center;margin-top:14px;" onclick="submitCreateOrg()" '+(S.createOrgLoading?'disabled':'')+'>'+(S.createOrgLoading?'Creating…':'Create Organization')+'</button>';
   }
@@ -7626,14 +7629,13 @@ async function submitCreateOrg(){
   const ownerEmail = (window._coOwnerEmail||'').trim();
   const persona = window._coPersona || 'carrier';
   const planTier = window._coTier || 'starter';
-  const feeAmount = parseFloat(window._coFee || '0') || 0;
   if (!orgName) { st({createOrgError:'Enter an organization name.'}); return; }
   if (!ownerEmail || !ownerEmail.includes('@')) { st({createOrgError:'Enter a valid owner email.'}); return; }
   st({createOrgLoading:true, createOrgError:''});
   try {
-    const data = await apiFetch('/organizations', {
+    const data = await apiFetch('/api/admin/organizations', {
       method:'POST',
-      body: JSON.stringify({ orgName, ownerName, ownerEmail, persona, planTier, implementationFeeAmountCents: Math.round(feeAmount*100) })
+      body: JSON.stringify({ orgName, ownerName, ownerEmail, persona, planTier })
     });
     st({createOrgLoading:false, createOrgResult:data});
   } catch (e) {
