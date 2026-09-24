@@ -7468,6 +7468,16 @@ function apiHubV(){
    this makes is independently re-checked server-side regardless of
    what the UI shows, so hiding the tab is a convenience, not the
    actual security boundary. */
+async function runIsolationTest(){
+  st({isolationTestRunning:true, isolationTestResult:null});
+  try {
+    const result = await apiFetch('/api/admin/self-test-isolation', { method:'POST' });
+    st({isolationTestRunning:false, isolationTestResult:result});
+  } catch (e) {
+    st({isolationTestRunning:false, isolationTestResult:{allPassed:false, results:[{label:'Test could not run', passed:false, detail:e.message}]}});
+  }
+}
+
 function goToAdmin(){
   st({role:'admin', caseId:null, showUserMenu:false, showWelcome:false});
   if (API_BASE && authToken) fetchAdminOrgs();
@@ -7487,7 +7497,21 @@ function adminPanelV(){
   h += '<div class="hero"><div class="hero-l"><div class="hero-eyebrow" style="color:#B45309;">⚙ Platform Admin</div>';
   h += '<h1 class="hero-title">Customer Organizations</h1>';
   h += '<p class="hero-sub">Every customer\'s cabinet, in one place — provision new ones, or turn access on and off for existing ones.</p></div>';
-  h += '<div class="hero-r"><button class="btn btn-pri" style="background:#B45309;" onclick="openCreateOrgModal()">+ Create New Customer</button></div></div>';
+  h += '<div class="hero-r"><button class="btn btn-out" onclick="runIsolationTest()" '+(S.isolationTestRunning?'disabled':'')+'>'+(S.isolationTestRunning?'Running…':'🔒 Run Isolation Test')+'</button> <button class="btn btn-pri" style="background:#B45309;" onclick="openCreateOrgModal()">+ Create New Customer</button></div></div>';
+  if (S.isolationTestResult) {
+    const r = S.isolationTestResult;
+    h += '<div class="card" style="margin-bottom:16px;border-left:3px solid '+(r.allPassed?'var(--green)':'var(--red)')+';">';
+    h += '<div class="sh"><span>'+(r.allPassed?'✓ All Checks Passed':'✗ Some Checks Failed')+'</span></div>';
+    r.results.forEach(x => {
+      h += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--surf2);font-size:12px;">';
+      h += '<span style="color:'+(x.passed?'var(--green)':'var(--red)')+';font-weight:700;">'+(x.passed?'✓ PASS':'✗ FAIL')+'</span>';
+      h += '<span style="flex:1;margin-left:10px;">'+esc(x.label)+'</span>';
+      if (x.detail) h += '<span style="color:var(--dim);font-size:11px;">'+esc(x.detail)+'</span>';
+      h += '</div>';
+    });
+    h += '<div style="font-size:10px;color:var(--dim);margin-top:8px;">Ran against your live database using two temporary organizations, deleted automatically when the test finished.</div>';
+    h += '</div>';
+  }
 
   if (!API_BASE) {
     h += '<div class="alert-warn">This demo isn\'t connected to a real backend, so there\'s no real customer directory to show. Connect <code>window.CCP_API_BASE</code> to a deployed server.js — see SETUP.md.</div>';
@@ -8780,11 +8804,8 @@ async function aiAssignBestAttorney() {
     const attorneyList = ATTY;
     
     // Call attorney recommendation API (returns 3 options)
-    const response = await fetch("/api/recommend-attorney", {
+    const recommendations = await apiFetch("/api/recommend-attorney", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
       body: JSON.stringify({
         caseDetails: {
           client: d.client,
@@ -8796,12 +8817,6 @@ async function aiAssignBestAttorney() {
         attorneys: attorneyList
       })
     });
-
-    if (!response.ok) {
-      throw new Error('Failed to get attorney recommendations');
-    }
-
-    const recommendations = await response.json();
     
     // Validate attorneys exist
     const validateAtty = (name) => ATTY.includes(name) ? name : 'Sarah Chen';
@@ -8861,24 +8876,13 @@ async function aiProcessClaimIntake() {
   st({ aiProcessing: true, aiError: '' });
   
   try {
-    // Call serverless function (which calls Claude API with API key)
-    const response = await fetch("/api/extract-claim", {
+    // Call the real backend (which calls Claude API with the server-side key)
+    const extracted = await apiFetch("/api/extract-claim", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
       body: JSON.stringify({
         claimText: claimText
       })
     });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'API call failed');
-    }
-
-    // Response is already parsed JSON from serverless function
-    const extracted = await response.json();
     
     // Validate required fields
     if (!extracted.client) {
