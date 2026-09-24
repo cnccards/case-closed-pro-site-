@@ -2367,22 +2367,75 @@ function verifyPremiumPassword() {
   }
 }
 
-/* Calls the real Sentinel AI endpoints on server.js. Each one is a
-   genuine Claude API call, server-side — this just triggers it and
-   displays whatever comes back. Requires window.CCP_API_BASE to be
-   set and ANTHROPIC_API_KEY configured on the backend; if either is
-   missing, the error message from the server explains which. */
-async function runSentinel(key, needsCaseStr){
-  const needsCase = needsCaseStr === 'true';
-  if (needsCase && !S.sentinelSelectedCaseId) { alert('Select a matter first.'); return; }
-  if (!API_BASE) { alert('This demo isn\'t connected to a real backend, so there\'s no AI to call. Connect window.CCP_API_BASE to a deployed server.js with ANTHROPIC_API_KEY set.'); return; }
+/* Calls the real, already-working Vercel functions in /api — these
+   are the actual implementations (found in the repo's api/ folder),
+   not the Render duplicates built earlier by mistake. Same-origin
+   fetch(), since Vercel serves these directly alongside the
+   frontend — no separate backend involved for any of these five. */
+const SENTINEL_ENDPOINTS = {
+  match: '/api/recommend-attorney',
+  settle: '/api/settlement-recommendation',
+  watch: '/api/risk-analysis',
+  strategy: '/api/strategy-prediction',
+  horizon: '/api/timeline-prediction',
+};
+function buildCaseDetailsForAI(c){
+  return {
+    client: c.client, type: c.type, value: c.value || c.exposure?.likelyExposure || 0,
+    priority: c.priority || 'Medium', reserve: c.insurance?.reserveAmount || 0,
+    judge: c.court?.judge || 'Unknown', opposingCounsel: c.opposing?.attorney || c.opposing?.firm || 'Unknown',
+    summary: c.exposure?.notes || (c.matterNo ? c.matterNo + ' — ' + c.type + ' matter for ' + c.client : c.type),
+    currentDemand: c.exposure?.demandAmount || 0,
+    stage: c.litigationStage || c.status || 'Pleadings',
+    jurisdiction: c.court?.jurisdiction || 'Unknown',
+  };
+}
+// Each Vercel function returns a different structured shape — this
+// turns each one into the same kind of readable text block the
+// Sentinel cards already display, instead of raw JSON.
+function formatSentinelResult(key, data){
+  if (key === 'match') {
+    return ['gold','silver','bronze'].map(tier => data[tier] ? `${tier.toUpperCase()}: ${data[tier].attorney} — ${data[tier].reasoning}` : '').filter(Boolean).join('\n\n');
+  }
+  if (key === 'settle') {
+    return `Counter-offer: $${Number(data.counterOffer||0).toLocaleString()}\nExpected range: $${Number(data.expectedRange?.low||0).toLocaleString()}–$${Number(data.expectedRange?.high||0).toLocaleString()}\nWalk-away point: $${Number(data.walkAwayPoint||0).toLocaleString()}\n\n${data.reasoning || ''}\n\nStrategy: ${data.strategy || ''}\nTiming: ${data.timeline || ''}`;
+  }
+  if (key === 'watch') {
+    const risks = (data.risks||[]).map(r => `• ${r.risk} (${r.probability}, ${r.impact} impact)`).join('\n');
+    const mitigations = (data.mitigations||[]).map(m => `• ${m.action} — ${m.effectiveness}`).join('\n');
+    return `Risk Score: ${data.riskScore}/10\n\nRisks:\n${risks}\n\nMitigations:\n${mitigations}\n\nRecommendation: ${data.recommendation || ''}`;
+  }
+  if (key === 'strategy') {
+    const preds = (data.predictions||[]).map(p => `• ${p.tactic} (${p.probability} likely, ${p.difficulty} to counter)`).join('\n');
+    const counters = (data.counterStrategies||[]).map(c => `• ${c.strategy} — ${c.effectiveness}`).join('\n');
+    return `Opposing Strategy: ${data.opposingStrategy || ''}\n\nLikely Tactics:\n${preds}\n\nCounter-Strategies:\n${counters}\n\nSettlement Probability: ${data.settlementProbability || ''}\nYour Success Probability: ${data.successProbability || ''}`;
+  }
+  if (key === 'horizon') {
+    return `Most Likely Close: ${data.mostLikely || ''}\nTimeline: 12mo ${data.timelineProbabilities?.month12||'—'} / 18mo ${data.timelineProbabilities?.month18||'—'} / 24mo ${data.timelineProbabilities?.month24||'—'}\n\nMost Likely Cost: $${Number(data.mostLikelyCost||0).toLocaleString()}\nRange: $${Number(data.costEstimates?.conservative||0).toLocaleString()}–$${Number(data.costEstimates?.highEnd||0).toLocaleString()}\n\n${data.reasoning || ''}`;
+  }
+  return JSON.stringify(data);
+}
+async function runSentinel(key){
+  if (!S.sentinelSelectedCaseId) { alert('Select a matter first.'); return; }
+  const c = CASES.find(x => x.id === S.sentinelSelectedCaseId);
+  if (!c) { alert('Could not find that matter.'); return; }
 
   S.sentinelLoading = { ...(S.sentinelLoading||{}), [key]: true };
   render();
   try {
-    const endpoint = needsCase ? '/api/ai/sentinel-' + key + '/' + S.sentinelSelectedCaseId : '/api/ai/sentinel-' + key;
-    const data = await apiFetch(endpoint, { method: 'POST' });
-    S.sentinelResults = { ...(S.sentinelResults||{}), [key]: data.analysis };
+    const caseDetails = buildCaseDetailsForAI(c);
+    const body = key === 'match' ? { caseDetails, attorneys: ATTY }
+      : key === 'strategy' ? { caseDetails, opposingCounsel: caseDetails.opposingCounsel }
+      : { caseDetails };
+    const response = await fetch(SENTINEL_ENDPOINTS[key], {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || 'Request failed: ' + response.status);
+    }
+    const data = await response.json();
+    S.sentinelResults = { ...(S.sentinelResults||{}), [key]: formatSentinelResult(key, data) };
   } catch (e) {
     S.sentinelResults = { ...(S.sentinelResults||{}), [key]: 'Error: ' + e.message };
   }
@@ -2440,7 +2493,7 @@ function settlementIntelligenceV() {
     h += '<div style="font-size:22px;margin-bottom:8px;">'+icon+'</div>';
     h += '<div style="font-weight:700;font-size:13.5px;margin-bottom:6px;">'+name+'</div>';
     h += '<div style="font-size:11.5px;color:#CBD5E1;line-height:1.5;margin-bottom:12px;flex-grow:1;">'+desc+'</div>';
-    h += '<button onclick="runSentinel(\''+key+'\',\''+needsCase+'\')" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;padding:8px 14px;border-radius:7px;font-weight:700;font-size:11.5px;cursor:pointer;" '+(loading?'disabled':'')+'>'+(loading?'Analyzing…':'▶ Run '+name)+'</button>';
+    h += '<button onclick="runSentinel(\''+key+'\')" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;padding:8px 14px;border-radius:7px;font-weight:700;font-size:11.5px;cursor:pointer;" '+(loading?'disabled':'')+'>'+(loading?'Analyzing…':'▶ Run '+name)+'</button>';
     if (result) {
       h += '<div style="margin-top:12px;padding:11px;background:rgba(0,0,0,.25);border-radius:7px;font-size:11.5px;line-height:1.6;color:#E2E8F0;white-space:pre-wrap;">'+esc(result)+'</div>';
     }
@@ -8804,8 +8857,11 @@ async function aiAssignBestAttorney() {
     const attorneyList = ATTY;
     
     // Call attorney recommendation API (returns 3 options)
-    const recommendations = await apiFetch("/api/recommend-attorney", {
+    // Same-origin call — Vercel serves this function directly at
+    // /api/recommend-attorney, no separate backend involved.
+    const response = await fetch("/api/recommend-attorney", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         caseDetails: {
           client: d.client,
@@ -8817,6 +8873,8 @@ async function aiAssignBestAttorney() {
         attorneys: attorneyList
       })
     });
+    if (!response.ok) throw new Error('Failed to get attorney recommendations');
+    const recommendations = await response.json();
     
     // Validate attorneys exist
     const validateAtty = (name) => ATTY.includes(name) ? name : 'Sarah Chen';
@@ -8877,12 +8935,17 @@ async function aiProcessClaimIntake() {
   
   try {
     // Call the real backend (which calls Claude API with the server-side key)
-    const extracted = await apiFetch("/api/extract-claim", {
+    // Same-origin call — Vercel serves this function directly.
+    const response = await fetch("/api/extract-claim", {
       method: "POST",
-      body: JSON.stringify({
-        claimText: claimText
-      })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ claimText: claimText })
     });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'API call failed');
+    }
+    const extracted = await response.json();
     
     // Validate required fields
     if (!extracted.client) {
