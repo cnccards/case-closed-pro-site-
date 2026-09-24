@@ -779,6 +779,58 @@ function requirePlatformAdmin(req, res, next) {
 // The case-count subquery reads across every org on purpose — that's
 // exactly what the app.is_platform_admin bypass policy in
 // schema.sql is for.
+// One-click version of test-tenant-isolation.js, runnable from the
+// Admin Panel instead of a terminal — creates two temporary orgs
+// directly in this database, verifies RLS actually blocks
+// cross-tenant access at the database level (not just the app-layer
+// query), and deletes both test orgs afterward either way.
+app.post('/api/admin/self-test-isolation', requirePlatformAdmin, async (req, res) => {
+  const results = [];
+  const check = (label, passed, detail) => results.push({ label, passed, detail });
+  let orgAId, orgBId;
+  try {
+    const orgA = await q(`INSERT INTO organizations (name) VALUES ($1) RETURNING id`, ['[Self-Test] Org A ' + Date.now()]);
+    const orgB = await q(`INSERT INTO organizations (name) VALUES ($1) RETURNING id`, ['[Self-Test] Org B ' + Date.now()]);
+    orgAId = orgA.rows[0].id; orgBId = orgB.rows[0].id;
+
+    const caseA = await q(`INSERT INTO cases (org_id, matter_no, client, type) VALUES ($1,'SELFTEST-A','Self-Test Confidential Client A','Test') RETURNING id`, [orgAId]);
+    const caseB = await q(`INSERT INTO cases (org_id, matter_no, client, type) VALUES ($1,'SELFTEST-B','Self-Test Confidential Client B','Test') RETURNING id`, [orgBId]);
+    const caseAId = caseA.rows[0].id, caseBId = caseB.rows[0].id;
+
+    // The actual test: open a connection scoped to Org A (exactly
+    // like withTenantScope does for a real request) and try to read
+    // Org B's case through it. If RLS is working, this returns zero
+    // rows — not an error, just nothing, which is the correct and
+    // expected shape of "this data doesn't exist for you."
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`SET LOCAL app.current_org_id = $1`, [orgAId]);
+      const crossRead = await client.query('SELECT id FROM cases WHERE id = $1', [caseBId]);
+      check('Org A cannot read Org B\'s case through RLS', crossRead.rows.length === 0, crossRead.rows.length + ' row(s) returned, expected 0');
+
+      const ownRead = await client.query('SELECT id FROM cases WHERE id = $1', [caseAId]);
+      check('Org A CAN read its own case through RLS', ownRead.rows.length === 1, ownRead.rows.length + ' row(s) returned, expected 1');
+
+      await client.query(`SET LOCAL app.current_org_id = $1`, [orgBId]);
+      const crossRead2 = await client.query('SELECT id FROM cases WHERE id = $1', [caseAId]);
+      check('Org B cannot read Org A\'s case through RLS', crossRead2.rows.length === 0, crossRead2.rows.length + ' row(s) returned, expected 0');
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    check('Test ran without crashing', false, e.message);
+  } finally {
+    // Clean up regardless of pass/fail — cascade deletes the test cases too.
+    if (orgAId) await q('DELETE FROM organizations WHERE id = $1', [orgAId]).catch(() => {});
+    if (orgBId) await q('DELETE FROM organizations WHERE id = $1', [orgBId]).catch(() => {});
+  }
+
+  const allPassed = results.every(r => r.passed);
+  res.json({ allPassed, results });
+});
+
 app.get('/api/admin/organizations', requirePlatformAdmin, async (req, res) => {
   const result = await req.db.query(`
     SELECT o.*,
@@ -1382,6 +1434,69 @@ app.post('/api/ai/sentinel-watch', async (req, res) => {
     const analysis = await callClaude(system, prompt, 500);
     await audit(req.orgId, req.user?.sub, 'ai.sentinel_watch', null, null, { flaggedCount: signals.length }, req.ip);
     res.json({ analysis, flaggedCount: signals.length });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+});
+
+// Same Claude call as callClaude, but instructs a JSON-only reply and
+// parses it — used by the two structured-output endpoints below
+// (extract-claim, recommend-attorney) instead of the free-text
+// analysis the five Sentinels return.
+async function callClaudeJSON(systemPrompt, userPrompt, maxTokens = 800) {
+  const raw = await callClaude(
+    systemPrompt + ' Respond with ONLY a raw JSON object — no markdown code fences, no preamble, no explanation before or after it.',
+    userPrompt,
+    maxTokens
+  );
+  const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    const err = new Error('AI returned a response that could not be parsed as JSON.');
+    err.statusCode = 502;
+    throw err;
+  }
+}
+
+// Extracts structured case fields from pasted claim text (email,
+// FNOL notice, adjuster notes, etc.) — used by the "AI Case Intake"
+// flow when creating a new matter.
+app.post('/api/extract-claim', async (req, res) => {
+  try {
+    const { claimText } = req.body || {};
+    if (!claimText || !claimText.trim()) return res.status(400).json({ error: 'claimText is required' });
+    const system = 'You extract structured litigation case data from pasted claim text (an email, FNOL notice, adjuster note, etc.). Return a JSON object with EXACTLY these fields: client (string), type (string, one of: Personal Injury, Property Damage, Commercial Litigation, Product Liability, Employment, Construction Defect, Insurance Defense, Other), status (always "Active"), priority (High, Medium, or Low), attorney (string, or "Unassigned" if not mentioned), carrier (string, or best guess), aob ("Yes" or "No"), catastrophe ("Yes" or "No"), coverageType (string), filed (a date in YYYY-MM-DD format if mentioned, else today), value (a number, the claimed/exposure amount, 0 if unclear), reserve (a number, the reserve amount if mentioned, else 0), summary (a 1-2 sentence plain-text summary of the claim). Only use information actually present in the text — do not invent specifics that aren\'t there beyond the reasonable defaults specified above.';
+    const extracted = await callClaudeJSON(system, `Extract case data from this text:\n\n${claimText}`, 600);
+    await audit(req.orgId, req.user?.sub, 'ai.extract_claim', null, null, null, req.ip);
+    res.json(extracted);
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+});
+
+// Recommends 3 tiered attorney options (gold/silver/bronze) for a
+// new matter, grounded in real current workload from this org's
+// own cases, not just the bare name list the client sends.
+app.post('/api/recommend-attorney', async (req, res) => {
+  try {
+    const { caseDetails, attorneys } = req.body || {};
+    if (!caseDetails || !Array.isArray(attorneys) || attorneys.length === 0) {
+      return res.status(400).json({ error: 'caseDetails and a non-empty attorneys array are required' });
+    }
+    const workload = await req.db.query(
+      `SELECT attorney, COUNT(*) FILTER (WHERE status != 'Closed') AS open_count
+       FROM cases WHERE org_id = $1 AND attorney = ANY($2) GROUP BY attorney`,
+      [req.orgId, attorneys]
+    );
+    const workloadMap = Object.fromEntries(workload.rows.map(r => [r.attorney, Number(r.open_count)]));
+    const roster = attorneys.map(name => ({ name, openMatters: workloadMap[name] || 0 }));
+
+    const system = 'You recommend the best-fit attorney for a new litigation matter from a given roster, tiered gold/silver/bronze. Return a JSON object with EXACTLY this shape: {"gold": {"attorney": "<name from roster>", "reasoning": "<1 sentence>"}, "silver": {"attorney": "<different name from roster>", "reasoning": "<1 sentence>"}, "bronze": {"attorney": "<different name from roster>", "reasoning": "<1 sentence>"}}. All three attorney names MUST be exactly as given in the roster and MUST be three different people. Weigh case type fit, priority, and current workload (fewer open matters is generally better, but not the only factor).';
+    const prompt = `New matter:\n${JSON.stringify(caseDetails, null, 2)}\n\nAvailable attorneys with current open-matter counts:\n${JSON.stringify(roster, null, 2)}\n\nRecommend gold/silver/bronze.`;
+    const recommendations = await callClaudeJSON(system, prompt, 500);
+    await audit(req.orgId, req.user?.sub, 'ai.recommend_attorney', null, null, null, req.ip);
+    res.json(recommendations);
   } catch (e) {
     res.status(e.statusCode || 500).json({ error: e.message });
   }
