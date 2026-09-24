@@ -122,6 +122,11 @@ CREATE TABLE cases (
   litigation_stage TEXT,
   attorney        TEXT,
   assigned_firm_org_id UUID REFERENCES organizations(id), -- which defense-firm org this is assigned to
+  assigned_attorney_user_id UUID REFERENCES users(id), -- which SPECIFIC person this case is assigned to.
+  -- `attorney` (below) stays as a display name for reports/exports;
+  -- this column is what access control actually checks. A 'member'
+  -- role only sees cases assigned to them here; 'owner'/'admin' see
+  -- every case in the org (supervisory access) regardless of this.
   carrier         TEXT,
   claim_no        TEXT,
   reserve_amount  NUMERIC(14,2) DEFAULT 0,
@@ -141,6 +146,7 @@ CREATE TABLE cases (
 CREATE INDEX idx_cases_org ON cases(org_id);
 CREATE INDEX idx_cases_status ON cases(org_id, status);
 CREATE INDEX idx_cases_firm ON cases(assigned_firm_org_id);
+CREATE INDEX idx_cases_attorney ON cases(assigned_attorney_user_id);
 CREATE UNIQUE INDEX idx_cases_matter_no ON cases(org_id, matter_no);
 -- Speeds up queries into the JSONB blob (liens, authority requests, etc.)
 CREATE INDEX idx_cases_data_gin ON cases USING GIN (data jsonb_path_ops);
@@ -214,6 +220,32 @@ CREATE TABLE payables (
 CREATE INDEX idx_payables_org ON payables(org_id);
 CREATE INDEX idx_payables_status ON payables(org_id, status);
 
+-- ---------------------------------------------------------------
+-- Weekly digest config — one row per org, backs the "Weekly
+-- Executive Email" card. Actual sending happens in server.js's
+-- in-process scheduler (see the honesty note there about Render
+-- free-tier sleep affecting reliability).
+-- ---------------------------------------------------------------
+CREATE TABLE weekly_digest_config (
+  org_id          UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+  recipients      TEXT[] NOT NULL DEFAULT '{}',
+  day_of_week     TEXT NOT NULL DEFAULT 'Monday' CHECK (day_of_week IN ('Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday')),
+  enabled         BOOLEAN NOT NULL DEFAULT false,
+  last_sent_week  TEXT
+);
+
+-- ---------------------------------------------------------------
+-- Backup run log — see backup.js. This is a JSON export snapshot,
+-- NOT a real point-in-time database backup. Logged here so you can
+-- see at a glance whether the last scheduled run actually succeeded.
+-- ---------------------------------------------------------------
+CREATE TABLE backup_runs (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  status          TEXT NOT NULL CHECK (status IN ('success','failed')),
+  table_counts    JSONB,
+  error           TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 CREATE TABLE audit_log (
   id              BIGSERIAL PRIMARY KEY,
