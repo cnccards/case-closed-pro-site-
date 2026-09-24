@@ -41,6 +41,63 @@ const JWT_EXPIRY = process.env.JWT_EXPIRY || '7d';
 const BCRYPT_ROUNDS = 10;
 
 // ---------------------------------------------------------------
+// Sentinel AI Suite — real Claude API calls, server-side only. The
+// API key never reaches the browser; every Sentinel endpoint below
+// runs on this server and returns just the finished analysis.
+// ---------------------------------------------------------------
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
+const AI_CONFIGURED = !!ANTHROPIC_API_KEY;
+
+async function callClaude(systemPrompt, userPrompt, maxTokens = 1000) {
+  if (!AI_CONFIGURED) {
+    const err = new Error('AI is not configured on this server. Set ANTHROPIC_API_KEY.');
+    err.statusCode = 503;
+    throw err;
+  }
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: ANTHROPIC_MODEL,
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    const err = new Error('Claude API error: ' + body);
+    err.statusCode = 502;
+    throw err;
+  }
+  const data = await res.json();
+  const textBlock = (data.content || []).find(b => b.type === 'text');
+  return textBlock ? textBlock.text : '';
+}
+
+// Trims a case row down to the facts actually relevant to an AI
+// prompt — full JSONB blobs (documents, full audit history, etc.)
+// would burn tokens on noise without adding useful signal.
+function caseSummaryForAI(c) {
+  return {
+    matterNo: c.matterNo, client: c.client, type: c.type, status: c.status,
+    litigationStage: c.litigationStage, attorney: c.attorney, value: c.value,
+    carrier: c.insurance?.carrier, reserveAmount: c.insurance?.reserveAmount,
+    demandAmount: c.exposure?.demandAmount, offerAmount: c.exposure?.offerAmount,
+    likelyExposure: c.exposure?.likelyExposure, bestCase: c.exposure?.bestCase, worstCase: c.exposure?.worstCase,
+    filed: c.filed, deadline: c.deadline,
+    opposingCounsel: c.opposing?.attorney || c.opposing?.firm,
+    recentUpdates: (c.updates || []).slice(-5).map(u => ({ date: u.date, type: u.type, text: u.text })),
+  };
+}
+
+
+// ---------------------------------------------------------------
 // Platform admins — cross-organization access, distinct from the
 // per-org 'owner'/'admin'/'member' roles. These accounts can see and
 // manage EVERY customer's organization: provision new ones, suspend
@@ -278,6 +335,7 @@ function rowToCase(row) {
     status: row.status,
     litigationStage: row.litigation_stage,
     attorney: row.attorney,
+    assignedAttorneyUserId: row.assigned_attorney_user_id,
     assignedFirmOrgId: row.assigned_firm_org_id,
     filed: row.filed_date,
     deadline: row.deadline_date,
@@ -963,17 +1021,40 @@ app.post('/api/auth/2fa/disable', async (req, res) => {
 // itself rejects any row outside app.current_org_id, on top of the
 // WHERE org_id = $1 already in these queries.
 // ---------------------------------------------------------------
+// A 'member' (individual attorney/adjuster, not owner/admin) only
+// sees cases specifically assigned to them — everyone else in a
+// carrier org could otherwise see the whole portfolio, which is
+// exactly the gap this closes. Owners and admins keep full
+// visibility on purpose (supervisory access). Platform admins are
+// a separate thing entirely and never hit this function.
+//
+// The member-only filter's placeholder number is computed from
+// however many params the caller already passed in extraParams
+// (e.g. a status filter), so it never collides with a $2 the
+// caller already hardcoded into extraWhere — it's always appended
+// last, at whatever index comes next.
 async function scopedCaseQuery(req, extraWhere = '', extraParams = []) {
+  const isMember = req.user?.role === 'member';
+  const baseParams = [req.orgId, ...extraParams];
+  let memberClause = '';
+  let params = baseParams;
+  if (isMember) {
+    const idx = baseParams.length + 1;
+    const col = req.user?.persona === 'defense' ? 'c.assigned_attorney_user_id' : 'assigned_attorney_user_id';
+    memberClause = ` AND ${col} = $${idx}`;
+    params = [...baseParams, req.user.sub];
+  }
+
   if (req.user?.persona === 'defense') {
     return req.db.query(
       `SELECT c.* FROM cases c
        JOIN case_access ca ON ca.case_id = c.id
-       WHERE ca.firm_org_id = $1 ${extraWhere}
+       WHERE ca.firm_org_id = $1 ${extraWhere}${memberClause}
        ORDER BY c.created_at DESC`,
-      [req.orgId, ...extraParams]
+      params
     );
   }
-  return req.db.query(`SELECT * FROM cases WHERE org_id = $1 ${extraWhere} ORDER BY created_at DESC`, [req.orgId, ...extraParams]);
+  return req.db.query(`SELECT * FROM cases WHERE org_id = $1 ${extraWhere}${memberClause} ORDER BY created_at DESC`, params);
 }
 
 // ---------------------------------------------------------------
@@ -1026,10 +1107,10 @@ app.post('/api/cases', async (req, res) => {
   if (!b.client) return res.status(400).json({ error: 'client is required' });
   const data = { ...defaultCaseData(), ...(b.data || {}) };
   const result = await req.db.query(
-    `INSERT INTO cases (org_id, matter_no, client, type, status, litigation_stage, attorney, carrier, claim_no, reserve_amount, filed_date, deadline_date, value, data)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+    `INSERT INTO cases (org_id, matter_no, client, type, status, litigation_stage, attorney, assigned_attorney_user_id, carrier, claim_no, reserve_amount, filed_date, deadline_date, value, data)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
     [req.orgId, b.matterNo || null, b.client, b.type || 'Other', b.status || 'Active', b.litigationStage || 'Pre-Suit',
-     b.attorney || null, b.carrier || null, b.claimNo || null, b.reserveAmount || 0, b.filed || null, b.deadline || null, b.value || 0, JSON.stringify(data)]
+     b.attorney || null, b.assignedAttorneyUserId || null, b.carrier || null, b.claimNo || null, b.reserveAmount || 0, b.filed || null, b.deadline || null, b.value || 0, JSON.stringify(data)]
   );
   await audit(req.orgId, req.user?.sub, 'case.create', 'case', result.rows[0].id, { client: b.client }, req.ip);
   res.status(201).json(rowToCase(result.rows[0]));
@@ -1070,15 +1151,29 @@ app.patch('/api/cases/:id', async (req, res) => {
   const current = existing.rows[0];
   const b = req.body || {};
   const mergedData = { ...current.data, ...(b.data || {}) };
+
+  // Reassigning WHO can see this case is an access-control action,
+  // not a normal field edit — restricted to admin/owner so a
+  // 'member' can't grant themselves (or anyone) visibility into a
+  // case they weren't given. A plain field update from a member
+  // (status, notes, etc.) still goes through normally below.
+  let assignedAttorneyUserId = current.assigned_attorney_user_id;
+  if ('assignedAttorneyUserId' in b) {
+    if (req.user?.role === 'member' && !req.user?.platformAdmin) {
+      return res.status(403).json({ error: 'Only an admin or owner can reassign a case.' });
+    }
+    assignedAttorneyUserId = b.assignedAttorneyUserId || null;
+  }
+
   const result = await req.db.query(
     `UPDATE cases SET
        matter_no = COALESCE($1, matter_no), client = COALESCE($2, client), type = COALESCE($3, type),
        status = COALESCE($4, status), litigation_stage = COALESCE($5, litigation_stage), attorney = COALESCE($6, attorney),
        carrier = COALESCE($7, carrier), claim_no = COALESCE($8, claim_no), reserve_amount = COALESCE($9, reserve_amount),
-       value = COALESCE($10, value), data = $11
-     WHERE id = $12 AND org_id = $13 RETURNING *`,
+       value = COALESCE($10, value), data = $11, assigned_attorney_user_id = $12
+     WHERE id = $13 AND org_id = $14 RETURNING *`,
     [b.matterNo, b.client, b.type, b.status, b.litigationStage, b.attorney, b.carrier, b.claimNo, b.reserveAmount, b.value,
-     JSON.stringify(mergedData), req.params.id, req.orgId]
+     JSON.stringify(mergedData), assignedAttorneyUserId, req.params.id, req.orgId]
   );
   await audit(req.orgId, req.user?.sub, 'case.update', 'case', req.params.id, { fields: Object.keys(b) }, req.ip);
   res.json(rowToCase(result.rows[0]));
@@ -1186,6 +1281,113 @@ app.post('/api/cases/:id/share', async (req, res) => {
 });
 
 // ---------------------------------------------------------------
+// SENTINEL AI SUITE — real Claude API calls, tenant-scoped case
+// data pulled through req.db (same RLS-protected connection every
+// other case route uses), never trusting anything the client sends
+// about which case it is beyond the ID. Each returns { analysis }.
+// ---------------------------------------------------------------
+async function loadOneCase(req, caseId){
+  const result = req.user?.persona === 'defense'
+    ? await req.db.query(`SELECT c.* FROM cases c JOIN case_access ca ON ca.case_id = c.id WHERE ca.firm_org_id = $1 AND c.id = $2`, [req.orgId, caseId])
+    : await req.db.query('SELECT * FROM cases WHERE org_id = $1 AND id = $2', [req.orgId, caseId]);
+  return result.rows[0] ? rowToCase(result.rows[0]) : null;
+}
+
+// Sentinel Match — recommends which attorney should handle this matter.
+app.post('/api/ai/sentinel-match/:caseId', async (req, res) => {
+  try {
+    const c = await loadOneCase(req, req.params.caseId);
+    if (!c) return res.status(404).json({ error: 'Case not found' });
+    const roster = await req.db.query(
+      `SELECT attorney, COUNT(*) FILTER (WHERE status != 'Closed') AS open_count
+       FROM cases WHERE org_id = $1 AND attorney IS NOT NULL GROUP BY attorney ORDER BY attorney`,
+      [req.orgId]
+    );
+    const system = 'You are Sentinel Match, an AI that recommends the best-fit attorney for a litigation matter based on specialization, workload, and case complexity. Be specific and concise — 3-4 sentences, name your top recommendation and briefly justify it. This is a recommendation for a human to review, not an automatic assignment.';
+    const prompt = `Matter to assign:\n${JSON.stringify(caseSummaryForAI(c), null, 2)}\n\nCurrent attorney workloads (open matter count):\n${JSON.stringify(roster.rows, null, 2)}\n\nWho should handle this matter, and why?`;
+    const analysis = await callClaude(system, prompt, 400);
+    await audit(req.orgId, req.user?.sub, 'ai.sentinel_match', 'case', c.id, null, req.ip);
+    res.json({ analysis });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+});
+
+// Sentinel Settle — recommends a settlement number.
+app.post('/api/ai/sentinel-settle/:caseId', async (req, res) => {
+  try {
+    const c = await loadOneCase(req, req.params.caseId);
+    if (!c) return res.status(404).json({ error: 'Case not found' });
+    const system = 'You are Sentinel Settle, an AI that recommends a settlement position based on the actual numbers and case facts in front of you — never a generic "split the difference." Give a specific recommended range, your reasoning in 2-3 sentences, and the single biggest risk factor to watch. This is a recommendation for a human negotiator to use, not an automatic offer.';
+    const prompt = `Matter:\n${JSON.stringify(caseSummaryForAI(c), null, 2)}\n\nWhat settlement position would you recommend, and why?`;
+    const analysis = await callClaude(system, prompt, 400);
+    await audit(req.orgId, req.user?.sub, 'ai.sentinel_settle', 'case', c.id, null, req.ip);
+    res.json({ analysis });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+});
+
+// Sentinel Strategy — models opposing counsel's likely next move.
+app.post('/api/ai/sentinel-strategy/:caseId', async (req, res) => {
+  try {
+    const c = await loadOneCase(req, req.params.caseId);
+    if (!c) return res.status(404).json({ error: 'Case not found' });
+    const system = 'You are Sentinel Strategy, an AI that reads a case\'s current posture and recent activity to predict opposing counsel\'s likely next move and recommend a counter-strategy. 3-4 sentences, specific and actionable, grounded only in the facts given — do not invent details not present in the case data.';
+    const prompt = `Matter:\n${JSON.stringify(caseSummaryForAI(c), null, 2)}\n\nWhat is opposing counsel likely to do next, and what should our strategy be?`;
+    const analysis = await callClaude(system, prompt, 400);
+    await audit(req.orgId, req.user?.sub, 'ai.sentinel_strategy', 'case', c.id, null, req.ip);
+    res.json({ analysis });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+});
+
+// Sentinel Horizon — forecasts time-to-close and cost.
+app.post('/api/ai/sentinel-horizon/:caseId', async (req, res) => {
+  try {
+    const c = await loadOneCase(req, req.params.caseId);
+    if (!c) return res.status(404).json({ error: 'Case not found' });
+    const system = 'You are Sentinel Horizon, an AI that forecasts when a litigation matter will realistically close and what it will cost to get there, based on its current stage, activity level, and stated timeline. Give a specific estimated closing window and total cost range, plus one sentence on the biggest factor that could speed this up or slow it down. Be direct about uncertainty where the data is thin.';
+    const prompt = `Matter:\n${JSON.stringify(caseSummaryForAI(c), null, 2)}\n\nWhen will this likely close, and what will it cost?`;
+    const analysis = await callClaude(system, prompt, 400);
+    await audit(req.orgId, req.user?.sub, 'ai.sentinel_horizon', 'case', c.id, null, req.ip);
+    res.json({ analysis });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+});
+
+// Sentinel Watch — portfolio-wide risk scan, not scoped to one case.
+// The real risk SIGNALS are computed here with plain SQL/JS (reserve
+// burn, staleness, approaching deadlines) — Claude's job is turning
+// that into a clear, prioritized written flag, not inventing the
+// signals itself.
+app.post('/api/ai/sentinel-watch', async (req, res) => {
+  try {
+    const casesResult = await req.db.query(`SELECT * FROM cases WHERE org_id = $1 AND status != 'Closed'`, [req.orgId]);
+    const cases = casesResult.rows.map(rowToCase);
+    const signals = cases.map(c => {
+      const reserveBurn = c.insurance?.reserveAmount ? ((c.billing?.totalBilled||0) / c.insurance.reserveAmount) * 100 : 0;
+      const lastUpdate = (c.updates||[]).slice(-1)[0];
+      const daysSinceActivity = lastUpdate ? Math.floor((Date.now() - new Date(lastUpdate.date)) / 864e5) : null;
+      const daysToSol = c.keyDates?.sol ? Math.floor((new Date(c.keyDates.sol) - Date.now()) / 864e5) : null;
+      return { matterNo: c.matterNo, client: c.client, reserveBurnPct: Math.round(reserveBurn), daysSinceActivity, daysToSol };
+    }).filter(s => s.reserveBurnPct > 70 || (s.daysSinceActivity !== null && s.daysSinceActivity > 14) || (s.daysToSol !== null && s.daysToSol < 90));
+
+    if (signals.length === 0) return res.json({ analysis: 'No matters currently trip a risk threshold — reserve burn, staleness, or approaching deadlines all look normal across the open portfolio.' });
+
+    const system = 'You are Sentinel Watch, an AI that turns a list of flagged risk signals (reserve burn, stale activity, approaching deadlines) into a short, prioritized written brief for a claims leader. Rank by severity, be specific about matter names, and keep it to a tight paragraph or short list — this is meant to be read in 30 seconds, not a report.';
+    const prompt = `Flagged matters this week:\n${JSON.stringify(signals, null, 2)}\n\nWrite the prioritized risk brief.`;
+    const analysis = await callClaude(system, prompt, 500);
+    await audit(req.orgId, req.user?.sub, 'ai.sentinel_watch', null, null, { flaggedCount: signals.length }, req.ip);
+    res.json({ analysis, flaggedCount: signals.length });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+});
+
+// ---------------------------------------------------------------
 // Saved reports — mirrors the frontend's Saved Reports panel.
 // Previously in the schema with no route to actually reach it —
 // wired up here.
@@ -1232,6 +1434,103 @@ app.post('/api/reports/email', async (req, res) => {
     res.status(502).json({ error: 'Email send failed: ' + e.message });
   }
 });
+
+// ---------------------------------------------------------------
+// Weekly digest — save/read the schedule, matching the frontend's
+// "Weekly Executive Email" card. Actual sending is the scheduler
+// function below, not this endpoint — this just persists the config.
+// ---------------------------------------------------------------
+app.get('/api/reports/schedule-weekly-digest', async (req, res) => {
+  const result = await q('SELECT * FROM weekly_digest_config WHERE org_id = $1', [req.orgId]);
+  const row = result.rows[0];
+  res.json(row
+    ? { recipients: row.recipients, day: row.day_of_week, enabled: row.enabled }
+    : { recipients: [], day: 'Monday', enabled: false });
+});
+app.post('/api/reports/schedule-weekly-digest', requireOrgRole('admin'), async (req, res) => {
+  const { recipients, day, enabled } = req.body || {};
+  const dayVal = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].includes(day) ? day : 'Monday';
+  await q(
+    `INSERT INTO weekly_digest_config (org_id, recipients, day_of_week, enabled)
+     VALUES ($1,$2,$3,$4)
+     ON CONFLICT (org_id) DO UPDATE SET recipients = $2, day_of_week = $3, enabled = $4`,
+    [req.orgId, Array.isArray(recipients) ? recipients : String(recipients||'').split(',').map(s=>s.trim()).filter(Boolean), dayVal, !!enabled]
+  );
+  await audit(req.orgId, req.user?.sub, 'digest.schedule_updated', 'organization', req.orgId, { day: dayVal, enabled }, req.ip);
+  res.json({ saved: true });
+});
+
+// Builds the same kind of summary the frontend's own digest builder
+// does, but server-side, from a fresh query, for a specific org.
+async function buildWeeklyDigestText(orgId){
+  const orgResult = await q('SELECT name FROM organizations WHERE id = $1', [orgId]);
+  const orgName = orgResult.rows[0]?.name || 'Your Organization';
+  const casesResult = await q('SELECT * FROM cases WHERE org_id = $1', [orgId]);
+  const cases = casesResult.rows.map(rowToCase);
+  const open = cases.filter(c => c.status !== 'Closed');
+  const totalReserves = cases.reduce((s,c) => s + (c.insurance.reserveAmount||0), 0);
+  const material = open.filter(c => (c.exposure?.likelyExposure || c.value || 0) > 10000000);
+  const solDue = open.filter(c => c.keyDates?.sol && new Date(c.keyDates.sol) < new Date(Date.now()+90*864e5));
+
+  let s = `WEEKLY EXECUTIVE SUMMARY — ${orgName}\n${'='.repeat(50)}\n`;
+  s += `Generated: ${new Date().toISOString().slice(0,10)}\n\n`;
+  s += `Total Litigation: ${cases.length} (${open.length} open)\n`;
+  s += `Total Reserves: $${totalReserves.toLocaleString()}\n`;
+  s += `Material Matters (>$10M): ${material.length}\n`;
+  s += `Matters with SOL inside 90 days: ${solDue.length}\n\n`;
+  if (material.length) {
+    s += `MATERIAL MATTERS\n${'-'.repeat(30)}\n`;
+    material.slice(0,10).forEach(c => { s += `- ${c.matterNo||c.id} ${c.client}: $${(c.exposure?.likelyExposure||c.value||0).toLocaleString()}\n`; });
+  }
+  return s;
+}
+
+// Checked once an hour. Sends any org's digest whose configured day
+// matches today and hasn't already gone out this ISO week.
+//
+// HONEST LIMIT, stated plainly rather than left to be discovered:
+// Render's free tier puts this service to sleep after 15 minutes
+// with no visitors, and a sleeping process runs no code at all —
+// including this scheduler. On the free tier, a digest only sends
+// reliably if someone happens to visit the app around the scheduled
+// hour. This becomes fully reliable once you're on a paid Render
+// plan that keeps the service running continuously — nothing about
+// this code changes, only the hosting tier does.
+function isoWeekKey(d){
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
+  const weekNo = Math.ceil((((date - yearStart) / 864e5) + 1)/7);
+  return date.getUTCFullYear()+'-W'+weekNo;
+}
+async function runWeeklyDigestCheck(){
+  if (!SMTP_CONFIGURED) return;
+  const todayName = new Date().toLocaleDateString('en-US',{weekday:'long', timeZone:'UTC'});
+  const thisWeek = isoWeekKey(new Date());
+  try {
+    const due = await q(
+      `SELECT * FROM weekly_digest_config WHERE enabled = true AND day_of_week = $1 AND (last_sent_week IS NULL OR last_sent_week != $2)`,
+      [todayName, thisWeek]
+    );
+    for (const row of due.rows) {
+      if (!row.recipients || row.recipients.length === 0) continue;
+      const text = await buildWeeklyDigestText(row.org_id);
+      await mailer.sendMail({
+        from: process.env.FROM_EMAIL || process.env.SMTP_USER,
+        to: row.recipients.join(','),
+        subject: `Weekly Executive Summary — ${new Date().toISOString().slice(0,10)}`,
+        text
+      });
+      await q('UPDATE weekly_digest_config SET last_sent_week = $1 WHERE org_id = $2', [thisWeek, row.org_id]);
+      console.log(`Weekly digest sent for org ${row.org_id}`);
+    }
+  } catch (e) {
+    console.error('Weekly digest check failed:', e.message);
+  }
+}
+setInterval(runWeeklyDigestCheck, 60 * 60 * 1000); // every hour
+runWeeklyDigestCheck(); // also check once on startup, in case the process just woke up on the right day
 
 app.use((err, req, res, next) => {
   console.error(err);
