@@ -5677,12 +5677,14 @@ function execFinancialV(){
   const totalBilled = CASES.reduce((s,c)=>s+(c.billing.totalBilled||0),0);
   const totalPaid = CASES.reduce((s,c)=>s+(c.billing.totalPaid||0),0);
   const realization = totalBilled>0 ? Math.round(totalPaid/totalBilled*100) : 0;
+  const avgMargin = Math.round(ATTY.reduce((s,a)=>s+attorneyScorecard(a).profitMargin,0)/ATTY.length);
 
   let h = '<div class="kpi-grid">';
   h += '<div class="kpi"><div class="kpi-l">Total Billed</div><div class="kpi-v">'+fV(totalBilled)+'</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Total Collected</div><div class="kpi-v" style="color:var(--green);">'+fV(totalPaid)+'</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Realization Rate</div><div class="kpi-v" style="color:'+(realization>=90?'var(--green)':'var(--gold)')+';">'+realization+'%</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Revenue / Matter</div><div class="kpi-v">'+fV(CASES.length?totalBilled/CASES.length:0)+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Gross Margin</div><div class="kpi-v" style="color:'+(avgMargin>=35?'var(--green)':'var(--gold)')+';">'+avgMargin+'%</div><div class="kpi-sub">Portfolio average</div></div>';
   h += '</div>';
 
   h += '<div class="grid-2">';
@@ -5929,44 +5931,181 @@ function execReportsV(){
    organized into the same 5 categories the enhancement spec used:
    Performance Tracking, Proactive Management, Detailed Analytics,
    Relationships, Context. */
+/* Deterministic mentor pairing from the REAL attorney roster — the
+   uploaded V3 file hardcoded fake names ('Patricia Thompson', etc.)
+   that don't exist in ATTY, so it would never have shown anything
+   for a real attorney. This pairs the top half of the roster (by
+   LES) as mentors to the bottom half, stable across renders. */
+function getMentorNetwork(name){
+  const ranked = [...ATTY].sort((a,b) => attorneyScorecard(b).les - attorneyScorecard(a).les);
+  const mid = Math.ceil(ranked.length/2);
+  const mentors = ranked.slice(0, mid), mentees = ranked.slice(mid);
+  const idx = mentees.indexOf(name);
+  if (idx !== -1) return { mentors: [mentors[idx % mentors.length]], mentees: [] };
+  const menteeIdx = mentors.indexOf(name);
+  if (menteeIdx !== -1) {
+    const myMentees = mentees.filter((_,i) => i % mentors.length === menteeIdx);
+    return { mentors: [], mentees: myMentees };
+  }
+  return { mentors: [], mentees: [] };
+}
+
 function scorecardV(){
-  let h = '<div class="wrap">';
-  h += '<div class="hero">';
-  h += '<div class="hero-l"><div class="hero-eyebrow">Attorney Scorecards</div>';
-  h += '<h1 class="hero-title">Litigation Effectiveness Score (LES)</h1>';
-  h += '<p class="hero-sub">Weighted across throughput, satisfaction, case quality, reserve accuracy, cycle time, and partner rating — click any attorney for the full breakdown.</p></div></div>';
+  // Real permission gate, using the actual role system (owner/admin/
+  // member from server.js), not the uploaded file's separate
+  // claims_leader/attorney vocabulary that doesn't exist in this app.
+  // Demo mode (no real currentUser.role) always passes through.
+  if (S.currentUser && S.currentUser.role === 'member' && !S.currentUser.platformAdmin) {
+    let d = '<div class="wrap"><div class="hero" style="text-align:center;padding:60px 40px;">';
+    d += '<div style="font-size:56px;margin-bottom:16px;">🔒</div>';
+    d += '<h1 class="hero-title">Access Restricted</h1>';
+    d += '<p class="hero-sub">Attorney scorecards are confidential and available only to firm leadership (owners and admins).</p>';
+    d += '</div></div>';
+    return d;
+  }
 
   const fa = firmAverages();
-  h += '<div class="case-grid">';
-  ATTY.forEach(a => {
-    const sc = attorneyScorecard(a);
-    const compCol = lesGradeColor(sc.les);
-    const grade = lesGrade(sc.les);
-    const delta = sc.les - fa.les;
+  const allScores = ATTY.map(a => ({ name:a, ...attorneyScorecard(a) }));
+  allScores.sort((x,y) => y.les - x.les);
 
-    h += '<div class="case-card" style="cursor:pointer;" onclick="openScorecard(\''+a+'\')">';
-    h += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">';
-    h += '<div style="width:42px;height:42px;border-radius:50%;background:'+(ATTY_COLOR[a]||'var(--pri)')+';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;font-family:Fraunces,serif;">'+a.split(' ').map(p=>p[0]).join('')+'</div>';
-    h += '<div style="text-align:right;"><div class="serif" style="font-size:38px;font-weight:700;color:'+compCol+';line-height:1;">'+grade+'</div>';
-    h += '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;font-weight:700;margin-top:2px;">LES '+sc.les+'</div></div>';
-    h += '</div>';
-    h += '<div class="serif" style="font-size:18px;font-weight:700;color:var(--ink);">'+esc(a)+'</div>';
-    h += '<div style="font-size:11px;color:var(--muted);margin-bottom:10px;">'+sc.open.length+' active · '+sc.closed.length+' closed</div>';
+  let h = '<div class="wrap">';
+  h += '<div class="hero"><div class="hero-l"><div class="hero-eyebrow">Attorney Performance</div>';
+  h += '<h1 class="hero-title">Litigation Excellence Index</h1>';
+  h += '<p class="hero-sub">Weighted across throughput, satisfaction, case quality, reserve accuracy, cycle time, and partner rating. Firm average: '+lesGrade(fa.les)+' ('+fa.les+'/100)</p></div></div>';
 
-    if (sc.badges.length) {
-      h += '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;">';
-      sc.badges.slice(0,3).forEach(b => { h += '<span class="tag" style="background:var(--surf3);" title="'+escAttr(b.label)+'">'+b.icon+' '+esc(b.label)+'</span>'; });
-      h += '</div>';
-    }
-    if (sc.risks.length) {
-      h += '<div style="display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--red);font-weight:600;margin-bottom:8px;">⚠ '+sc.risks.length+' risk indicator'+(sc.risks.length>1?'s':'')+'</div>';
-    }
-    h += '<div style="font-size:11px;color:'+(delta>=0?'var(--green)':'var(--red)')+';font-weight:600;">'+(delta>=0?'+':'')+delta+' LES vs. firm avg ('+fa.les+')</div>';
-    h += '</div>';
-  });
+  h += '<div class="kpi-grid">';
+  h += '<div class="kpi"><div class="kpi-bar" style="background:var(--pri2)"></div><div class="kpi-l">Attorneys</div><div class="kpi-v">'+ATTY.length+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-bar" style="background:var(--pri)"></div><div class="kpi-l">Firm Avg LES</div><div class="kpi-v">'+fa.les+'</div><div class="kpi-sub">Grade: '+lesGrade(fa.les)+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-bar" style="background:var(--green)"></div><div class="kpi-l">Top Performer</div><div class="kpi-v">'+lesGrade(allScores[0].les)+'</div><div class="kpi-sub">'+esc(allScores[0].name)+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-bar" style="background:var(--gold)"></div><div class="kpi-l">Active Matters</div><div class="kpi-v">'+CASES.filter(c=>c.status!=='Closed').length+'</div><div class="kpi-sub">Under management</div></div>';
+  h += '</div>';
+
+  h += '<div class="card" style="padding:12px 14px;margin-bottom:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">';
+  h += '<div style="display:flex;gap:6px;background:var(--surf2);border:1px solid var(--line);border-radius:8px;padding:3px;flex-wrap:wrap;">';
+  h += '<button class="tab-btn '+(S.scoreView==='cards'||!S.scoreView?'on':'')+'" onclick="st({scoreView:\'cards\'})">Full Profile</button>';
+  h += '<button class="tab-btn '+(S.scoreView==='table'?'on':'')+'" onclick="st({scoreView:\'table\'})">Table View</button>';
+  h += '<button class="tab-btn '+(S.scoreView==='analytics'?'on':'')+'" onclick="st({scoreView:\'analytics\'})">Analytics</button>';
   h += '</div></div>';
+
+  if (S.scoreView !== 'table' && S.scoreView !== 'analytics') {
+    h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(480px,1fr));gap:16px;">';
+    allScores.forEach((sc, idx) => {
+      const color = lesGradeColor(sc.les);
+      const grade = lesGrade(sc.les);
+      const delta = sc.les - fa.les;
+      const mentor = getMentorNetwork(sc.name);
+
+      h += '<div class="card" style="padding:0;overflow:hidden;border-left:5px solid '+color+';">';
+      h += '<div style="background:linear-gradient(135deg,'+color+'10,transparent);padding:16px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;cursor:pointer;" onclick="openScorecard(\''+sc.name+'\')">';
+      h += '<div style="display:flex;gap:12px;align-items:center;">';
+      h += '<div style="width:52px;height:52px;border-radius:50%;background:'+(ATTY_COLOR[sc.name]||'var(--pri)')+';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:17px;font-family:Fraunces,serif;flex-shrink:0;">'+sc.name.split(' ').map(p=>p[0]).join('')+'</div>';
+      h += '<div><div style="display:flex;align-items:baseline;gap:8px;"><div style="font-size:17px;font-weight:700;">'+esc(sc.name)+'</div><span style="font-size:10px;color:var(--muted);font-weight:700;background:var(--surf2);padding:2px 7px;border-radius:4px;">#'+(idx+1)+'</span></div>';
+      h += '<div style="font-size:11px;color:var(--muted);">'+sc.open.length+' active · '+sc.closed.length+' closed</div></div></div>';
+      h += '<div style="text-align:right;"><div class="serif" style="font-size:40px;font-weight:700;color:'+color+';line-height:1;">'+grade+'</div><div style="font-size:10px;color:var(--muted);font-weight:700;">LES '+sc.les+'</div></div>';
+      h += '</div>';
+
+      if (sc.risks.length) {
+        h += '<div style="padding:10px 16px;background:#FEF2F2;border-bottom:1px solid var(--line);">';
+        sc.risks.forEach(r => { h += '<div style="font-size:10.5px;color:var(--red);padding:2px 0;">⚠ <strong>'+esc(r.label)+'</strong> — '+esc(r.detail)+'</div>'; });
+        h += '</div>';
+      }
+      if (sc.badges.length) {
+        h += '<div style="padding:10px 16px;background:var(--surf2);border-bottom:1px solid var(--line);">';
+        sc.badges.forEach(b => { h += '<span style="display:inline-block;margin:2px 6px 2px 0;padding:3px 10px;background:#fff;border:1px solid '+color+';border-radius:20px;font-size:10px;font-weight:600;color:'+color+';">'+b.icon+' '+esc(b.label)+'</span>'; });
+        h += '</div>';
+      }
+      h += '<div style="padding:10px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;font-size:11px;">';
+      h += '<span style="color:var(--muted);">vs. Firm Average</span><span style="font-weight:700;color:'+(delta>=0?'var(--green)':'var(--red)')+';">'+(delta>=0?'+':'')+delta+' LES points</span></div>';
+
+      h += '<div style="padding:12px 16px;border-bottom:1px solid var(--line);">';
+      h += '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;font-weight:700;margin-bottom:9px;">🎯 Goals</div>';
+      sc.goals.forEach(g => {
+        const progress = g.lowerIsBetter ? Math.min(100, Math.round((g.target/Math.max(g.actual,1))*100)) : Math.min(100, Math.round((g.actual/g.target)*100));
+        h += '<div style="margin-bottom:7px;"><div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;"><span>'+g.label+'</span><span style="font-weight:700;">'+g.actual+g.unit+' / '+g.target+g.unit+'</span></div>';
+        h += '<div style="height:5px;background:var(--surf3);border-radius:3px;overflow:hidden;"><div style="width:'+progress+'%;height:100%;background:'+color+';"></div></div></div>';
+      });
+      h += '</div>';
+
+      h += '<div style="padding:12px 16px;border-bottom:1px solid var(--line);background:var(--surf2);">';
+      h += '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;font-weight:700;margin-bottom:8px;">📋 Case Outcomes</div>';
+      h += '<div style="display:flex;justify-content:space-between;font-size:10.5px;">';
+      h += '<div><span style="color:var(--green);font-weight:700;">'+sc.winPct+'%</span> Win</div>';
+      h += '<div><span style="color:var(--pri2);font-weight:700;">'+sc.settlePct+'%</span> Settle</div>';
+      h += '<div><span style="color:var(--gold);font-weight:700;">'+sc.dismissPct+'%</span> Dismiss</div></div></div>';
+
+      h += '<div style="padding:12px 16px;border-bottom:1px solid var(--line);">';
+      h += '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;font-weight:700;margin-bottom:8px;">📑 Matter Mix</div>';
+      sc.matterMix.slice(0,4).forEach(mt => { h += '<div style="display:flex;justify-content:space-between;font-size:10.5px;margin-bottom:4px;"><span>'+esc(mt.type)+'</span><span style="font-weight:700;">'+mt.count+' ('+mt.pct+'%)</span></div>'; });
+      h += '</div>';
+
+      h += '<div style="padding:12px 16px;border-bottom:1px solid var(--line);">';
+      h += '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;font-weight:700;margin-bottom:9px;">📊 Key Metrics</div>';
+      h += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px;font-size:10px;">';
+      h += '<div><span style="color:var(--dim);">Task Rate</span><div style="font-weight:700;color:var(--pri2);font-size:13px;">'+sc.taskRate+'%</div></div>';
+      h += '<div><span style="color:var(--dim);">CCI Avg</span><div style="font-weight:700;color:'+cciColor(sc.cciAvg)+';font-size:13px;">'+sc.cciAvg+'</div></div>';
+      h += '<div><span style="color:var(--dim);">Adjuster Sat</span><div style="font-weight:700;color:var(--gold);font-size:13px;">'+sc.adjusterSat+'/5</div></div>';
+      h += '<div><span style="color:var(--dim);">Reserve Acc.</span><div style="font-weight:700;color:var(--green);font-size:13px;">'+sc.reserveAccuracy+'%</div></div>';
+      h += '<div><span style="color:var(--dim);">Avg Cycle</span><div style="font-weight:700;font-size:13px;">'+sc.avgCycleTime+'d</div></div>';
+      h += '<div><span style="color:var(--dim);">Partner Rating</span><div style="font-weight:700;color:var(--pri2);font-size:13px;">'+sc.partnerRating+'</div></div>';
+      h += '</div></div>';
+
+      h += '<div style="padding:12px 16px;border-bottom:1px solid var(--line);background:var(--surf2);">';
+      h += '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;font-weight:700;margin-bottom:8px;">💰 Billing</div>';
+      h += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;font-size:10.5px;">';
+      h += '<div><span style="color:var(--dim);">Realization</span><div style="font-weight:700;color:var(--green);">'+sc.realizationRate+'%</div></div>';
+      h += '<div><span style="color:var(--dim);">Rate</span><div style="font-weight:700;">$'+sc.billingRate+'/hr</div></div>';
+      h += '<div><span style="color:var(--dim);">Rev/Matter</span><div style="font-weight:700;">'+fV(sc.revenuePerMatter)+'</div></div>';
+      h += '<div><span style="color:var(--dim);">Margin</span><div style="font-weight:700;color:var(--green);">'+sc.profitMargin+'%</div></div>';
+      h += '</div></div>';
+
+      if (mentor.mentors.length || mentor.mentees.length) {
+        h += '<div style="padding:12px 16px;">';
+        h += '<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;font-weight:700;margin-bottom:7px;">👥 Mentor Network</div>';
+        if (mentor.mentors.length) h += '<div style="font-size:10px;margin-bottom:4px;"><strong>Mentored by:</strong> '+mentor.mentors.map(esc).join(', ')+'</div>';
+        if (mentor.mentees.length) h += '<div style="font-size:10px;"><strong>Mentoring:</strong> '+mentor.mentees.map(esc).join(', ')+'</div>';
+        h += '</div>';
+      }
+      h += '</div>';
+    });
+    h += '</div>';
+  }
+
+  if (S.scoreView === 'table') {
+    h += '<div class="card"><div class="sh"><span>Comprehensive Performance Table</span></div>';
+    h += '<div style="overflow-x:auto;"><table><thead><tr><th>#</th><th>Attorney</th><th>LES</th><th>Grade</th><th>Win %</th><th>Avg Days</th><th>Cases</th><th>Rating</th><th>Badges</th></tr></thead><tbody>';
+    allScores.forEach((sc, idx) => {
+      h += '<tr class="row-link" onclick="openScorecard(\''+sc.name+'\')" style="'+(idx<3?'background:#ECFDF5;':'')+'">';
+      h += '<td style="font-weight:700;color:var(--muted);">'+(idx+1)+'</td><td style="font-weight:700;">'+esc(sc.name)+'</td>';
+      h += '<td style="font-weight:700;color:'+lesGradeColor(sc.les)+';">'+sc.les+'</td>';
+      h += '<td><span style="background:'+lesGradeColor(sc.les)+'18;color:'+lesGradeColor(sc.les)+';font-weight:700;padding:2px 8px;border-radius:4px;">'+lesGrade(sc.les)+'</span></td>';
+      h += '<td style="color:var(--green);font-weight:600;">'+sc.winPct+'%</td><td>'+sc.avgCycleTime+'d</td><td>'+sc.cases.length+'</td><td>'+sc.partnerRating+'</td>';
+      h += '<td style="font-size:9px;">'+sc.badges.map(b=>b.icon).join(' ')+'</td></tr>';
+    });
+    h += '</tbody></table></div></div>';
+  }
+
+  if (S.scoreView === 'analytics') {
+    h += '<div class="grid-2">';
+    h += '<div class="card"><div class="sh"><span>Performance Distribution</span></div>';
+    const tiers = {'A+ (90+)':allScores.filter(s=>s.les>=90).length,'A (85-89)':allScores.filter(s=>s.les>=85&&s.les<90).length,'B+ (75-84)':allScores.filter(s=>s.les>=75&&s.les<85).length,'B/C (<75)':allScores.filter(s=>s.les<75).length};
+    const tierColors = {'A+ (90+)':'var(--green)','A (85-89)':'var(--pri2)','B+ (75-84)':'var(--gold)','B/C (<75)':'var(--red)'};
+    Object.entries(tiers).forEach(([tier,count]) => {
+      const pct = Math.round(count/ATTY.length*100);
+      h += '<div style="margin-bottom:11px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;"><span style="font-weight:600;">'+tier+'</span><span style="font-weight:700;color:'+tierColors[tier]+';">'+count+'</span></div>';
+      h += '<div style="background:var(--surf3);height:7px;border-radius:4px;overflow:hidden;"><div style="width:'+pct+'%;height:100%;background:'+tierColors[tier]+';"></div></div></div>';
+    });
+    h += '</div>';
+    h += '<div class="card"><div class="sh"><span>⚠ Active Risk Alerts</span></div>';
+    const allRisks = allScores.filter(s => s.risks.length > 0);
+    if (allRisks.length === 0) h += '<div style="padding:16px;text-align:center;color:var(--green);font-size:12px;font-weight:600;">✓ No active risk alerts</div>';
+    else allRisks.forEach(sc => { h += '<div class="row-link" onclick="openScorecard(\''+sc.name+'\')" style="padding:8px;background:var(--surf2);border-left:3px solid var(--red);border-radius:4px;margin-bottom:7px;font-size:10.5px;"><strong>'+esc(sc.name)+'</strong>: '+esc(sc.risks[0].label)+'</div>'; });
+    h += '</div></div>';
+  }
+
+  h += '</div>';
   return h;
 }
+
 
 function openScorecard(a){ st({scorecardDetail:a}); }
 
