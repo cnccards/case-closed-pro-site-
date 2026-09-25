@@ -2467,7 +2467,7 @@ function settlementIntelligenceV() {
   h += '<span style="font-size:20px;">🛡️</span><span style="font-weight:700;font-size:16px;letter-spacing:-.2px;">Sentinel AI Suite</span>';
   h += '<span style="font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,.12);padding:3px 9px;border-radius:20px;margin-left:4px;">Proprietary</span>';
   h += '</div>';
-  h += '<div style="font-size:12px;color:#94A3B8;margin-bottom:16px;">Five AI models, one system, watching every matter in your portfolio.</div>';
+  h += '<div style="font-size:12px;color:#94A3B8;margin-bottom:16px;">Five AI models, one system, watching every matter in your portfolio. (Sentinel Match — attorney assignment — lives on the Litigation Dashboard, where it actually assigns the case, not just recommends one.)</div>';
 
   // Shared case selector — the 4 per-matter Sentinels all run
   // against whichever case is picked here. Sentinel Watch is
@@ -2480,7 +2480,6 @@ function settlementIntelligenceV() {
 
   h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;align-items:start;">';
   const sentinelFeatures = [
-    ['🎯','Sentinel Match','Assigns every new matter to your best-fit attorney — specialization, track record, and workload, weighed automatically.', 'match', true],
     ['💰','Sentinel Settle','Recommends the settlement number the data actually supports, not a gut-feel figure.', 'settle', true],
     ['🚩','Sentinel Watch','Flags a problem matter before it becomes an expensive one — reserve gaps, stalled cases, missed deadlines.', 'watch', false],
     ['🧭','Sentinel Strategy','Reads opposing counsel\'s pattern and models their likely next move before they make it.', 'strategy', true],
@@ -3999,7 +3998,7 @@ function assignCasesV() {
   let h = '<div style="padding:20px;max-width:1200px;margin:0 auto;">';
   h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">';
   h += '<div>';
-  h += '<div class="sh">🤖 AI Attorney Assignment</div>';
+  h += '<div class="sh">🎯 Sentinel Match — AI Attorney Assignment</div>';
   h += '<div style="font-size:12px;color:var(--muted);margin-top:5px;">Found <strong>'+unassignedCases.length+'</strong> case'+(unassignedCases.length!==1?'s':'')+' waiting for attorney assignment</div>';
   h += '</div>';
   h += '<button onclick="st({showAssignCases:false})" class="btn btn-out">← Back to Dashboard</button>';
@@ -4270,7 +4269,7 @@ function litigationDashV(){
   h += '<div class="subhead">Portfolio across '+CASES.length+' matters · '+open.length+' active · '+fM(totRes)+' in reserves · CCI avg '+avgIdx+'</div>';
   h += '</div>';
   h += '<div style="display:flex;gap:8px;">';
-  h += '<button onclick="st({showAssignCases:!S.showAssignCases})" class="btn btn-pri" style="">🤖 Assign Cases</button>';
+  h += '<button onclick="st({showAssignCases:!S.showAssignCases})" class="btn btn-pri" style="">🎯 Sentinel Match — Assign Cases</button>';
   h += '<select onchange="st({fAt:this.value})" class="inp" style="width:auto;min-width:130px;">'+['All',...ATTY].map(a=>'<option'+(S.fAt===a?' selected':'')+'>'+a+'</option>').join('')+'</select>';
   h += '<select onchange="st({fCarrier:this.value})" class="inp" style="width:auto;min-width:130px;">'+['All',...CARRIERS.slice(0,8)].map(c=>'<option'+(S.fCarrier===c?' selected':'')+'>'+c+'</option>').join('')+'</select>';
   h += '</div>';
@@ -9542,7 +9541,7 @@ function submitCase(){
     
     // Show success message
     setTimeout(() => {
-      alert('✓ Matter ' + newCaseId + ' (' + clientName + ') created as UNASSIGNED!\n\nClick "🤖 Assign Cases" to assign via AI.');
+      alert('✓ Matter ' + newCaseId + ' (' + clientName + ') created as UNASSIGNED!\n\nClick "🎯 Sentinel Match" to assign via AI.');
     }, 300);
     
   } catch (e) {
