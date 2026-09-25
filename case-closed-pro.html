@@ -4929,11 +4929,19 @@ function partV(){
   const avgCycle = closedCases.length ? Math.round(closedCases.reduce((s,c)=>s+daysOpen(c),0)/closedCases.length) : 0;
   const withinTarget = closedCases.filter(c => daysOpen(c) <= 200).length;
   const targetPct = closedCases.length ? Math.round((withinTarget/closedCases.length)*100) : 0;
-  h += '<div style="text-align:center;padding:6px 0 14px;">';
-  h += '<div class="serif" style="font-size:32px;font-weight:700;color:'+(avgCycle<=200&&avgCycle>0?'var(--green)':avgCycle>0?'var(--red)':'var(--dim)')+';">'+(avgCycle||'—')+'</div>';
-  h += '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:3px;">Avg. Days to Close</div></div>';
-  h += '<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:6px 0;border-top:1px solid var(--surf2);"><span style="color:var(--muted);">Target (public promise)</span><span style="font-weight:700;">100–200 days</span></div>';
-  h += '<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:6px 0;"><span style="color:var(--muted);">Closed Within Target</span><span style="font-weight:700;color:'+(targetPct>=70?'var(--green)':'var(--gold)')+';">'+targetPct+'%</span></div>';
+  const gaugeColor = targetPct>=70?'#059669':targetPct>=50?'#B45309':'#DC2626';
+  const gaugeR = 15.9155, gaugeCirc = 2*Math.PI*gaugeR;
+  h += '<div style="display:flex;align-items:center;gap:20px;padding:6px 0 14px;">';
+  h += '<svg viewBox="0 0 42 42" style="width:120px;height:120px;flex-shrink:0;transform:rotate(-90deg);">';
+  h += '<circle cx="21" cy="21" r="'+gaugeR+'" fill="transparent" stroke="var(--surf3)" stroke-width="6"></circle>';
+  h += '<circle cx="21" cy="21" r="'+gaugeR+'" fill="transparent" stroke="'+gaugeColor+'" stroke-width="6" stroke-linecap="round" stroke-dasharray="'+(targetPct/100*gaugeCirc)+' '+gaugeCirc+'"></circle>';
+  h += '</svg>';
+  h += '<div>';
+  h += '<div class="serif" style="font-size:34px;font-weight:700;color:'+gaugeColor+';line-height:1;">'+targetPct+'%</div>';
+  h += '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:3px;">Closed Within SLA</div>';
+  h += '</div></div>';
+  h += '<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:6px 0;border-top:1px solid var(--surf2);"><span style="color:var(--muted);">Avg. Days to Close</span><span style="font-weight:700;color:'+(avgCycle<=200&&avgCycle>0?'var(--green)':'var(--red)')+';">'+(avgCycle||'—')+' days</span></div>';
+  h += '<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:6px 0;"><span style="color:var(--muted);">Target (public promise)</span><span style="font-weight:700;">100–200 days</span></div>';
   h += '<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:6px 0;"><span style="color:var(--muted);">Closed Matters (n)</span><span style="font-weight:700;">'+closedCases.length+'</span></div>';
   h += '</div>';
 
@@ -5016,12 +5024,18 @@ function partV(){
   const wins = closedForOutcomes.filter(c => (c.exposure.settlementAmount || 0) < (c.exposure.demandAmount || c.value));
   const winRate = closedForOutcomes.length ? Math.round((wins.length/closedForOutcomes.length)*100) : 0;
   const avgCCI = open.length ? Math.round(open.reduce((s,c)=>s+cci(c),0)/open.length) : 0;
-  h += '<div style="display:flex;gap:24px;flex-wrap:wrap;">';
-  h += '<div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px;">Win Rate</div><div class="serif" style="font-size:26px;font-weight:700;color:'+(winRate>=60?'var(--green)':'var(--gold)')+';">'+winRate+'%</div></div>';
-  h += '<div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px;">Portfolio CCI</div><div class="serif" style="font-size:26px;font-weight:700;color:'+cciColor(avgCCI)+';">'+avgCCI+'</div></div>';
-  h += '<div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px;">Closed Matters</div><div class="serif" style="font-size:26px;font-weight:700;">'+closedForOutcomes.length+'</div></div>';
+  const outR = 15.9155, outCirc = 2*Math.PI*outR;
+  const miniGauge = (pct, color) => {
+    return '<svg viewBox="0 0 42 42" style="width:64px;height:64px;transform:rotate(-90deg);">'+
+      '<circle cx="21" cy="21" r="'+outR+'" fill="transparent" stroke="var(--surf3)" stroke-width="6"></circle>'+
+      '<circle cx="21" cy="21" r="'+outR+'" fill="transparent" stroke="'+color+'" stroke-width="6" stroke-linecap="round" stroke-dasharray="'+(pct/100*outCirc)+' '+outCirc+'"></circle></svg>';
+  };
+  h += '<div style="display:flex;gap:28px;flex-wrap:wrap;align-items:center;">';
+  h += '<div style="text-align:center;">'+miniGauge(winRate, winRate>=60?'#059669':'#B45309')+'<div class="serif" style="font-size:20px;font-weight:700;color:'+(winRate>=60?'var(--green)':'var(--gold)')+';margin-top:-46px;position:relative;">'+winRate+'%</div><div style="font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-top:10px;">Win Rate</div></div>';
+  h += '<div style="text-align:center;">'+miniGauge(avgCCI, cciColor(avgCCI))+'<div class="serif" style="font-size:20px;font-weight:700;color:'+cciColor(avgCCI)+';margin-top:-46px;position:relative;">'+avgCCI+'</div><div style="font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-top:10px;">Portfolio CCI</div></div>';
+  h += '<div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px;">Closed Matters</div><div class="serif" style="font-size:30px;font-weight:700;">'+closedForOutcomes.length+'</div></div>';
   h += '</div>';
-  h += '<div style="font-size:9.5px;color:var(--dim);margin-top:10px;">This is the evidence a renewal conversation runs on — outcomes, not just activity.</div>';
+  h += '<div style="font-size:9.5px;color:var(--dim);margin-top:12px;">This is the evidence a renewal conversation runs on — outcomes, not just activity.</div>';
   h += '</div>';
 
   /* Root cause across every client — what a TPA can actually take
@@ -5031,13 +5045,26 @@ function partV(){
   const byRootCause = {};
   CASES.forEach(c => { const rc = c.rootCause || 'Other'; byRootCause[rc] = (byRootCause[rc]||0)+1; });
   const rcEntries = Object.entries(byRootCause).sort((a,b)=>b[1]-a[1]).slice(0,6);
-  const maxRc = Math.max(...rcEntries.map(e=>e[1]), 1);
-  rcEntries.forEach(([rc,n]) => {
-    const pct = Math.round(n/maxRc*100);
-    h += '<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;"><span style="color:var(--muted);">'+esc(rc)+'</span><span style="font-weight:700;">'+n+'</span></div>';
-    h += '<div style="background:var(--surf3);height:6px;border-radius:3px;overflow:hidden;"><div style="width:'+pct+'%;height:100%;background:var(--purple, #6D28D9);"></div></div></div>';
+  const rcTotal = rcEntries.reduce((s,[,n])=>s+n,0) || 1;
+  const rcColors = ['#6D28D9','#0056D2','#00C9DB','#B45309','#DC2626','#059669'];
+  const rcR = 15.9155, rcCirc = 2*Math.PI*rcR;
+  h += '<div style="display:flex;align-items:center;gap:20px;margin-bottom:14px;">';
+  h += '<svg viewBox="0 0 42 42" style="width:110px;height:110px;flex-shrink:0;transform:rotate(-90deg);">';
+  h += '<circle cx="21" cy="21" r="'+rcR+'" fill="transparent" stroke="var(--surf3)" stroke-width="6"></circle>';
+  let rcCumulative = 0;
+  rcEntries.forEach(([rc,n],i) => {
+    const dash = (n/rcTotal)*rcCirc;
+    h += '<circle cx="21" cy="21" r="'+rcR+'" fill="transparent" stroke="'+rcColors[i%rcColors.length]+'" stroke-width="6" stroke-dasharray="'+dash+' '+(rcCirc-dash)+'" stroke-dashoffset="'+(-rcCumulative)+'"></circle>';
+    rcCumulative += dash;
   });
-  h += '<div style="font-size:9.5px;color:var(--dim);margin-top:4px;">The top cause here is a real, specific talking point for the next client renewal or QBR — not a guess.</div>';
+  h += '</svg>';
+  h += '<div><div class="serif" style="font-size:28px;font-weight:700;color:var(--ink);line-height:1;">'+esc(rcEntries[0]?.[0]||'—')+'</div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:4px;">Top Loss Driver</div></div>';
+  h += '</div>';
+  rcEntries.forEach(([rc,n],i) => {
+    const pct = Math.round(n/rcTotal*100);
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:5px 0;border-top:1px solid var(--surf2);"><span style="display:flex;align-items:center;gap:7px;"><span style="width:9px;height:9px;border-radius:2px;background:'+rcColors[i%rcColors.length]+';display:inline-block;"></span>'+esc(rc)+'</span><span style="font-weight:700;">'+n+' <span style="color:var(--dim);font-weight:500;">('+pct+'%)</span></span></div>';
+  });
+  h += '<div style="font-size:9.5px;color:var(--dim);margin-top:8px;">The top cause here is a real, specific talking point for the next client renewal or QBR — not a guess.</div>';
   h += '</div>';
   h += '</div>';
 
@@ -5060,7 +5087,9 @@ function partV(){
   h += '<div class="sh"><span>Account Executive Performance</span></div>';
   h += '<div style="overflow-x:auto;"><table>';
   h += '<thead><tr><th>Account Executive</th><th>Clients</th><th>Matters</th><th>Reserves Managed</th><th>At-Risk Accounts</th></tr></thead><tbody>';
-  ACCOUNT_EXECS.forEach(ae => {
+  const aeReservesAll = ACCOUNT_EXECS.map(ae => carrierList.filter(([name]) => aeForCarrier(name) === ae).reduce((s,[,d])=>s+d.reserve, 0));
+  const maxAeReserve = Math.max(...aeReservesAll, 1);
+  ACCOUNT_EXECS.forEach((ae, aeIdx) => {
     const aeCarriers = carrierList.filter(([name]) => aeForCarrier(name) === ae);
     const aeMatters = aeCarriers.reduce((s,[,d])=>s+d.cases.length, 0);
     const aeReserves = aeCarriers.reduce((s,[,d])=>s+d.reserve, 0);
@@ -5069,11 +5098,12 @@ function partV(){
       const avgIdx = d.cases.length ? d.cases.reduce((s,c)=>s+cci(c),0)/d.cases.length : 50;
       return burn > 70 || avgIdx < 50;
     }).length;
+    const barPct = Math.round(aeReserves/maxAeReserve*100);
     h += '<tr class="row-link" onclick="st({role:\'tpa\',selectedAE:\''+ae+'\'})">';
     h += '<td style="font-weight:700;">'+esc(ae)+'</td>';
     h += '<td>'+aeCarriers.length+'</td>';
     h += '<td>'+aeMatters+'</td>';
-    h += '<td>'+fV(aeReserves)+'</td>';
+    h += '<td style="min-width:160px;"><div style="display:flex;align-items:center;gap:8px;"><span style="font-weight:700;white-space:nowrap;">'+fV(aeReserves)+'</span><div style="background:var(--surf3);height:6px;border-radius:3px;overflow:hidden;flex:1;min-width:50px;"><div style="width:'+barPct+'%;height:100%;background:var(--gold);"></div></div></div></td>';
     h += '<td style="color:'+(aeAtRisk?'var(--red)':'var(--green)')+';font-weight:700;">'+aeAtRisk+'</td>';
     h += '</tr>';
   });
