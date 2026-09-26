@@ -8919,21 +8919,21 @@ function aiIntakeStep3V() {
           '</div>' +
           (isUnassigned ? 
             '<div style="background:var(--surf1);border:2px solid var(--pri2);border-radius:8px;padding:16px;margin-bottom:24px;text-align:center;">' +
-              '<div style="font-size:12px;font-weight:700;color:var(--pri2);margin-bottom:12px;">🤖 Let AI recommend the best attorney</div>' +
+              '<div style="font-size:12px;font-weight:700;color:var(--pri2);margin-bottom:12px;">🎯 Let Sentinel Match recommend the best attorney</div>' +
               '<button class="btn btn-pri" style="width:100%;" onclick="aiAssignBestAttorney()" ' + (S.aiAssignLoading ? 'disabled' : '') + '>' +
-                (S.aiAssignLoading ? '⏳ AI Analyzing...' : '⚡ AI Recommend') +
+                (S.aiAssignLoading ? '⏳ Sentinel Match Analyzing...' : '🎯 Run Sentinel Match') +
               '</button>' +
             '</div>'
             : 
             (S.aiAssignReason ?
             '<div style="background:linear-gradient(135deg, var(--pri2) 0%, var(--pri1) 100%);border-radius:8px;padding:16px;margin-bottom:24px;color:white;">' +
-              '<div style="font-size:12px;font-weight:700;margin-bottom:8px;">✨ AI-Assigned Attorney</div>' +
+              '<div style="font-size:12px;font-weight:700;margin-bottom:8px;">🎯 Sentinel Match Recommendation</div>' +
               '<div style="font-size:11px;line-height:1.5;margin-bottom:12px;">' + esc(S.aiAssignReason) + '</div>' +
               '<div style="font-size:11px;background:rgba(255,255,255,0.2);padding:8px;border-radius:4px;font-weight:600;">' + esc(d.attorney) + '</div>' +
             '</div>'
             :
             '<div style="background:var(--surf1);border-radius:8px;padding:16px;margin-bottom:24px;text-align:center;color:var(--ink);">' +
-              '<div style="font-size:12px;font-weight:700;margin-bottom:4px;">✓ Attorney Assigned</div>' +
+              '<div style="font-size:12px;font-weight:700;margin-bottom:4px;">✓ Attorney Assigned via Sentinel Match</div>' +
               '<div style="font-size:11px;color:var(--muted);">' + esc(d.attorney) + '</div>' +
             '</div>'
             )
@@ -8964,7 +8964,7 @@ function attorneySelectorModalV() {
   return '<div class="modal-bg" onclick="if(event.target===this)st({showAttorneySelector:false})">' +
     '<div class="modal" style="max-width:650px;">' +
       '<div class="modal-h">' +
-        '<div class="serif" style="font-size:18px;font-weight:700;">🏆 AI Attorney Recommendations</div>' +
+        '<div class="serif" style="font-size:18px;font-weight:700;">🎯 Sentinel Match Recommendations</div>' +
         '<button class="x" onclick="st({showAttorneySelector:false})">×</button>' +
       '</div>' +
       '<div class="modal-b" style="padding:20px;">' +
