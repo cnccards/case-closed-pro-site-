@@ -324,6 +324,20 @@ ALTER TABLE payables FORCE ROW LEVEL SECURITY;
 CREATE POLICY payables_tenant_isolation ON payables
   USING (org_id = current_setting('app.current_org_id', true)::uuid);
 
+-- Closing a gap from an earlier pass: this table was added later and
+-- missed the same protection the others have. Low sensitivity (just
+-- email recipient lists, not case data) but no reason to leave it as
+-- the one inconsistent exception. The admin-bypass policy covers ALL
+-- commands (not just SELECT like the cases one) because the digest
+-- scheduler (a background job with no single tenant) both reads
+-- every org's config AND updates last_sent_week after sending.
+ALTER TABLE weekly_digest_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE weekly_digest_config FORCE ROW LEVEL SECURITY;
+CREATE POLICY weekly_digest_tenant_isolation ON weekly_digest_config
+  USING (org_id = current_setting('app.current_org_id', true)::uuid);
+CREATE POLICY weekly_digest_admin_bypass ON weekly_digest_config
+  USING (current_setting('app.is_platform_admin', true) = 'true');
+
 -- Note: RLS policies above only cover single-org access for normal
 -- (non-platform-admin) connections. The case_access grant table
 -- means defense-firm reads need an explicit application-layer query
