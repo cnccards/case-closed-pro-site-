@@ -157,7 +157,19 @@ async function withTenantScope(req, res, next) {
       // than skipping RLS for this connection entirely.
       await client.query(`SET LOCAL app.is_platform_admin = 'true'`);
     } else {
-      await client.query(`SET LOCAL app.current_org_id = $1`, [req.orgId]);
+      // CRITICAL FIX: Postgres's SET command does not support bind
+      // parameters ($1) — this previously silently failed with a
+      // syntax error on every real request, meaning RLS's database-
+      // level backstop was never actually active; the app was
+      // running on the application-layer org_id filtering alone.
+      // SET can't be parameterized, so the value is validated as a
+      // genuine UUID (never trusting it blindly) and then safely
+      // interpolated — the standard, safe pattern for this exact
+      // Postgres limitation.
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.orgId || '')) {
+        throw new Error('Invalid organization id format');
+      }
+      await client.query(`SET LOCAL app.current_org_id = '${req.orgId}'`);
     }
   } catch (e) {
     client.release();
@@ -788,6 +800,7 @@ app.post('/api/admin/self-test-isolation', requirePlatformAdmin, async (req, res
   const results = [];
   const check = (label, passed, detail) => results.push({ label, passed, detail });
   let orgAId, orgBId;
+  const setOrgScope = (client, orgId) => client.query(`SET LOCAL app.current_org_id = '${orgId}'`); // SET can't take a bind param — orgId here always comes from our own INSERT ... RETURNING id, never user input
   try {
     const orgA = await q(`INSERT INTO organizations (name) VALUES ($1) RETURNING id`, ['[Self-Test] Org A ' + Date.now()]);
     const orgB = await q(`INSERT INTO organizations (name) VALUES ($1) RETURNING id`, ['[Self-Test] Org B ' + Date.now()]);
@@ -797,24 +810,49 @@ app.post('/api/admin/self-test-isolation', requirePlatformAdmin, async (req, res
     const caseB = await q(`INSERT INTO cases (org_id, matter_no, client, type) VALUES ($1,'SELFTEST-B','Self-Test Confidential Client B','Test') RETURNING id`, [orgBId]);
     const caseAId = caseA.rows[0].id, caseBId = caseB.rows[0].id;
 
+    const payeeA = await q(`INSERT INTO payees (org_id, name, type) VALUES ($1,'Self-Test Payee A','Vendor') RETURNING id`, [orgAId]);
+    const payeeB = await q(`INSERT INTO payees (org_id, name, type) VALUES ($1,'Self-Test Payee B','Vendor') RETURNING id`, [orgBId]);
+    const payeeAId = payeeA.rows[0].id, payeeBId = payeeB.rows[0].id;
+
+    const payableA = await q(`INSERT INTO payables (org_id, payee_id, amount, description) VALUES ($1,$2,100,'Self-test') RETURNING id`, [orgAId, payeeAId]);
+    const payableB = await q(`INSERT INTO payables (org_id, payee_id, amount, description) VALUES ($1,$2,100,'Self-test') RETURNING id`, [orgBId, payeeBId]);
+    const payableAId = payableA.rows[0].id, payableBId = payableB.rows[0].id;
+
+    const reportA = await q(`INSERT INTO saved_reports (org_id, report_id, name) VALUES ($1,'r1','Self-Test Report A') RETURNING id`, [orgAId]);
+    const reportB = await q(`INSERT INTO saved_reports (org_id, report_id, name) VALUES ($1,'r1','Self-Test Report B') RETURNING id`, [orgBId]);
+    const reportAId = reportA.rows[0].id, reportBId = reportB.rows[0].id;
+
     // The actual test: open a connection scoped to Org A (exactly
     // like withTenantScope does for a real request) and try to read
-    // Org B's case through it. If RLS is working, this returns zero
-    // rows — not an error, just nothing, which is the correct and
-    // expected shape of "this data doesn't exist for you."
+    // Org B's rows through it, across every RLS-protected table —
+    // not just cases. If RLS is working, this returns zero rows —
+    // not an error, just nothing, which is the correct and expected
+    // shape of "this data doesn't exist for you."
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query(`SET LOCAL app.current_org_id = $1`, [orgAId]);
-      const crossRead = await client.query('SELECT id FROM cases WHERE id = $1', [caseBId]);
-      check('Org A cannot read Org B\'s case through RLS', crossRead.rows.length === 0, crossRead.rows.length + ' row(s) returned, expected 0');
+      await setOrgScope(client, orgAId);
 
-      const ownRead = await client.query('SELECT id FROM cases WHERE id = $1', [caseAId]);
-      check('Org A CAN read its own case through RLS', ownRead.rows.length === 1, ownRead.rows.length + ' row(s) returned, expected 1');
+      const crossCase = await client.query('SELECT id FROM cases WHERE id = $1', [caseBId]);
+      check('Org A cannot read Org B\'s CASE through RLS', crossCase.rows.length === 0, crossCase.rows.length + ' row(s), expected 0');
+      const ownCase = await client.query('SELECT id FROM cases WHERE id = $1', [caseAId]);
+      check('Org A CAN read its own case through RLS', ownCase.rows.length === 1, ownCase.rows.length + ' row(s), expected 1');
 
-      await client.query(`SET LOCAL app.current_org_id = $1`, [orgBId]);
-      const crossRead2 = await client.query('SELECT id FROM cases WHERE id = $1', [caseAId]);
-      check('Org B cannot read Org A\'s case through RLS', crossRead2.rows.length === 0, crossRead2.rows.length + ' row(s) returned, expected 0');
+      const crossPayee = await client.query('SELECT id FROM payees WHERE id = $1', [payeeBId]);
+      check('Org A cannot read Org B\'s PAYEE through RLS', crossPayee.rows.length === 0, crossPayee.rows.length + ' row(s), expected 0');
+
+      const crossPayable = await client.query('SELECT id FROM payables WHERE id = $1', [payableBId]);
+      check('Org A cannot read Org B\'s PAYABLE through RLS', crossPayable.rows.length === 0, crossPayable.rows.length + ' row(s), expected 0');
+
+      const crossReport = await client.query('SELECT id FROM saved_reports WHERE id = $1', [reportBId]);
+      check('Org A cannot read Org B\'s SAVED REPORT through RLS', crossReport.rows.length === 0, crossReport.rows.length + ' row(s), expected 0');
+
+      await setOrgScope(client, orgBId);
+      const crossCase2 = await client.query('SELECT id FROM cases WHERE id = $1', [caseAId]);
+      check('Org B cannot read Org A\'s CASE through RLS', crossCase2.rows.length === 0, crossCase2.rows.length + ' row(s), expected 0');
+      const crossPayee2 = await client.query('SELECT id FROM payees WHERE id = $1', [payeeAId]);
+      check('Org B cannot read Org A\'s PAYEE through RLS', crossPayee2.rows.length === 0, crossPayee2.rows.length + ' row(s), expected 0');
+
       await client.query('COMMIT');
     } finally {
       client.release();
@@ -822,7 +860,7 @@ app.post('/api/admin/self-test-isolation', requirePlatformAdmin, async (req, res
   } catch (e) {
     check('Test ran without crashing', false, e.message);
   } finally {
-    // Clean up regardless of pass/fail — cascade deletes the test cases too.
+    // Clean up regardless of pass/fail — cascade deletes everything test-related.
     if (orgAId) await q('DELETE FROM organizations WHERE id = $1', [orgAId]).catch(() => {});
     if (orgBId) await q('DELETE FROM organizations WHERE id = $1', [orgBId]).catch(() => {});
   }
@@ -1556,7 +1594,7 @@ app.post('/api/reports/email', async (req, res) => {
 // function below, not this endpoint — this just persists the config.
 // ---------------------------------------------------------------
 app.get('/api/reports/schedule-weekly-digest', async (req, res) => {
-  const result = await q('SELECT * FROM weekly_digest_config WHERE org_id = $1', [req.orgId]);
+  const result = await req.db.query('SELECT * FROM weekly_digest_config WHERE org_id = $1', [req.orgId]);
   const row = result.rows[0];
   res.json(row
     ? { recipients: row.recipients, day: row.day_of_week, enabled: row.enabled }
@@ -1565,7 +1603,7 @@ app.get('/api/reports/schedule-weekly-digest', async (req, res) => {
 app.post('/api/reports/schedule-weekly-digest', requireOrgRole('admin'), async (req, res) => {
   const { recipients, day, enabled } = req.body || {};
   const dayVal = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].includes(day) ? day : 'Monday';
-  await q(
+  await req.db.query(
     `INSERT INTO weekly_digest_config (org_id, recipients, day_of_week, enabled)
      VALUES ($1,$2,$3,$4)
      ON CONFLICT (org_id) DO UPDATE SET recipients = $2, day_of_week = $3, enabled = $4`,
@@ -1577,10 +1615,12 @@ app.post('/api/reports/schedule-weekly-digest', requireOrgRole('admin'), async (
 
 // Builds the same kind of summary the frontend's own digest builder
 // does, but server-side, from a fresh query, for a specific org.
-async function buildWeeklyDigestText(orgId){
-  const orgResult = await q('SELECT name FROM organizations WHERE id = $1', [orgId]);
+// Takes an admin-scoped connection since it's called from the
+// cross-org scheduler below, not from a single-tenant request.
+async function buildWeeklyDigestText(orgId, dbClient){
+  const orgResult = await dbClient.query('SELECT name FROM organizations WHERE id = $1', [orgId]);
   const orgName = orgResult.rows[0]?.name || 'Your Organization';
-  const casesResult = await q('SELECT * FROM cases WHERE org_id = $1', [orgId]);
+  const casesResult = await dbClient.query('SELECT * FROM cases WHERE org_id = $1', [orgId]);
   const cases = casesResult.rows.map(rowToCase);
   const open = cases.filter(c => c.status !== 'Closed');
   const totalReserves = cases.reduce((s,c) => s + (c.insurance.reserveAmount||0), 0);
@@ -1623,25 +1663,35 @@ async function runWeeklyDigestCheck(){
   if (!SMTP_CONFIGURED) return;
   const todayName = new Date().toLocaleDateString('en-US',{weekday:'long', timeZone:'UTC'});
   const thisWeek = isoWeekKey(new Date());
+  // This is a background job with no single tenant — it legitimately
+  // needs to read across every org, same as the admin panel's org
+  // directory. One connection, scoped once, used for the whole batch.
+  const client = await pool.connect();
   try {
-    const due = await q(
+    await client.query('BEGIN');
+    await client.query(`SET LOCAL app.is_platform_admin = 'true'`);
+    const due = await client.query(
       `SELECT * FROM weekly_digest_config WHERE enabled = true AND day_of_week = $1 AND (last_sent_week IS NULL OR last_sent_week != $2)`,
       [todayName, thisWeek]
     );
     for (const row of due.rows) {
       if (!row.recipients || row.recipients.length === 0) continue;
-      const text = await buildWeeklyDigestText(row.org_id);
+      const text = await buildWeeklyDigestText(row.org_id, client);
       await mailer.sendMail({
         from: process.env.FROM_EMAIL || process.env.SMTP_USER,
         to: row.recipients.join(','),
         subject: `Weekly Executive Summary — ${new Date().toISOString().slice(0,10)}`,
         text
       });
-      await q('UPDATE weekly_digest_config SET last_sent_week = $1 WHERE org_id = $2', [thisWeek, row.org_id]);
+      await client.query('UPDATE weekly_digest_config SET last_sent_week = $1 WHERE org_id = $2', [thisWeek, row.org_id]);
       console.log(`Weekly digest sent for org ${row.org_id}`);
     }
+    await client.query('COMMIT');
   } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('Weekly digest check failed:', e.message);
+  } finally {
+    client.release();
   }
 }
 setInterval(runWeeklyDigestCheck, 60 * 60 * 1000); // every hour
