@@ -1139,6 +1139,56 @@ app.post('/api/team/invite', requireOrgRole('admin'), async (req, res) => {
   res.status(201).json({ invited: true, email: normalizedEmail, role: roleVal, inviteUrl });
 });
 
+// Resend a pending invite — issues a brand-new token and pushes the
+// expiry back out another 7 days, rather than re-sending the old
+// (possibly already-expired, or already-leaked) link. Old token is
+// implicitly dead since the row's token_hash is overwritten.
+app.post('/api/team/invites/:id/resend', requireOrgRole('admin'), async (req, res) => {
+  const invite = await q(
+    `SELECT * FROM team_invites WHERE id = $1 AND org_id = $2 AND used_at IS NULL`,
+    [req.params.id, req.orgId]
+  );
+  if (!invite.rows[0]) return res.status(404).json({ error: 'Pending invite not found in your organization' });
+
+  const rawToken = generateResetToken();
+  const tokenHash = hashToken(rawToken);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  await q('UPDATE team_invites SET token_hash = $1, expires_at = $2 WHERE id = $3', [tokenHash, expiresAt, req.params.id]);
+  await audit(req.orgId, req.user.sub, 'team.invite_resent', 'user', req.params.id, { email: invite.rows[0].email }, req.ip);
+
+  const inviteUrl = `${process.env.APP_URL || 'http://localhost:3000'}/case-closed-pro.html?inviteToken=${rawToken}`;
+  const targetEmail = invite.rows[0].email;
+  if (SMTP_CONFIGURED) {
+    try {
+      await mailer.sendMail({
+        from: process.env.FROM_EMAIL || process.env.SMTP_USER,
+        to: targetEmail,
+        subject: `Reminder: you're invited to join ${req.user.email.split('@')[1]} on Case Closed Pro`,
+        text: `${req.user.email} has invited you to join their organization on Case Closed Pro.\n\nAccept your invite (expires in 7 days):\n${inviteUrl}\n\nIf you weren't expecting this, you can ignore this email.`
+      });
+    } catch (e) {
+      console.error('Resend invite email failed to send:', e.message);
+    }
+  } else {
+    console.warn(`SMTP not configured — resent invite link for ${targetEmail}: ${inviteUrl}`);
+  }
+  res.json({ resent: true, email: targetEmail, inviteUrl });
+});
+
+// Revoke a pending invite outright — for when someone was invited by
+// mistake, or the offer's off the table. Hard-deletes the row rather
+// than just expiring it, since there's no reason to keep it around.
+app.delete('/api/team/invites/:id', requireOrgRole('admin'), async (req, res) => {
+  const invite = await q(
+    `SELECT id, email FROM team_invites WHERE id = $1 AND org_id = $2 AND used_at IS NULL`,
+    [req.params.id, req.orgId]
+  );
+  if (!invite.rows[0]) return res.status(404).json({ error: 'Pending invite not found in your organization' });
+  await q('DELETE FROM team_invites WHERE id = $1', [req.params.id]);
+  await audit(req.orgId, req.user.sub, 'team.invite_revoked', 'user', req.params.id, { email: invite.rows[0].email }, req.ip);
+  res.json({ revoked: true });
+});
+
 // Deactivate a teammate — admin or owner only, same org, can't
 // remove the owner through this endpoint (protects against a org
 // accidentally locking itself out).
