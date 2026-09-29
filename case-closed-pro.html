@@ -3391,6 +3391,8 @@ function render(){
   if (S.showTeamModal) html += teamModalV();
   if (S.showCreateOrgModal) html += createOrgModalV();
   if (S.activateOrgResult) html += activateOrgResultModalV();
+  if (S.showManageUsersModal) html += manageUsersModalV();
+  if (S.resetPasswordResult) html += resetPasswordResultModalV();
   if (S.showScheduleTaskModal) html += scheduleTaskModalV();
   /* AI Intake Modal */
   if (S.showAiIntake) html += aiClaimIntakeModalV();
@@ -7903,6 +7905,7 @@ function adminPanelV(){
       } else {
         h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;color:var(--green);" onclick="activateOrg(\''+o.id+'\',\''+escAttr(o.name)+'\')">Reactivate</button>';
       }
+      h += ' <button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;" onclick="openManageUsers(\''+o.id+'\',\''+escAttr(o.name)+'\')">Manage Users</button>';
       h += '</td></tr>';
     });
     h += '</tbody></table></div>';
@@ -8020,6 +8023,82 @@ function activateOrgResultModalV(){
   h += '</div>';
   h += '<div style="font-size:10.5px;color:var(--dim);margin-top:10px;">If this key is lost before being sent, generate a fresh one from this org\'s row rather than trying to recover it — only its hash is stored.</div>';
   h += '<button class="btn btn-pri" style="width:100%;justify-content:center;margin-top:16px;" onclick="if(confirm(\'Have you copied and sent this key? It cannot be shown again.\'))st({activateOrgResult:null})">I\'ve Saved This — Done</button>';
+  h += '</div></div></div>';
+  return h;
+}
+
+async function openManageUsers(orgId, orgName){
+  st({ showManageUsersModal: true, manageUsersOrgId: orgId, manageUsersOrgName: orgName, manageUsersLoading: true, manageUsersData: null, manageUsersError: null });
+  try {
+    const result = await apiFetch('/api/admin/organizations/'+orgId+'/users');
+    st({ manageUsersLoading: false, manageUsersData: result.users || [] });
+  } catch (e) {
+    st({ manageUsersLoading: false, manageUsersError: e.message });
+  }
+}
+function closeManageUsers(){
+  st({ showManageUsersModal: false, manageUsersOrgId: null, manageUsersOrgName: null, manageUsersData: null, manageUsersError: null });
+}
+async function resetUserPassword(userId, email, name){
+  if (!confirm('Reset the password for '+email+'?\n\nTheir current password will stop working immediately, and you\'ll be shown a one-time temporary password to relay to them through another channel (phone, a separate email thread, etc.) — never paste it back into this app for them.')) return;
+  st({ manageUsersResettingId: userId });
+  try {
+    const result = await apiFetch('/api/admin/users/'+userId+'/reset-password', { method:'POST' });
+    st({ manageUsersResettingId: null, resetPasswordResult: result, showManageUsersModal: false });
+  } catch (e) {
+    st({ manageUsersResettingId: null });
+    alert('Could not reset password: ' + e.message);
+  }
+}
+
+function manageUsersModalV(){
+  let h = '<div class="modal-bg" onclick="if(event.target===this)closeManageUsers()">';
+  h += '<div class="modal" style="max-width:600px;">';
+  h += '<div class="modal-h"><div class="serif" style="font-size:18px;font-weight:700;">Users — '+esc(S.manageUsersOrgName||'')+'</div>';
+  h += '<button class="x" onclick="closeManageUsers()">×</button></div>';
+  h += '<div class="modal-b">';
+  if (S.manageUsersLoading) {
+    h += '<div style="padding:24px;text-align:center;color:var(--muted);">Loading users…</div>';
+  } else if (S.manageUsersError) {
+    h += '<div class="alert-bad">'+esc(S.manageUsersError)+'</div>';
+  } else {
+    const users = S.manageUsersData || [];
+    if (users.length === 0) {
+      h += '<div style="padding:20px;text-align:center;color:var(--muted);font-size:12.5px;">No users found in this organization.</div>';
+    } else {
+      h += '<div style="font-size:10.5px;color:var(--dim);margin-bottom:12px;">Resetting a password immediately invalidates the user\'s current one and generates a one-time temporary password shown to you here — relay it to them yourself through another channel.</div>';
+      h += '<div style="overflow-x:auto;"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>';
+      users.forEach(u => {
+        h += '<tr>';
+        h += '<td style="font-weight:700;">'+esc(u.name||'—')+'</td>';
+        h += '<td style="font-size:11.5px;color:var(--muted);">'+esc(u.email)+'</td>';
+        h += '<td><span class="tag" style="text-transform:capitalize;">'+esc(u.role)+'</span></td>';
+        h += '<td>'+(u.isActive ? '<span class="tag" style="background:var(--green)18;color:var(--green);">Active</span>' : '<span class="tag" style="background:var(--red)18;color:var(--red);">Inactive</span>')+'</td>';
+        h += '<td style="white-space:nowrap;"><button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;" '+(S.manageUsersResettingId===u.id?'disabled':'')+' onclick="resetUserPassword(\''+u.id+'\',\''+escAttr(u.email)+'\',\''+escAttr(u.name||'')+'\')">'+(S.manageUsersResettingId===u.id?'Resetting…':'Reset Password')+'</button></td>';
+        h += '</tr>';
+      });
+      h += '</tbody></table></div>';
+    }
+  }
+  h += '</div></div></div>';
+  return h;
+}
+
+function resetPasswordResultModalV(){
+  const r = S.resetPasswordResult;
+  if (!r) return '';
+  let h = '<div class="modal-bg" onclick="if(event.target===this)st({resetPasswordResult:null})">';
+  h += '<div class="modal" style="max-width:520px;">';
+  h += '<div class="modal-h"><div class="serif" style="font-size:18px;font-weight:700;">✓ Password Reset</div>';
+  h += '<button class="x" onclick="st({resetPasswordResult:null})">×</button></div>';
+  h += '<div class="modal-b">';
+  h += '<div class="alert-good" style="margin-bottom:14px;">A new temporary password has been set for <strong>'+esc(r.name||r.email)+'</strong> ('+esc(r.email)+'). It is shown <strong>this one time only</strong> — relay it to them now through a channel other than this app, and ask them to change it after logging in.</div>';
+  h += '<div style="background:var(--surf2);border:1px solid var(--line);border-radius:8px;padding:16px;">';
+  h += '<label class="lbl">Temporary Password</label>';
+  h += '<div style="font-family:monospace;font-size:14px;font-weight:700;background:#fff;border:1px solid var(--line);border-radius:6px;padding:10px;word-break:break-all;">'+esc(r.tempPassword)+'</div>';
+  h += '</div>';
+  h += '<div style="font-size:10.5px;color:var(--dim);margin-top:10px;">If this is lost before being sent, run Reset Password again — only its hash is stored, so it cannot be recovered.</div>';
+  h += '<button class="btn btn-pri" style="width:100%;justify-content:center;margin-top:16px;" onclick="if(confirm(\'Have you relayed this password to the user?\'))st({resetPasswordResult:null})">I\'ve Saved This — Done</button>';
   h += '</div></div></div>';
   return h;
 }
