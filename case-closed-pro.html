@@ -1650,8 +1650,11 @@ function impersonationBannerV(){
   if (!im || !im.active) return '';
   const msLeft = new Date(im.expiresAt).getTime() - Date.now();
   const minsLeft = Math.max(0, Math.round(msLeft / 60000));
+  const label = im.readOnly
+    ? '🔒👁 <strong>Read-only view</strong> as <strong>'+esc(im.userName||im.userEmail)+'</strong> at <strong>'+esc(im.orgName)+'</strong> — no changes can be saved. Session ends in ~'+minsLeft+' min.'
+    : '👁 Viewing as <strong>'+esc(im.userName||im.userEmail)+'</strong> at <strong>'+esc(im.orgName)+'</strong> — every action is being logged. Session ends in ~'+minsLeft+' min.';
   return '<div style="background:linear-gradient(90deg,#7C2D12,#9A3412);color:#fff;padding:9px 18px;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;font-size:12.5px;font-weight:600;text-align:center;position:sticky;top:0;z-index:60;">' +
-    '<span>👁 Viewing as <strong>'+esc(im.userName||im.userEmail)+'</strong> at <strong>'+esc(im.orgName)+'</strong> — every action is being logged. Session ends in ~'+minsLeft+' min.</span>' +
+    '<span>'+label+'</span>' +
     '<button onclick="endImpersonation()" class="btn" style="background:#fff;color:#7C2D12;padding:5px 14px;border-radius:20px;font-weight:700;border:none;cursor:pointer;">Exit — Back to Admin</button>' +
   '</div>';
 }
@@ -3416,6 +3419,8 @@ function render(){
   if (S.activateOrgResult) html += activateOrgResultModalV();
   if (S.showManageUsersModal) html += manageUsersModalV();
   if (S.resetPasswordResult) html += resetPasswordResultModalV();
+  if (S.reassignCasesModal) html += reassignCasesModalV();
+  if (S.orgNotesModal) html += orgNotesModalV();
   if (S.showScheduleTaskModal) html += scheduleTaskModalV();
   /* AI Intake Modal */
   if (S.showAiIntake) html += aiClaimIntakeModalV();
@@ -7987,6 +7992,7 @@ async function fetchAuditLog(filters){
     const params = new URLSearchParams();
     if (f.orgId) params.set('orgId', f.orgId);
     if (f.action) params.set('action', f.action);
+    if (f.userId) params.set('userId', f.userId);
     params.set('limit', '150');
     const data = await apiFetch('/api/admin/audit-log?' + params.toString());
     st({auditLogEntries:data.entries, auditLogLoading:false, auditLogFilters:f});
@@ -8008,8 +8014,10 @@ function auditLogV(){
   h += '</select>';
   h += '<input id="auditActionFilter" type="text" placeholder="Filter by action (e.g. case.update, auth.login)" value="'+escAttr(f.action||'')+'" style="min-width:260px;">';
   h += '<button class="btn btn-pri" onclick="applyAuditFilter()">Apply</button>';
-  if (f.orgId || f.action) h += '<button class="btn btn-ghost" onclick="fetchAuditLog({})">Clear</button>';
-  h += '</div></div>';
+  if (f.orgId || f.action || f.userId) h += '<button class="btn btn-ghost" onclick="fetchAuditLog({})">Clear</button>';
+  h += '</div>';
+  if (f.userId) h += '<div style="padding:10px 0 0;font-size:11.5px;color:var(--dim);">Filtering to one user'+(f.userLabel?': <strong>'+esc(f.userLabel)+'</strong>':'')+' — <span onclick="fetchAuditLog(Object.assign({},S.auditLogFilters,{userId:undefined,userLabel:undefined}))" style="cursor:pointer;text-decoration:underline;">remove this filter</span></div>';
+  h += '</div>';
 
   h += '<div class="card">';
   h += '<div class="sh"><span>Audit Trail</span>'+(S.auditLogEntries?'<span style="color:var(--dim);font-weight:500;">'+S.auditLogEntries.length+' most recent</span>':'')+'</div>';
@@ -8037,6 +8045,14 @@ function auditLogV(){
   }
   h += '</div>';
   return h;
+}
+
+// Jumps from Manage Users straight to that user's slice of the audit
+// trail — "what has this person actually done" is usually the first
+// question in a support conversation.
+function viewUserActivity(userId, userLabel){
+  st({ showManageUsersModal: false, adminTab: 'audit' });
+  fetchAuditLog({ userId, userLabel });
 }
 
 function applyAuditFilter(){
@@ -8112,24 +8128,35 @@ function adminPanelV(){
     return h;
   }
 
-  const orgs = S.adminOrgs || [];
-  const active = orgs.filter(o => o.accessStatus === 'active').length;
-  const suspended = orgs.filter(o => o.accessStatus === 'suspended').length;
-  const pending = orgs.filter(o => o.accessStatus === 'pending_activation').length;
-  const totalMatters = orgs.reduce((s,o) => s + (o.caseCount||0), 0);
+  const allOrgs = S.adminOrgs || [];
+  const active = allOrgs.filter(o => o.accessStatus === 'active').length;
+  const suspended = allOrgs.filter(o => o.accessStatus === 'suspended').length;
+  const pending = allOrgs.filter(o => o.accessStatus === 'pending_activation').length;
+  const totalMatters = allOrgs.reduce((s,o) => s + (o.caseCount||0), 0);
 
   h += '<div class="kpi-grid">';
-  h += '<div class="kpi"><div class="kpi-l">Total Organizations</div><div class="kpi-v">'+orgs.length+'</div></div>';
+  h += '<div class="kpi"><div class="kpi-l">Total Organizations</div><div class="kpi-v">'+allOrgs.length+'</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Active</div><div class="kpi-v" style="color:var(--green);">'+active+'</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Pending Activation</div><div class="kpi-v" style="color:var(--gold);">'+pending+'</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Suspended</div><div class="kpi-v" style="color:var(--red);">'+suspended+'</div></div>';
   h += '<div class="kpi"><div class="kpi-l">Total Matters (All Orgs)</div><div class="kpi-v">'+totalMatters+'</div></div>';
   h += '</div>';
 
+  h += userSearchV();
+
+  const orgQuery = (S.orgSearchQuery || '').trim().toLowerCase();
+  const orgs = orgQuery ? allOrgs.filter(o => o.name.toLowerCase().includes(orgQuery)) : allOrgs;
+
   h += '<div class="card">';
-  h += '<div class="sh"><span>All Organizations</span><span style="color:var(--dim);font-weight:500;">'+orgs.length+' total</span></div>';
-  if (orgs.length === 0) {
+  h += '<div class="sh"><span>All Organizations</span><span style="color:var(--dim);font-weight:500;">'+orgs.length+' of '+allOrgs.length+'</span></div>';
+  h += '<div style="padding:12px 0 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">';
+  h += '<input type="text" placeholder="Search organizations by name…" value="'+escAttr(S.orgSearchQuery||'')+'" oninput="st({orgSearchQuery:this.value})" style="flex:1;max-width:360px;">';
+  h += '<button class="btn btn-ghost" style="font-size:11px;" onclick="exportOrgsCSV()">⬇ Export CSV</button>';
+  h += '</div>';
+  if (allOrgs.length === 0) {
     h += '<div style="padding:24px;text-align:center;color:var(--muted);font-size:12.5px;">No organizations yet — click "Create New Customer" to provision the first one.</div>';
+  } else if (orgs.length === 0) {
+    h += '<div style="padding:24px;text-align:center;color:var(--muted);font-size:12.5px;">No organizations match "'+esc(S.orgSearchQuery)+'".</div>';
   } else {
     h += '<div style="overflow-x:auto;"><table>';
     h += '<thead><tr><th>Organization</th><th>Type</th><th>Plan</th><th>Matters</th><th>Users</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>';
@@ -8153,6 +8180,7 @@ function adminPanelV(){
         h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;color:var(--green);" onclick="activateOrg(\''+o.id+'\',\''+escAttr(o.name)+'\')">Reactivate</button>';
       }
       h += ' <button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;" onclick="openManageUsers(\''+o.id+'\',\''+escAttr(o.name)+'\')">Manage Users</button>';
+      h += ' <button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;'+(o.internalNotes?'font-weight:700;':'')+'" onclick="openOrgNotes(\''+o.id+'\')">'+(o.internalNotes?'📝 Notes':'+ Notes')+'</button>';
       h += '</td></tr>';
     });
     h += '</tbody></table></div>';
@@ -8274,6 +8302,124 @@ function activateOrgResultModalV(){
   return h;
 }
 
+// Cross-org "find this person's account" search — separate from the
+// org-name filter above, since a support conversation usually starts
+// with a person's email, not their employer's name.
+async function runUserSearch(){
+  const query = (document.getElementById('userSearchInput')||{}).value || '';
+  st({userSearchQuery: query, userSearchLoading:true, userSearchError:''});
+  try {
+    const data = await apiFetch('/api/admin/users/search?q=' + encodeURIComponent(query.trim()));
+    st({userSearchResults:data.users, userSearchLoading:false});
+  } catch (e) {
+    st({userSearchError:e.message, userSearchLoading:false});
+  }
+}
+function userSearchV(){
+  let h = '<div class="card" style="margin-top:16px;margin-bottom:16px;">';
+  h += '<div class="sh"><span>Find a Person</span></div>';
+  h += '<div style="display:flex;gap:8px;padding-top:4px;">';
+  h += '<input id="userSearchInput" type="text" placeholder="Search by name or email…" value="'+escAttr(S.userSearchQuery||'')+'" onkeydown="if(event.key===\'Enter\')runUserSearch()" style="flex:1;max-width:360px;">';
+  h += '<button class="btn btn-pri" '+(S.userSearchLoading?'disabled':'')+' onclick="runUserSearch()">'+(S.userSearchLoading?'Searching…':'Search')+'</button>';
+  h += '</div>';
+  if (S.userSearchError) h += '<div class="alert-bad" style="margin-top:10px;">'+esc(S.userSearchError)+'</div>';
+  if (S.userSearchResults) {
+    if (S.userSearchResults.length === 0) {
+      h += '<div style="padding:14px 0 4px;color:var(--muted);font-size:12.5px;">No matching users found.</div>';
+    } else {
+      h += '<div style="margin-top:10px;overflow-x:auto;"><table><thead><tr><th>Name</th><th>Email</th><th>Organization</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>';
+      S.userSearchResults.forEach(u => {
+        h += '<tr>';
+        h += '<td style="font-weight:700;">'+esc(u.name||'—')+'</td>';
+        h += '<td style="font-size:11.5px;color:var(--muted);">'+esc(u.email)+'</td>';
+        h += '<td style="font-size:11.5px;">'+esc(u.orgName)+'</td>';
+        h += '<td><span class="tag" style="text-transform:capitalize;">'+esc(u.role)+'</span></td>';
+        h += '<td>'+(u.isActive ? '<span class="tag" style="background:var(--green)18;color:var(--green);">Active</span>' : '<span class="tag" style="background:var(--red)18;color:var(--red);">Inactive</span>')+'</td>';
+        h += '<td><button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;" onclick="openManageUsers(\''+u.orgId+'\',\''+escAttr(u.orgName)+'\')">Manage</button></td>';
+        h += '</tr>';
+      });
+      h += '</tbody></table></div>';
+    }
+  }
+  h += '</div>';
+  return h;
+}
+
+// Internal notes — support/sales context only. Looked up from the
+// already-loaded S.adminOrgs rather than passed through the button's
+// onclick attribute, since notes are free-form multi-line text and a
+// raw newline inside a single-quoted JS string in an HTML attribute
+// would break the page.
+function openOrgNotes(orgId){
+  const org = (S.adminOrgs||[]).find(o => o.id === orgId);
+  if (!org) return;
+  st({ orgNotesModal: { orgId, orgName: org.name, draft: org.internalNotes || '' } });
+}
+function closeOrgNotes(){
+  st({ orgNotesModal: null });
+}
+async function saveOrgNotes(){
+  const m = S.orgNotesModal;
+  const draft = (document.getElementById('orgNotesTextarea')||{}).value ?? m.draft;
+  st({ orgNotesSaving: true });
+  try {
+    await apiFetch('/api/admin/organizations/'+m.orgId+'/notes', { method: 'POST', body: JSON.stringify({ notes: draft }) });
+    st({ orgNotesModal: null, orgNotesSaving: false });
+    await fetchAdminOrgs();
+  } catch (e) {
+    st({ orgNotesSaving: false });
+    alert('Could not save notes: ' + e.message);
+  }
+}
+function orgNotesModalV(){
+  const m = S.orgNotesModal;
+  if (!m) return '';
+  let h = '<div class="modal-bg" onclick="if(event.target===this)closeOrgNotes()">';
+  h += '<div class="modal" style="max-width:520px;">';
+  h += '<div class="modal-h"><div class="serif" style="font-size:18px;font-weight:700;">Internal Notes — '+esc(m.orgName)+'</div>';
+  h += '<button class="x" onclick="closeOrgNotes()">×</button></div>';
+  h += '<div class="modal-b">';
+  h += '<div style="font-size:10.5px;color:var(--dim);margin-bottom:10px;">Visible only to platform admins — never shown to this customer anywhere in the app.</div>';
+  h += '<textarea id="orgNotesTextarea" rows="8" style="width:100%;font-family:inherit;font-size:12.5px;" placeholder="Renewal conversations, escalations, anything worth remembering next time you talk to this customer…">'+esc(m.draft)+'</textarea>';
+  h += '<button class="btn btn-pri" style="width:100%;justify-content:center;margin-top:14px;" '+(S.orgNotesSaving?'disabled':'')+' onclick="saveOrgNotes()">'+(S.orgNotesSaving?'Saving…':'Save Notes')+'</button>';
+  h += '</div></div></div>';
+  return h;
+}
+
+// Generic CSV export — client-side only, no backend round trip
+// needed since the data driving these exports (org list, a
+// particular org's user list) is already loaded into state by the
+// time someone clicks the button.
+function downloadCSV(filename, rows){
+  if (!rows || rows.length === 0) { alert('Nothing to export.'); return; }
+  const headers = Object.keys(rows[0]);
+  const escCell = v => {
+    const s = v === null || v === undefined ? '' : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  };
+  const lines = [headers.join(',')].concat(rows.map(r => headers.map(h => escCell(r[h])).join(',')));
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function exportOrgsCSV(){
+  const orgs = (S.adminOrgs||[]).map(o => ({
+    Organization: o.name, Type: o.persona, Plan: o.planTier, Status: o.accessStatus,
+    Matters: o.caseCount, Users: o.userCount, Created: String(o.createdAt).slice(0,10)
+  }));
+  downloadCSV('case-closed-pro-organizations.csv', orgs);
+}
+function exportOrgUsersCSV(){
+  const users = (S.manageUsersData||[]).map(u => ({
+    Name: u.name || '', Email: u.email, Role: u.role, Active: u.isActive ? 'Yes' : 'No',
+    AssignedMatters: u.assignedCaseCount, LastLogin: u.lastLoginAt ? String(u.lastLoginAt).slice(0,19).replace('T',' ') : ''
+  }));
+  downloadCSV((S.manageUsersOrgName||'organization').replace(/[^a-z0-9]+/gi,'-').toLowerCase() + '-users.csv', users);
+}
+
 async function openManageUsers(orgId, orgName){
   st({ showManageUsersModal: true, manageUsersOrgId: orgId, manageUsersOrgName: orgName, manageUsersLoading: true, manageUsersData: null, manageUsersError: null });
   try {
@@ -8287,12 +8433,16 @@ function closeManageUsers(){
   st({ showManageUsersModal: false, manageUsersOrgId: null, manageUsersOrgName: null, manageUsersData: null, manageUsersError: null });
 }
 let _impersonationTimer = null;
-async function startImpersonation(orgId, orgName, userId, userEmail, userName){
-  if (!confirm('View the app as '+(userName||userEmail)+' at '+orgName+'?\n\nEvery action you take will be logged to the audit trail as an impersonation action, and the session automatically ends after 20 minutes.')) return;
+async function startImpersonation(orgId, orgName, userId, userEmail, userName, readOnly){
+  const modeLabel = readOnly ? 'View (read-only)' : 'View as';
+  const explain = readOnly
+    ? 'You\'ll see exactly what they see, but every save/create/delete action will be blocked by the server — this is for looking, not acting.'
+    : 'Every action you take will be logged to the audit trail as an impersonation action.';
+  if (!confirm(modeLabel+' '+(userName||userEmail)+' at '+orgName+'?\n\n'+explain+' The session automatically ends after 20 minutes.')) return;
   try {
     const result = await apiFetch('/api/admin/organizations/'+orgId+'/impersonate', {
       method: 'POST',
-      body: JSON.stringify(userId ? { userId } : {})
+      body: JSON.stringify(Object.assign({}, userId ? { userId } : {}, readOnly ? { readOnly: true } : {}))
     });
     const adminToken = authToken;
     const adminUser = S.currentUser;
@@ -8304,7 +8454,7 @@ async function startImpersonation(orgId, orgName, userId, userEmail, userName){
     S.impersonation = {
       active: true, orgId: result.organization.id, orgName: result.organization.name,
       userEmail: result.user.email, userName: result.user.name, expiresAt: result.expiresAt,
-      adminToken, adminUser
+      readOnly: !!result.readOnly, adminToken, adminUser
     };
     CASES.length = 0;
     await loadCasesFromApi();
@@ -8330,6 +8480,63 @@ async function endImpersonation(expired){
   st({ role: 'admin', adminTab: 'orgs', caseId: null, showWelcome: false });
   if (expired) alert('The "View as" session ended after 20 minutes. You\'re back in the admin panel.');
 }
+async function setUserActive(userId, active, email){
+  const verb = active ? 'reactivate' : 'deactivate';
+  if (!confirm((active ? 'Reactivate ' : 'Deactivate ') + email + '?' + (active ? '' : ' They will be locked out starting with their next login attempt.'))) return;
+  try {
+    await apiFetch('/api/admin/users/'+userId+'/'+verb, { method: 'POST' });
+    await openManageUsers(S.manageUsersOrgId, S.manageUsersOrgName);
+  } catch (e) {
+    alert('Could not ' + verb + ': ' + e.message);
+  }
+}
+function openReassignCases(fromUserId, fromUserName, caseCount){
+  st({ reassignCasesModal: { fromUserId, fromUserName, caseCount } });
+}
+function closeReassignCases(){
+  st({ reassignCasesModal: null });
+}
+async function submitReassignCases(){
+  const m = S.reassignCasesModal;
+  const toUserId = (document.getElementById('reassignToUser')||{}).value;
+  if (!toUserId) { alert('Choose who these matters should go to.'); return; }
+  if (!confirm('Move all '+m.caseCount+' matter(s) from '+m.fromUserName+' to the selected user? This cannot be undone automatically.')) return;
+  st({ reassignCasesSubmitting: true });
+  try {
+    const result = await apiFetch('/api/admin/organizations/'+S.manageUsersOrgId+'/reassign-cases', {
+      method: 'POST', body: JSON.stringify({ fromUserId: m.fromUserId, toUserId })
+    });
+    st({ reassignCasesModal: null, reassignCasesSubmitting: false });
+    alert('Moved ' + result.reassigned + ' matter(s) from ' + result.fromUser + ' to ' + result.toUser + '.');
+    await openManageUsers(S.manageUsersOrgId, S.manageUsersOrgName);
+  } catch (e) {
+    st({ reassignCasesSubmitting: false });
+    alert('Could not reassign: ' + e.message);
+  }
+}
+function reassignCasesModalV(){
+  const m = S.reassignCasesModal;
+  if (!m) return '';
+  const others = (S.manageUsersData||[]).filter(u => u.id !== m.fromUserId);
+  let h = '<div class="modal-bg" onclick="if(event.target===this)closeReassignCases()">';
+  h += '<div class="modal" style="max-width:440px;">';
+  h += '<div class="modal-h"><div class="serif" style="font-size:18px;font-weight:700;">Reassign Matters</div>';
+  h += '<button class="x" onclick="closeReassignCases()">×</button></div>';
+  h += '<div class="modal-b">';
+  h += '<div style="font-size:12.5px;margin-bottom:14px;">Move all <strong>'+m.caseCount+'</strong> matter(s) currently assigned to <strong>'+esc(m.fromUserName)+'</strong> to:</div>';
+  if (others.length === 0) {
+    h += '<div class="alert-warn">No other users in this organization to reassign to.</div>';
+  } else {
+    h += '<label class="lbl">New Owner</label>';
+    h += '<select id="reassignToUser" style="width:100%;margin-bottom:14px;">';
+    others.forEach(u => { h += '<option value="'+u.id+'">'+esc(u.name||u.email)+' ('+esc(u.email)+')</option>'; });
+    h += '</select>';
+    h += '<button class="btn btn-pri" style="width:100%;justify-content:center;" '+(S.reassignCasesSubmitting?'disabled':'')+' onclick="submitReassignCases()">'+(S.reassignCasesSubmitting?'Moving…':'Reassign Matters')+'</button>';
+  }
+  h += '</div></div></div>';
+  return h;
+}
+
 async function resetUserPassword(userId, email, name){
   if (!confirm('Reset the password for '+email+'?\n\nTheir current password will stop working immediately, and you\'ll be shown a one-time temporary password to relay to them through another channel (phone, a separate email thread, etc.) — never paste it back into this app for them.')) return;
   st({ manageUsersResettingId: userId });
@@ -8357,17 +8564,29 @@ function manageUsersModalV(){
     if (users.length === 0) {
       h += '<div style="padding:20px;text-align:center;color:var(--muted);font-size:12.5px;">No users found in this organization.</div>';
     } else {
-      h += '<div style="font-size:10.5px;color:var(--dim);margin-bottom:12px;">Resetting a password immediately invalidates the user\'s current one and generates a one-time temporary password shown to you here — relay it to them yourself through another channel.</div>';
-      h += '<div style="overflow-x:auto;"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>';
+      h += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px;">';
+      h += '<div style="font-size:10.5px;color:var(--dim);">Resetting a password immediately invalidates the user\'s current one and generates a one-time temporary password shown to you here — relay it to them yourself through another channel.</div>';
+      h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;white-space:nowrap;" onclick="exportOrgUsersCSV()">⬇ CSV</button>';
+      h += '</div>';
+      h += '<div style="overflow-x:auto;"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Matters</th><th></th></tr></thead><tbody>';
       users.forEach(u => {
         h += '<tr>';
         h += '<td style="font-weight:700;">'+esc(u.name||'—')+'</td>';
         h += '<td style="font-size:11.5px;color:var(--muted);">'+esc(u.email)+'</td>';
         h += '<td><span class="tag" style="text-transform:capitalize;">'+esc(u.role)+'</span></td>';
         h += '<td>'+(u.isActive ? '<span class="tag" style="background:var(--green)18;color:var(--green);">Active</span>' : '<span class="tag" style="background:var(--red)18;color:var(--red);">Inactive</span>')+'</td>';
+        h += '<td>'+u.assignedCaseCount+'</td>';
         h += '<td style="white-space:nowrap;">';
         h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;" onclick="startImpersonation(\''+S.manageUsersOrgId+'\',\''+escAttr(S.manageUsersOrgName||'')+'\',\''+u.id+'\',\''+escAttr(u.email)+'\',\''+escAttr(u.name||'')+'\')">View As</button> ';
-        h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;" '+(S.manageUsersResettingId===u.id?'disabled':'')+' onclick="resetUserPassword(\''+u.id+'\',\''+escAttr(u.email)+'\',\''+escAttr(u.name||'')+'\')">'+(S.manageUsersResettingId===u.id?'Resetting…':'Reset Password')+'</button>';
+        h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;" onclick="startImpersonation(\''+S.manageUsersOrgId+'\',\''+escAttr(S.manageUsersOrgName||'')+'\',\''+u.id+'\',\''+escAttr(u.email)+'\',\''+escAttr(u.name||'')+'\',true)">View (Read-Only)</button> ';
+        h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;" '+(S.manageUsersResettingId===u.id?'disabled':'')+' onclick="resetUserPassword(\''+u.id+'\',\''+escAttr(u.email)+'\',\''+escAttr(u.name||'')+'\')">'+(S.manageUsersResettingId===u.id?'Resetting…':'Reset Password')+'</button> ';
+        h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;" onclick="viewUserActivity(\''+u.id+'\',\''+escAttr(u.name||u.email)+'\')">View Activity</button> ';
+        if (u.assignedCaseCount > 0 && users.length > 1) {
+          h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;" onclick="openReassignCases(\''+u.id+'\',\''+escAttr(u.name||u.email)+'\',' + u.assignedCaseCount + ')">Reassign Cases</button> ';
+        }
+        h += u.isActive
+          ? '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;color:var(--red);" onclick="setUserActive(\''+u.id+'\',false,\''+escAttr(u.email)+'\')">Deactivate</button>'
+          : '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;color:var(--green);" onclick="setUserActive(\''+u.id+'\',true,\''+escAttr(u.email)+'\')">Reactivate</button>';
         h += '</td>';
         h += '</tr>';
       });
