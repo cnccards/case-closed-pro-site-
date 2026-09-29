@@ -1138,6 +1138,97 @@ app.post('/api/admin/errors/:id/resolve', requirePlatformAdmin, async (req, res)
   res.json({ resolved: true });
 });
 
+// Customer retention / health dashboard. There's no billing or usage-
+// analytics platform wired in, so this deliberately computes a
+// simple, fully-explainable score from data we already have — never
+// a black box a CSM has to trust blindly. Every deduction below is a
+// concrete, visible signal; nothing here is machine-learned or
+// hidden.
+//
+// Scoring (starts at 100, floor 0):
+//  -40  access suspended                        (an active blocker, not just a risk signal)
+//  -25  no user has logged in within 30 days     (or never logged in at all)
+//  -10  no login within 14 days (but within 30)  (softer version of the above)
+//  -15  active users < half of total users       (seats going unused)
+//  -15  no case created/updated in last 30 days  (the core product isn't being touched)
+//  -10  zero Sentinel AI calls in last 30 days   (not using the differentiated feature)
+//  -10  any unresolved error logged for this org (friction we already know about)
+// Tiers: 75-100 Healthy, 50-74 At Risk, 0-49 Critical.
+// A suspended org is always shown as Critical regardless of the raw
+// number — the suspension itself is the headline, not a footnote.
+app.get('/api/admin/retention', requirePlatformAdmin, async (req, res) => {
+  const result = await q(`
+    SELECT
+      o.id, o.name, o.plan_tier, o.access_status, o.renewal_date, o.created_at,
+      (SELECT COUNT(*) FROM cases c WHERE c.org_id = o.id) AS case_count,
+      (SELECT COUNT(*) FROM cases c WHERE c.org_id = o.id AND c.updated_at > now() - interval '30 days') AS active_case_count_30d,
+      (SELECT COUNT(*) FROM users u WHERE u.org_id = o.id) AS user_count,
+      (SELECT COUNT(*) FROM users u WHERE u.org_id = o.id AND u.is_active = true) AS active_user_count,
+      (SELECT MAX(u.last_login_at) FROM users u WHERE u.org_id = o.id) AS last_login_at,
+      (SELECT COUNT(*) FROM audit_log al WHERE al.org_id = o.id AND al.action LIKE 'ai.%' AND al.created_at > now() - interval '30 days') AS ai_call_count_30d,
+      (SELECT COUNT(*) FROM error_log el WHERE el.org_id = o.id AND el.resolved = false) AS unresolved_error_count
+    FROM organizations o
+    ORDER BY o.created_at DESC
+  `);
+
+  const orgs = result.rows.map(r => {
+    const now = Date.now();
+    const lastLogin = r.last_login_at ? new Date(r.last_login_at).getTime() : null;
+    const daysSinceLogin = lastLogin ? Math.floor((now - lastLogin) / 86400000) : null;
+    const userCount = Number(r.user_count), activeUserCount = Number(r.active_user_count);
+    const activeCases30d = Number(r.active_case_count_30d);
+    const aiCalls30d = Number(r.ai_call_count_30d);
+    const unresolvedErrors = Number(r.unresolved_error_count);
+
+    let score = 100;
+    const flags = [];
+    if (r.access_status === 'suspended') { score -= 40; flags.push('Access suspended'); }
+    if (daysSinceLogin === null || daysSinceLogin > 30) { score -= 25; flags.push('No login in 30+ days'); }
+    else if (daysSinceLogin > 14) { score -= 10; flags.push('No login in 14+ days'); }
+    if (userCount > 0 && activeUserCount / userCount < 0.5) { score -= 15; flags.push('Under half of seats active'); }
+    if (activeCases30d === 0) { score -= 15; flags.push('No matter activity in 30 days'); }
+    if (aiCalls30d === 0) { score -= 10; flags.push('No Sentinel AI usage in 30 days'); }
+    if (unresolvedErrors > 0) { score -= 10; flags.push(unresolvedErrors + ' unresolved error(s)'); }
+    score = Math.max(0, Math.min(100, score));
+
+    let tier = score >= 75 ? 'healthy' : score >= 50 ? 'at_risk' : 'critical';
+    if (r.access_status === 'suspended') tier = 'critical';
+
+    const daysToRenewal = r.renewal_date ? Math.ceil((new Date(r.renewal_date).getTime() - now) / 86400000) : null;
+
+    return {
+      id: r.id, name: r.name, planTier: r.plan_tier, accessStatus: r.access_status,
+      renewalDate: r.renewal_date, daysToRenewal,
+      caseCount: Number(r.case_count), activeCaseCount30d: activeCases30d,
+      userCount, activeUserCount, lastLoginAt: r.last_login_at, daysSinceLogin,
+      aiCallCount30d: aiCalls30d, unresolvedErrorCount: unresolvedErrors,
+      healthScore: score, healthTier: tier, flags
+    };
+  });
+  orgs.sort((a, b) => a.healthScore - b.healthScore);
+
+  res.json({
+    organizations: orgs,
+    summary: {
+      healthy: orgs.filter(o => o.healthTier === 'healthy').length,
+      atRisk: orgs.filter(o => o.healthTier === 'at_risk').length,
+      critical: orgs.filter(o => o.healthTier === 'critical').length,
+      renewalsNext30Days: orgs.filter(o => o.daysToRenewal !== null && o.daysToRenewal <= 30 && o.daysToRenewal >= 0).length
+    }
+  });
+});
+
+app.post('/api/admin/organizations/:id/renewal-date', requirePlatformAdmin, async (req, res) => {
+  const { renewalDate } = req.body || {};
+  if (renewalDate !== null && !/^\d{4}-\d{2}-\d{2}$/.test(renewalDate || '')) {
+    return res.status(400).json({ error: 'renewalDate must be an ISO date (YYYY-MM-DD) or null to clear it' });
+  }
+  const result = await q('UPDATE organizations SET renewal_date = $1 WHERE id = $2 RETURNING id, name', [renewalDate, req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: 'Organization not found' });
+  await audit(req.params.id, req.user.sub, 'admin.renewal_date_set', 'organization', req.params.id, { renewalDate, setBy: req.user.email }, req.ip);
+  res.json({ updated: true, renewalDate });
+});
+
 // Provision a brand-new customer directly — this is "give them
 // access to their own cabinet." Creates the organization AND its
 // first (owner) user in one step, active immediately, and returns a
