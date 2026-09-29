@@ -945,6 +945,60 @@ app.get('/api/admin/organizations', requirePlatformAdmin, async (req, res) => {
   });
 });
 
+// Cross-org audit trail for platform admins — "who did what, and
+// when," across every customer, for support and incident response.
+// audit_log has no RLS (it's an admin-only, cross-tenant view by
+// design, same as the organizations list above), so a plain query
+// is correct here. Supports optional filters and pagination since
+// this table will grow large fast.
+app.get('/api/admin/audit-log', requirePlatformAdmin, async (req, res) => {
+  const { orgId, userId, action, entityType, limit, offset } = req.query;
+  const lim = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500);
+  const off = Math.max(parseInt(offset, 10) || 0, 0);
+
+  const conditions = [];
+  const params = [];
+  if (orgId) { params.push(orgId); conditions.push(`al.org_id = $${params.length}`); }
+  if (userId) { params.push(userId); conditions.push(`al.user_id = $${params.length}`); }
+  if (action) { params.push(`%${action}%`); conditions.push(`al.action ILIKE $${params.length}`); }
+  if (entityType) { params.push(entityType); conditions.push(`al.entity_type = $${params.length}`); }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  params.push(lim); const limParam = params.length;
+  params.push(off); const offParam = params.length;
+
+  const result = await q(
+    `SELECT al.*, o.name AS org_name, u.name AS user_name, u.email AS user_email
+     FROM audit_log al
+     LEFT JOIN organizations o ON o.id = al.org_id
+     LEFT JOIN users u ON u.id = al.user_id
+     ${where}
+     ORDER BY al.created_at DESC
+     LIMIT $${limParam} OFFSET $${offParam}`,
+    params
+  );
+
+  res.json({
+    count: result.rows.length,
+    limit: lim,
+    offset: off,
+    entries: result.rows.map(r => ({
+      id: r.id,
+      orgId: r.org_id,
+      orgName: r.org_name || '(deleted org)',
+      userId: r.user_id,
+      userName: r.user_name || null,
+      userEmail: r.user_email || null,
+      action: r.action,
+      entityType: r.entity_type,
+      entityId: r.entity_id,
+      detail: r.detail,
+      ipAddress: r.ip_address,
+      createdAt: r.created_at
+    }))
+  });
+});
+
 // Provision a brand-new customer directly — this is "give them
 // access to their own cabinet." Creates the organization AND its
 // first (owner) user in one step, active immediately, and returns a
