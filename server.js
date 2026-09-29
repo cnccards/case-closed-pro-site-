@@ -190,6 +190,34 @@ async function withTenantScope(req, res, next) {
   next();
 }
 
+// Same RLS-scoping pattern as withTenantScope above, but as a
+// one-off helper for platform-admin routes that need to WRITE to an
+// RLS-protected table (cases, payees, etc.) on a specific org's
+// behalf — the app.is_platform_admin bypass policy in schema.sql
+// only covers SELECT, on purpose, so an admin action that writes has
+// to actually scope itself to that org's connection, exactly like a
+// real request from that org would. orgId is always validated as a
+// genuine UUID before being interpolated (SET can't take a bind
+// param — see withTenantScope above for the same note).
+async function withOrgScopedTransaction(orgId, fn) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgId || '')) {
+    throw new Error('Invalid organization id format');
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`SET LOCAL app.current_org_id = '${orgId}'`);
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 // ---------------------------------------------------------------
 // Email (optional) — same as before, only used by /api/reports/email.
 // ---------------------------------------------------------------
@@ -801,16 +829,29 @@ app.use('/api', async (req, res, next) => {
 // audit_log automatically, without each route having to remember to
 // call audit() itself, so a support session leaves a full paper trail
 // even for actions we didn't think to instrument individually.
+//
+// A read-only session (impersonation.readOnly === true — see the
+// /impersonate endpoint's `readOnly` body param) goes one step
+// further: every non-GET request is blocked outright, not just
+// logged. The one exception is ending the session itself, which has
+// to stay reachable however the session was started. This is for
+// cases where a platform admin just needs to SEE what a customer
+// sees, without the full risk profile of a write-capable session.
 app.use('/api', async (req, res, next) => {
-  if (req.user?.impersonation && req.method !== 'GET') {
-    try {
-      await audit(
-        req.orgId, req.user.sub, 'impersonation.action', 'http_request', null,
-        { method: req.method, path: req.path, impersonatedBy: req.user.impersonation.byEmail },
-        req.ip
-      );
-    } catch (e) {
-      console.error('Failed to log impersonated action:', e.message);
+  if (req.user?.impersonation) {
+    if (req.method !== 'GET') {
+      if (req.user.impersonation.readOnly && req.path !== '/admin/impersonate/end') {
+        return res.status(403).json({ error: 'This is a read-only "View as" session — no changes can be made. Exit and start a full session if you need to take action.' });
+      }
+      try {
+        await audit(
+          req.orgId, req.user.sub, 'impersonation.action', 'http_request', null,
+          { method: req.method, path: req.path, impersonatedBy: req.user.impersonation.byEmail, readOnly: !!req.user.impersonation.readOnly },
+          req.ip
+        );
+      } catch (e) {
+        console.error('Failed to log impersonated action:', e.message);
+      }
     }
   }
   next();
@@ -1001,9 +1042,21 @@ app.get('/api/admin/organizations', requirePlatformAdmin, async (req, res) => {
       id: o.id, name: o.name, persona: o.persona, planTier: o.plan_tier,
       accessStatus: o.access_status,
       caseCount: Number(o.case_count), userCount: Number(o.user_count),
+      internalNotes: o.internal_notes || '',
       createdAt: o.created_at
     }))
   });
+});
+
+// Internal support/sales notes on an org — never surfaced to the
+// customer anywhere, this is purely for your own team's context
+// ("renewal call went well 9/12", "escalated re: slow exports").
+app.post('/api/admin/organizations/:id/notes', requirePlatformAdmin, async (req, res) => {
+  const { notes } = req.body || {};
+  const result = await q('UPDATE organizations SET internal_notes = $1 WHERE id = $2 RETURNING id', [String(notes || '').slice(0, 10000), req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: 'Organization not found' });
+  await audit(req.params.id, req.user.sub, 'admin.notes_updated', 'organization', req.params.id, { updatedBy: req.user.email }, req.ip);
+  res.json({ saved: true });
 });
 
 // Cross-org audit trail for platform admins — "who did what, and
@@ -1012,6 +1065,29 @@ app.get('/api/admin/organizations', requirePlatformAdmin, async (req, res) => {
 // design, same as the organizations list above), so a plain query
 // is correct here. Supports optional filters and pagination since
 // this table will grow large fast.
+// Cross-org user search — "find this person's account" without
+// scrolling the whole Organizations table first. Matches on email or
+// name, case-insensitive, capped at 25 results since this is meant
+// for "find the one account," not a bulk export (see the CSV export
+// endpoints below for that).
+app.get('/api/admin/users/search', requirePlatformAdmin, async (req, res) => {
+  const query = (req.query.q || '').trim();
+  if (!query) return res.json({ users: [] });
+  const result = await q(
+    `SELECT u.id, u.email, u.name, u.role, u.is_active, u.org_id, o.name AS org_name
+     FROM users u JOIN organizations o ON o.id = u.org_id
+     WHERE u.email ILIKE $1 OR u.name ILIKE $1
+     ORDER BY u.name ASC LIMIT 25`,
+    ['%' + query + '%']
+  );
+  res.json({
+    users: result.rows.map(r => ({
+      id: r.id, email: r.email, name: r.name, role: r.role, isActive: r.is_active,
+      orgId: r.org_id, orgName: r.org_name
+    }))
+  });
+});
+
 app.get('/api/admin/audit-log', requirePlatformAdmin, async (req, res) => {
   const { orgId, userId, action, entityType, limit, offset } = req.query;
   const lim = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500);
@@ -1306,13 +1382,48 @@ app.get('/api/admin/organizations/:id/users', requirePlatformAdmin, async (req, 
   const org = await q('SELECT id, name FROM organizations WHERE id = $1', [req.params.id]);
   if (!org.rows[0]) return res.status(404).json({ error: 'Organization not found' });
   const users = await q(
-    `SELECT id, email, name, role, is_active, last_login_at FROM users WHERE org_id = $1 ORDER BY created_at ASC`,
+    `SELECT u.id, u.email, u.name, u.role, u.is_active, u.last_login_at,
+            (SELECT COUNT(*) FROM cases c WHERE c.org_id = u.org_id AND c.assigned_attorney_user_id = u.id) AS assigned_case_count
+     FROM users u WHERE u.org_id = $1 ORDER BY u.created_at ASC`,
     [req.params.id]
   );
   res.json({
     organization: org.rows[0],
-    users: users.rows.map(u => ({ id: u.id, email: u.email, name: u.name, role: u.role, isActive: u.is_active, lastLoginAt: u.last_login_at }))
+    users: users.rows.map(u => ({ id: u.id, email: u.email, name: u.name, role: u.role, isActive: u.is_active, lastLoginAt: u.last_login_at, assignedCaseCount: Number(u.assigned_case_count) }))
   });
+});
+
+// Bulk-reassign every matter currently assigned to one user, over to
+// another user in the SAME org — the "this person is leaving, move
+// their caseload" action. Writes go through withOrgScopedTransaction
+// rather than a plain query, because `cases` is RLS-protected and the
+// is_platform_admin bypass policy only covers reads (see that
+// helper's comment above for why).
+app.post('/api/admin/organizations/:id/reassign-cases', requirePlatformAdmin, async (req, res) => {
+  const { fromUserId, toUserId } = req.body || {};
+  if (!fromUserId || !toUserId) return res.status(400).json({ error: 'fromUserId and toUserId are both required' });
+  if (fromUserId === toUserId) return res.status(400).json({ error: 'fromUserId and toUserId must be different users' });
+
+  const users = await q(
+    `SELECT id, email, name FROM users WHERE id = ANY($1::uuid[]) AND org_id = $2`,
+    [[fromUserId, toUserId], req.params.id]
+  );
+  const fromUser = users.rows.find(u => u.id === fromUserId);
+  const toUser = users.rows.find(u => u.id === toUserId);
+  if (!fromUser || !toUser) return res.status(404).json({ error: 'Both users must belong to this organization' });
+
+  const result = await withOrgScopedTransaction(req.params.id, (client) =>
+    client.query(
+      'UPDATE cases SET assigned_attorney_user_id = $1 WHERE org_id = $2 AND assigned_attorney_user_id = $3 RETURNING id',
+      [toUserId, req.params.id, fromUserId]
+    )
+  );
+
+  await audit(req.params.id, req.user.sub, 'admin.cases_reassigned', 'user', toUserId, {
+    fromUserEmail: fromUser.email, toUserEmail: toUser.email, caseCount: result.rows.length, reassignedBy: req.user.email
+  }, req.ip);
+
+  res.json({ reassigned: result.rows.length, fromUser: fromUser.email, toUser: toUser.email });
 });
 
 // Support-driven password reset. A platform admin sets a brand-new,
@@ -1336,6 +1447,41 @@ app.post('/api/admin/users/:id/reset-password', requirePlatformAdmin, async (req
   await audit(user.org_id, req.user.sub, 'admin.password_reset_by_platform_admin', 'user', user.id, { targetEmail: user.email, resetBy: req.user.email }, req.ip);
 
   res.json({ reset: true, email: user.email, name: user.name, tempPassword });
+});
+
+// Deactivate/reactivate ONE user — for the "one person needs to be
+// locked out" case (offboarded, acting oddly) where suspending their
+// entire organization would be the wrong, much bigger hammer.
+// is_active is already checked at every login (see /api/auth/login
+// and the JWT-refresh paths), so this takes effect the next time the
+// person tries to log in. NOTE: like a password reset, this does NOT
+// revoke a session the person already has open — see the
+// token-invalidation work planned separately for that.
+app.post('/api/admin/users/:id/deactivate', requirePlatformAdmin, async (req, res) => {
+  const target = await q('SELECT id, org_id, email, name FROM users WHERE id = $1', [req.params.id]);
+  if (!target.rows[0]) return res.status(404).json({ error: 'User not found' });
+  const user = target.rows[0];
+
+  // Refuse to leave an org with zero active users — that's what
+  // Suspend Organization is for, and doing it by accident one user
+  // at a time would strand a customer with no visible cause.
+  const activeCount = await q('SELECT COUNT(*) FROM users WHERE org_id = $1 AND is_active = true', [user.org_id]);
+  if (Number(activeCount.rows[0].count) <= 1) {
+    return res.status(400).json({ error: 'This is the only active user left in this organization. To lock out the whole org, use Suspend on the Organizations tab instead.' });
+  }
+
+  await q('UPDATE users SET is_active = false WHERE id = $1', [user.id]);
+  await audit(user.org_id, req.user.sub, 'admin.user_deactivated', 'user', user.id, { targetEmail: user.email, deactivatedBy: req.user.email }, req.ip);
+  res.json({ deactivated: true });
+});
+
+app.post('/api/admin/users/:id/reactivate', requirePlatformAdmin, async (req, res) => {
+  const target = await q('SELECT id, org_id, email, name FROM users WHERE id = $1', [req.params.id]);
+  if (!target.rows[0]) return res.status(404).json({ error: 'User not found' });
+  const user = target.rows[0];
+  await q('UPDATE users SET is_active = true WHERE id = $1', [user.id]);
+  await audit(user.org_id, req.user.sub, 'admin.user_reactivated', 'user', user.id, { targetEmail: user.email, reactivatedBy: req.user.email }, req.ip);
+  res.json({ reactivated: true });
 });
 
 // "View as" — lets a platform admin see the app exactly as one of a
@@ -1374,7 +1520,8 @@ app.post('/api/admin/organizations/:id/impersonate', requirePlatformAdmin, async
     target = t.rows[0];
   }
 
-  const impersonation = { by: req.user.sub, byEmail: req.user.email, startedAt: new Date().toISOString() };
+  const readOnly = !!req.body?.readOnly;
+  const impersonation = { by: req.user.sub, byEmail: req.user.email, startedAt: new Date().toISOString(), readOnly };
   const token = jwt.sign(
     {
       sub: target.id, orgId: target.org_id, email: target.email,
@@ -1387,10 +1534,10 @@ app.post('/api/admin/organizations/:id/impersonate', requirePlatformAdmin, async
   const expiresAt = new Date(Date.now() + 20 * 60 * 1000);
 
   await audit(target.org_id, req.user.sub, 'admin.impersonation_started', 'user', target.id,
-    { targetEmail: target.email, startedBy: req.user.email }, req.ip);
+    { targetEmail: target.email, startedBy: req.user.email, readOnly }, req.ip);
 
   res.json({
-    token, expiresAt,
+    token, expiresAt, readOnly,
     organization: { id: org.rows[0].id, name: org.rows[0].name },
     user: { id: target.id, email: target.email, name: target.name, role: target.role }
   });
