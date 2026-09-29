@@ -755,6 +755,28 @@ app.use('/api', async (req, res, next) => {
   }
 });
 
+// Impersonation sessions (see /api/admin/organizations/:id/impersonate
+// below) carry a normal user token — no bypass flags, fully RLS-scoped
+// as that user — plus an `impersonation` claim naming which platform
+// admin is driving. Every non-GET request made under one is logged to
+// audit_log automatically, without each route having to remember to
+// call audit() itself, so a support session leaves a full paper trail
+// even for actions we didn't think to instrument individually.
+app.use('/api', async (req, res, next) => {
+  if (req.user?.impersonation && req.method !== 'GET') {
+    try {
+      await audit(
+        req.orgId, req.user.sub, 'impersonation.action', 'http_request', null,
+        { method: req.method, path: req.path, impersonatedBy: req.user.impersonation.byEmail },
+        req.ip
+      );
+    } catch (e) {
+      console.error('Failed to log impersonated action:', e.message);
+    }
+  }
+  next();
+});
+
 // basic rate limiting (per-process; swap for Redis if you scale to multiple instances)
 const hits = new Map();
 app.use('/api', (req, res, next) => {
@@ -1106,6 +1128,75 @@ app.post('/api/admin/users/:id/reset-password', requirePlatformAdmin, async (req
   await audit(user.org_id, req.user.sub, 'admin.password_reset_by_platform_admin', 'user', user.id, { targetEmail: user.email, resetBy: req.user.email }, req.ip);
 
   res.json({ reset: true, email: user.email, name: user.name, tempPassword });
+});
+
+// "View as" — lets a platform admin see the app exactly as one of a
+// customer's own users would, to reproduce and debug a support issue
+// without needing that customer's password or a separate reset.
+//
+// Deliberately built with NO special privilege: the token this issues
+// is a completely ordinary user session token for the target user —
+// same orgId, same role, same RLS scoping as if that user had logged
+// in themselves — with one addition, an `impersonation` claim naming
+// which admin is driving. That claim is what the middleware above
+// uses to audit-log every write made under it, and what the frontend
+// uses to show a persistent "you are viewing as..." banner with an
+// exit button. It is short-lived (20 minutes) and cannot be renewed —
+// starting a new one requires this endpoint again, which re-logs who,
+// for which org, and when.
+app.post('/api/admin/organizations/:id/impersonate', requirePlatformAdmin, async (req, res) => {
+  const org = await q('SELECT id, name FROM organizations WHERE id = $1', [req.params.id]);
+  if (!org.rows[0]) return res.status(404).json({ error: 'Organization not found' });
+
+  let target;
+  if (req.body?.userId) {
+    const t = await q('SELECT * FROM users WHERE id = $1 AND org_id = $2', [req.body.userId, req.params.id]);
+    if (!t.rows[0]) return res.status(404).json({ error: 'User not found in this organization' });
+    target = t.rows[0];
+  } else {
+    // No specific user named — default to the org's most senior
+    // active user (owner, then admin, then whoever's been there
+    // longest) so "View as" works with one click from the org row.
+    const t = await q(
+      `SELECT * FROM users WHERE org_id = $1 AND is_active = true
+       ORDER BY CASE role WHEN 'owner' THEN 1 WHEN 'admin' THEN 2 ELSE 3 END, created_at ASC LIMIT 1`,
+      [req.params.id]
+    );
+    if (!t.rows[0]) return res.status(404).json({ error: 'This organization has no active users to view as' });
+    target = t.rows[0];
+  }
+
+  const impersonation = { by: req.user.sub, byEmail: req.user.email, startedAt: new Date().toISOString() };
+  const token = jwt.sign(
+    {
+      sub: target.id, orgId: target.org_id, email: target.email,
+      persona: target.persona, role: target.role, platformAdmin: false,
+      impersonation
+    },
+    EFFECTIVE_JWT_SECRET,
+    { expiresIn: '20m' }
+  );
+  const expiresAt = new Date(Date.now() + 20 * 60 * 1000);
+
+  await audit(target.org_id, req.user.sub, 'admin.impersonation_started', 'user', target.id,
+    { targetEmail: target.email, startedBy: req.user.email }, req.ip);
+
+  res.json({
+    token, expiresAt,
+    organization: { id: org.rows[0].id, name: org.rows[0].name },
+    user: { id: target.id, email: target.email, name: target.name, role: target.role }
+  });
+});
+
+// Explicit end-of-session marker — purely for a clean audit trail.
+// The token expires on its own in 20 minutes regardless of whether
+// this is ever called; this just records the admin's own "I'm done"
+// moment distinctly from a silent expiry.
+app.post('/api/admin/impersonate/end', async (req, res) => {
+  if (!req.user?.impersonation) return res.status(400).json({ error: 'Not currently impersonating' });
+  await audit(req.orgId, req.user.sub, 'admin.impersonation_ended', 'user', req.user.sub,
+    { targetEmail: req.user.email, endedBy: req.user.impersonation.byEmail }, req.ip);
+  res.json({ ended: true });
 });
 
 // ---------------------------------------------------------------
