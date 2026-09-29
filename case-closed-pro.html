@@ -7700,7 +7700,7 @@ async function runIsolationTest(){
 }
 
 function goToAdmin(){
-  st({role:'admin', caseId:null, showUserMenu:false, showWelcome:false});
+  st({role:'admin', caseId:null, showUserMenu:false, showWelcome:false, adminTab: S.adminTab || 'orgs'});
   if (API_BASE && authToken) fetchAdminOrgs();
 }
 async function fetchAdminOrgs(){
@@ -7713,12 +7713,97 @@ async function fetchAdminOrgs(){
   }
 }
 
+function goToAdminTab(tab){
+  st({adminTab:tab});
+  if (tab === 'audit' && !S.auditLogEntries) fetchAuditLog();
+}
+
+// Audit log viewer — read-only, cross-org, platform-admin only.
+// "Who did what, and when," for support and incident response.
+async function fetchAuditLog(filters){
+  st({auditLogLoading:true, auditLogError:''});
+  try {
+    const f = filters || S.auditLogFilters || {};
+    const params = new URLSearchParams();
+    if (f.orgId) params.set('orgId', f.orgId);
+    if (f.action) params.set('action', f.action);
+    params.set('limit', '150');
+    const data = await apiFetch('/api/admin/audit-log?' + params.toString());
+    st({auditLogEntries:data.entries, auditLogLoading:false, auditLogFilters:f});
+  } catch (e) {
+    st({auditLogError:e.message, auditLogLoading:false});
+  }
+}
+
+function auditLogV(){
+  let h = '';
+  const f = S.auditLogFilters || {};
+  h += '<div class="card" style="margin-bottom:16px;">';
+  h += '<div class="sh"><span>Filter</span></div>';
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;padding-top:4px;">';
+  h += '<select id="auditOrgFilter" style="min-width:200px;"><option value="">All organizations</option>';
+  (S.adminOrgs||[]).forEach(o => {
+    h += '<option value="'+o.id+'" '+(f.orgId===o.id?'selected':'')+'>'+esc(o.name)+'</option>';
+  });
+  h += '</select>';
+  h += '<input id="auditActionFilter" type="text" placeholder="Filter by action (e.g. case.update, auth.login)" value="'+escAttr(f.action||'')+'" style="min-width:260px;">';
+  h += '<button class="btn btn-pri" onclick="applyAuditFilter()">Apply</button>';
+  if (f.orgId || f.action) h += '<button class="btn btn-ghost" onclick="fetchAuditLog({})">Clear</button>';
+  h += '</div></div>';
+
+  h += '<div class="card">';
+  h += '<div class="sh"><span>Audit Trail</span>'+(S.auditLogEntries?'<span style="color:var(--dim);font-weight:500;">'+S.auditLogEntries.length+' most recent</span>':'')+'</div>';
+
+  if (S.auditLogLoading) {
+    h += '<div style="padding:30px;text-align:center;color:var(--muted);">Loading…</div>';
+  } else if (S.auditLogError) {
+    h += '<div class="alert-bad">'+esc(S.auditLogError)+'</div>';
+  } else if (!S.auditLogEntries || S.auditLogEntries.length === 0) {
+    h += '<div style="padding:24px;text-align:center;color:var(--muted);font-size:12.5px;">No activity found for this filter.</div>';
+  } else {
+    h += '<div style="overflow-x:auto;"><table>';
+    h += '<thead><tr><th>When</th><th>Organization</th><th>User</th><th>Action</th><th>Entity</th><th>IP</th></tr></thead><tbody>';
+    S.auditLogEntries.forEach(e => {
+      h += '<tr>';
+      h += '<td style="font-size:11px;color:var(--dim);white-space:nowrap;">'+esc(String(e.createdAt).replace('T',' ').slice(0,19))+'</td>';
+      h += '<td style="font-size:11px;">'+esc(e.orgName)+'</td>';
+      h += '<td style="font-size:11px;">'+(e.userName?esc(e.userName)+'<br><span style="color:var(--dim);">'+esc(e.userEmail||'')+'</span>':'<span style="color:var(--dim);">system</span>')+'</td>';
+      h += '<td><span class="tag" style="font-size:10px;">'+esc(e.action)+'</span></td>';
+      h += '<td style="font-size:11px;color:var(--dim);">'+(e.entityType?esc(e.entityType)+(e.entityId?' · '+esc(String(e.entityId).slice(0,8)):''):'')+'</td>';
+      h += '<td style="font-size:10px;color:var(--dim);">'+esc(e.ipAddress||'')+'</td>';
+      h += '</tr>';
+    });
+    h += '</tbody></table></div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+function applyAuditFilter(){
+  const orgId = document.getElementById('auditOrgFilter')?.value || '';
+  const action = document.getElementById('auditActionFilter')?.value.trim() || '';
+  fetchAuditLog({ orgId: orgId || undefined, action: action || undefined });
+}
+
 function adminPanelV(){
   let h = '<div class="wrap">';
   h += '<div class="hero"><div class="hero-l"><div class="hero-eyebrow" style="color:#B45309;">⚙ Platform Admin</div>';
   h += '<h1 class="hero-title">Customer Organizations</h1>';
   h += '<p class="hero-sub">Every customer\'s cabinet, in one place — provision new ones, or turn access on and off for existing ones.</p></div>';
   h += '<div class="hero-r"><button class="btn btn-out" onclick="runIsolationTest()" '+(S.isolationTestRunning?'disabled':'')+'>'+(S.isolationTestRunning?'Running…':'🔒 Run Isolation Test')+'</button> <button class="btn btn-pri" style="background:#B45309;" onclick="openCreateOrgModal()">+ Create New Customer</button></div></div>';
+
+  const adminTab = S.adminTab || 'orgs';
+  h += '<div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--surf2);">';
+  h += '<button onclick="goToAdminTab(\'orgs\')" style="padding:10px 4px;margin-right:16px;background:none;border:none;border-bottom:2px solid '+(adminTab==='orgs'?'#B45309':'transparent')+';color:'+(adminTab==='orgs'?'var(--ink)':'var(--dim)')+';font-weight:700;font-size:13px;cursor:pointer;">Organizations</button>';
+  h += '<button onclick="goToAdminTab(\'audit\')" style="padding:10px 4px;margin-right:16px;background:none;border:none;border-bottom:2px solid '+(adminTab==='audit'?'#B45309':'transparent')+';color:'+(adminTab==='audit'?'var(--ink)':'var(--dim)')+';font-weight:700;font-size:13px;cursor:pointer;">Audit Log</button>';
+  h += '</div>';
+
+  if (adminTab === 'audit') {
+    h += auditLogV();
+    h += '</div>';
+    return h;
+  }
+
   if (S.isolationTestResult) {
     const r = S.isolationTestResult;
     h += '<div class="card" style="margin-bottom:16px;border-left:3px solid '+(r.allPassed?'var(--green)':'var(--red)')+';">';
