@@ -801,26 +801,78 @@ app.post('/api/admin/self-test-isolation', requirePlatformAdmin, async (req, res
   const check = (label, passed, detail) => results.push({ label, passed, detail });
   let orgAId, orgBId;
   const setOrgScope = (client, orgId) => client.query(`SET LOCAL app.current_org_id = '${orgId}'`); // SET can't take a bind param — orgId here always comes from our own INSERT ... RETURNING id, never user input
+
+  // Insert a batch of test rows for one org, through a connection
+  // actually scoped to that org — the same way a real request does
+  // it via req.db/withTenantScope. Now that the app connects as a
+  // role WITHOUT bypassrls, RLS is enforced on INSERT too (not just
+  // SELECT), so an unscoped connection can no longer create rows in
+  // these tables at all — the test's own setup has to follow the
+  // same rules real traffic does, or it fails before the real check
+  // even begins.
+  async function insertScopedTestRows(orgId, label) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await setOrgScope(client, orgId);
+      const caseId = (await client.query(
+        `INSERT INTO cases (org_id, matter_no, client, type) VALUES ($1,$2,$3,'Test') RETURNING id`,
+        [orgId, 'SELFTEST-' + label, 'Self-Test Confidential Client ' + label]
+      )).rows[0].id;
+      const payeeId = (await client.query(
+        `INSERT INTO payees (org_id, name, type) VALUES ($1,$2,'Vendor') RETURNING id`,
+        [orgId, 'Self-Test Payee ' + label]
+      )).rows[0].id;
+      const payableId = (await client.query(
+        `INSERT INTO payables (org_id, payee_id, amount, description) VALUES ($1,$2,100,'Self-test') RETURNING id`,
+        [orgId, payeeId]
+      )).rows[0].id;
+      const reportId = (await client.query(
+        `INSERT INTO saved_reports (org_id, report_id, name) VALUES ($1,'r1',$2) RETURNING id`,
+        [orgId, 'Self-Test Report ' + label]
+      )).rows[0].id;
+      await client.query('COMMIT');
+      return { caseId, payeeId, payableId, reportId };
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  // Delete one org's test rows through a connection scoped to that
+  // org — DELETE is subject to RLS the same as INSERT now, so
+  // cleanup has to be scoped too, not just the setup.
+  async function deleteScopedTestRows(orgId) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await setOrgScope(client, orgId);
+      await client.query('DELETE FROM payables WHERE org_id = $1', [orgId]);
+      await client.query('DELETE FROM payees WHERE org_id = $1', [orgId]);
+      await client.query('DELETE FROM saved_reports WHERE org_id = $1', [orgId]);
+      await client.query('DELETE FROM cases WHERE org_id = $1', [orgId]);
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+    } finally {
+      client.release();
+    }
+  }
+
+  let rowsA, rowsB;
   try {
     const orgA = await q(`INSERT INTO organizations (name) VALUES ($1) RETURNING id`, ['[Self-Test] Org A ' + Date.now()]);
     const orgB = await q(`INSERT INTO organizations (name) VALUES ($1) RETURNING id`, ['[Self-Test] Org B ' + Date.now()]);
     orgAId = orgA.rows[0].id; orgBId = orgB.rows[0].id;
 
-    const caseA = await q(`INSERT INTO cases (org_id, matter_no, client, type) VALUES ($1,'SELFTEST-A','Self-Test Confidential Client A','Test') RETURNING id`, [orgAId]);
-    const caseB = await q(`INSERT INTO cases (org_id, matter_no, client, type) VALUES ($1,'SELFTEST-B','Self-Test Confidential Client B','Test') RETURNING id`, [orgBId]);
-    const caseAId = caseA.rows[0].id, caseBId = caseB.rows[0].id;
-
-    const payeeA = await q(`INSERT INTO payees (org_id, name, type) VALUES ($1,'Self-Test Payee A','Vendor') RETURNING id`, [orgAId]);
-    const payeeB = await q(`INSERT INTO payees (org_id, name, type) VALUES ($1,'Self-Test Payee B','Vendor') RETURNING id`, [orgBId]);
-    const payeeAId = payeeA.rows[0].id, payeeBId = payeeB.rows[0].id;
-
-    const payableA = await q(`INSERT INTO payables (org_id, payee_id, amount, description) VALUES ($1,$2,100,'Self-test') RETURNING id`, [orgAId, payeeAId]);
-    const payableB = await q(`INSERT INTO payables (org_id, payee_id, amount, description) VALUES ($1,$2,100,'Self-test') RETURNING id`, [orgBId, payeeBId]);
-    const payableAId = payableA.rows[0].id, payableBId = payableB.rows[0].id;
-
-    const reportA = await q(`INSERT INTO saved_reports (org_id, report_id, name) VALUES ($1,'r1','Self-Test Report A') RETURNING id`, [orgAId]);
-    const reportB = await q(`INSERT INTO saved_reports (org_id, report_id, name) VALUES ($1,'r1','Self-Test Report B') RETURNING id`, [orgBId]);
-    const reportAId = reportA.rows[0].id, reportBId = reportB.rows[0].id;
+    rowsA = await insertScopedTestRows(orgAId, 'A');
+    rowsB = await insertScopedTestRows(orgBId, 'B');
+    const caseAId = rowsA.caseId, caseBId = rowsB.caseId;
+    const payeeAId = rowsA.payeeId, payeeBId = rowsB.payeeId;
+    const payableAId = rowsA.payableId, payableBId = rowsB.payableId;
+    const reportAId = rowsA.reportId, reportBId = rowsB.reportId;
 
     // The actual test: open a connection scoped to Org A (exactly
     // like withTenantScope does for a real request) and try to read
@@ -860,7 +912,12 @@ app.post('/api/admin/self-test-isolation', requirePlatformAdmin, async (req, res
   } catch (e) {
     check('Test ran without crashing', false, e.message);
   } finally {
-    // Clean up regardless of pass/fail — cascade deletes everything test-related.
+    // Clean up regardless of pass/fail. Each org's rows are deleted
+    // through a connection scoped to that org first (DELETE is
+    // subject to RLS too now), then the organizations themselves —
+    // that table has no RLS, so a plain query is fine there.
+    if (orgAId) await deleteScopedTestRows(orgAId);
+    if (orgBId) await deleteScopedTestRows(orgBId);
     if (orgAId) await q('DELETE FROM organizations WHERE id = $1', [orgAId]).catch(() => {});
     if (orgBId) await q('DELETE FROM organizations WHERE id = $1', [orgBId]).catch(() => {});
   }
