@@ -7774,6 +7774,91 @@ function goToAdminTab(tab){
   if (tab === 'audit' && !S.auditLogEntries) fetchAuditLog();
   if (tab === 'usage' && !S.usageData) fetchUsage();
   if (tab === 'errors' && !S.errorLogEntries) fetchErrors();
+  if (tab === 'retention' && !S.retentionData) fetchRetention();
+}
+
+// Customer retention / health dashboard — see the scoring rubric's
+// comment on GET /api/admin/retention in server.js for exactly how
+// each org's score is computed. Sorted worst-health-first by the
+// backend, so the orgs that most need attention are always at top.
+async function fetchRetention(){
+  st({retentionLoading:true, retentionError:''});
+  try {
+    const data = await apiFetch('/api/admin/retention');
+    st({retentionData:data.organizations, retentionSummary:data.summary, retentionLoading:false});
+  } catch (e) {
+    st({retentionError:e.message, retentionLoading:false});
+  }
+}
+async function setRenewalDate(orgId, currentDate){
+  const input = prompt('Renewal date for this organization (YYYY-MM-DD), or leave blank to clear it:', currentDate || '');
+  if (input === null) return; // cancelled
+  const trimmed = input.trim();
+  if (trimmed && !/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) { alert('Please enter a date as YYYY-MM-DD, e.g. 2026-12-31.'); return; }
+  try {
+    await apiFetch('/api/admin/organizations/'+orgId+'/renewal-date', {
+      method: 'POST', body: JSON.stringify({ renewalDate: trimmed || null })
+    });
+    await fetchRetention();
+  } catch (e) {
+    alert('Could not save renewal date: ' + e.message);
+  }
+}
+
+const HEALTH_TIER_STYLE = {
+  healthy:  { label: 'Healthy',  bg: 'var(--green)18', color: 'var(--green)' },
+  at_risk:  { label: 'At Risk',  bg: 'var(--gold)18',   color: 'var(--gold)'  },
+  critical: { label: 'Critical', bg: 'var(--red)18',    color: 'var(--red)'   }
+};
+
+function retentionV(){
+  let h = '';
+  const sum = S.retentionSummary;
+  if (sum) {
+    h += '<div class="kpi-grid" style="margin-bottom:16px;">';
+    h += '<div class="kpi"><div class="kpi-l">Healthy</div><div class="kpi-v" style="color:var(--green);">'+sum.healthy+'</div></div>';
+    h += '<div class="kpi"><div class="kpi-l">At Risk</div><div class="kpi-v" style="color:var(--gold);">'+sum.atRisk+'</div></div>';
+    h += '<div class="kpi"><div class="kpi-l">Critical</div><div class="kpi-v" style="color:var(--red);">'+sum.critical+'</div></div>';
+    h += '<div class="kpi"><div class="kpi-l">Renewals Due (30d)</div><div class="kpi-v">'+sum.renewalsNext30Days+'</div></div>';
+    h += '</div>';
+  }
+  h += '<div class="card">';
+  h += '<div class="sh"><span>Customer Health</span><button class="btn btn-ghost" style="font-size:11px;" onclick="fetchRetention()">Refresh</button></div>';
+  if (S.retentionLoading) {
+    h += '<div style="padding:30px;text-align:center;color:var(--muted);">Loading…</div>';
+  } else if (S.retentionError) {
+    h += '<div class="alert-bad">'+esc(S.retentionError)+'</div>';
+  } else if (!S.retentionData || S.retentionData.length === 0) {
+    h += '<div style="padding:24px;text-align:center;color:var(--muted);font-size:12.5px;">No organizations yet.</div>';
+  } else {
+    h += '<div style="overflow-x:auto;"><table>';
+    h += '<thead><tr><th>Organization</th><th>Health</th><th>Why</th><th>Last Login</th><th>Matter Activity (30d)</th><th>Renewal</th><th></th></tr></thead><tbody>';
+    S.retentionData.forEach(o => {
+      const tier = HEALTH_TIER_STYLE[o.healthTier] || HEALTH_TIER_STYLE.at_risk;
+      h += '<tr>';
+      h += '<td style="font-weight:700;">'+esc(o.name)+'</td>';
+      h += '<td><span class="tag" style="background:'+tier.bg+';color:'+tier.color+';font-weight:700;">'+tier.label+' · '+o.healthScore+'</span></td>';
+      h += '<td style="font-size:11px;color:var(--muted);max-width:260px;">'+(o.flags.length ? esc(o.flags.join('; ')) : 'No risk signals')+'</td>';
+      h += '<td style="font-size:11px;color:var(--dim);white-space:nowrap;">'+(o.daysSinceLogin===null ? 'Never' : (o.daysSinceLogin===0?'Today':o.daysSinceLogin+'d ago'))+'</td>';
+      h += '<td>'+o.activeCaseCount30d+' / '+o.caseCount+'</td>';
+      let renewalCell;
+      if (o.renewalDate) {
+        const overdue = o.daysToRenewal !== null && o.daysToRenewal < 0;
+        const soon = o.daysToRenewal !== null && o.daysToRenewal >= 0 && o.daysToRenewal <= 30;
+        const color = overdue ? 'var(--red)' : soon ? 'var(--gold)' : 'var(--dim)';
+        renewalCell = '<span style="color:'+color+';font-weight:'+(overdue||soon?'700':'500')+';font-size:11px;">'+esc(String(o.renewalDate).slice(0,10))+(overdue?' (overdue)':soon?' ('+o.daysToRenewal+'d)':'')+'</span>';
+      } else {
+        renewalCell = '<span style="font-size:11px;color:var(--muted);">Not set</span>';
+      }
+      h += '<td style="white-space:nowrap;">'+renewalCell+'</td>';
+      h += '<td><button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;" onclick="setRenewalDate(\''+o.id+'\',\''+(o.renewalDate?String(o.renewalDate).slice(0,10):'')+'\')">'+(o.renewalDate?'Edit':'Set')+'</button></td>';
+      h += '</tr>';
+    });
+    h += '</tbody></table></div>';
+    h += '<div style="font-size:10px;color:var(--dim);padding:10px 4px 0;">Health score is a simple, fully-transparent rubric based on login recency, seat utilization, matter activity, AI adoption, and open errors — not a predictive model. Use it to prioritize outreach, not as the final word.</div>';
+  }
+  h += '</div>';
+  return h;
 }
 
 // Error tracking viewer — the admin-side counterpart to
@@ -7973,6 +8058,7 @@ function adminPanelV(){
   h += '<button onclick="goToAdminTab(\'audit\')" style="padding:10px 4px;margin-right:16px;background:none;border:none;border-bottom:2px solid '+(adminTab==='audit'?'#B45309':'transparent')+';color:'+(adminTab==='audit'?'var(--ink)':'var(--dim)')+';font-weight:700;font-size:13px;cursor:pointer;">Audit Log</button>';
   h += '<button onclick="goToAdminTab(\'usage\')" style="padding:10px 4px;margin-right:16px;background:none;border:none;border-bottom:2px solid '+(adminTab==='usage'?'#B45309':'transparent')+';color:'+(adminTab==='usage'?'var(--ink)':'var(--dim)')+';font-weight:700;font-size:13px;cursor:pointer;">Usage</button>';
   h += '<button onclick="goToAdminTab(\'errors\')" style="padding:10px 4px;margin-right:16px;background:none;border:none;border-bottom:2px solid '+(adminTab==='errors'?'#B45309':'transparent')+';color:'+(adminTab==='errors'?'var(--ink)':'var(--dim)')+';font-weight:700;font-size:13px;cursor:pointer;">Errors</button>';
+  h += '<button onclick="goToAdminTab(\'retention\')" style="padding:10px 4px;margin-right:16px;background:none;border:none;border-bottom:2px solid '+(adminTab==='retention'?'#B45309':'transparent')+';color:'+(adminTab==='retention'?'var(--ink)':'var(--dim)')+';font-weight:700;font-size:13px;cursor:pointer;">Retention</button>';
   h += '</div>';
 
   if (adminTab === 'audit') {
@@ -7987,6 +8073,11 @@ function adminPanelV(){
   }
   if (adminTab === 'errors') {
     h += errorsV();
+    h += '</div>';
+    return h;
+  }
+  if (adminTab === 'retention') {
+    h += retentionV();
     h += '</div>';
     return h;
   }
