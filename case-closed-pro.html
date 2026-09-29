@@ -6838,6 +6838,27 @@ async function changeRole(id, role){
     alert('Could not update role: ' + e.message);
   }
 }
+async function resendInvite(id, email){
+  st({resendingInviteId:id});
+  try {
+    const data = await apiFetch('/api/team/invites/'+id+'/resend', { method:'POST' });
+    st({resendingInviteId:null});
+    alert('Invite resent to '+email+'.\n\nIf email isn\'t configured on the server yet, share this link directly:\n\n'+data.inviteUrl);
+    fetchTeamMembers();
+  } catch (e) {
+    st({resendingInviteId:null});
+    alert('Could not resend: ' + e.message);
+  }
+}
+async function revokeInvite(id, email){
+  if (!confirm('Revoke the invite for '+email+'? The link they were sent will stop working.')) return;
+  try {
+    await apiFetch('/api/team/invites/'+id, { method:'DELETE' });
+    fetchTeamMembers();
+  } catch (e) {
+    alert('Could not revoke: ' + e.message);
+  }
+}
 
 function teamModalV(){
   let h = '<div class="modal-bg" onclick="if(event.target===this)st({showTeamModal:false})">';
@@ -6901,7 +6922,15 @@ function teamModalV(){
     if (pending.length) {
       h += '<div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:16px 0 8px;">Pending Invites</div>';
       pending.forEach(p => {
-        h += '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--surf2);font-size:12px;"><span>'+esc(p.email)+'</span><span class="tag" style="background:var(--surf3);">Invited</span></div>';
+        h += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--surf2);font-size:12px;">';
+        h += '<div><span>'+esc(p.email)+'</span> <span class="tag" style="background:var(--surf3);">Invited</span></div>';
+        if (canManageTeam()) {
+          h += '<div style="display:flex;gap:6px;">';
+          h += '<button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;" '+(S.resendingInviteId===p.id?'disabled':'')+' onclick="resendInvite(\''+p.id+'\',\''+escAttr(p.email)+'\')">'+(S.resendingInviteId===p.id?'Sending…':'Resend')+'</button>';
+          h += '<button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;color:var(--red);" onclick="revokeInvite(\''+p.id+'\',\''+escAttr(p.email)+'\')">Revoke</button>';
+          h += '</div>';
+        }
+        h += '</div>';
       });
     }
   }
