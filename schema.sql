@@ -38,6 +38,9 @@ CREATE TABLE organizations (
   -- re-signed." Nullable: an org with no date set just doesn't show a
   -- countdown, rather than defaulting to some made-up date.
   renewal_date    DATE,
+  -- Internal support/sales notes — never surfaced to the customer
+  -- anywhere in the app. Purely for your own team's context.
+  internal_notes  TEXT,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
