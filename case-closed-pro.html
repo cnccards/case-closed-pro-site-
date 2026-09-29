@@ -7766,6 +7766,51 @@ async function fetchAdminOrgs(){
 function goToAdminTab(tab){
   st({adminTab:tab});
   if (tab === 'audit' && !S.auditLogEntries) fetchAuditLog();
+  if (tab === 'usage' && !S.usageData) fetchUsage();
+}
+
+// Per-org usage dashboard — every number here comes straight from
+// GET /api/admin/usage, which derives it from data that already
+// exists (cases, users, audit_log) rather than anything new we have
+// to instrument or keep in sync.
+async function fetchUsage(){
+  st({usageLoading:true, usageError:''});
+  try {
+    const data = await apiFetch('/api/admin/usage');
+    st({usageData:data.organizations, usageLoading:false});
+  } catch (e) {
+    st({usageError:e.message, usageLoading:false});
+  }
+}
+
+function usageV(){
+  let h = '';
+  h += '<div class="card">';
+  h += '<div class="sh"><span>Usage by Organization</span><button class="btn btn-ghost" style="font-size:11px;" onclick="fetchUsage()">Refresh</button></div>';
+  if (S.usageLoading) {
+    h += '<div style="padding:30px;text-align:center;color:var(--muted);">Loading…</div>';
+  } else if (S.usageError) {
+    h += '<div class="alert-bad">'+esc(S.usageError)+'</div>';
+  } else if (!S.usageData || S.usageData.length === 0) {
+    h += '<div style="padding:24px;text-align:center;color:var(--muted);font-size:12.5px;">No organizations yet.</div>';
+  } else {
+    h += '<div style="overflow-x:auto;"><table>';
+    h += '<thead><tr><th>Organization</th><th>Plan</th><th>Matters</th><th>Users</th><th>AI Calls (30d)</th><th>AI Calls (all-time)</th><th>Last Activity</th></tr></thead><tbody>';
+    S.usageData.forEach(o => {
+      h += '<tr>';
+      h += '<td style="font-weight:700;">'+esc(o.name)+'</td>';
+      h += '<td style="font-size:11px;color:var(--muted);text-transform:capitalize;">'+esc(o.planTier)+'</td>';
+      h += '<td>'+o.caseCount+'</td>';
+      h += '<td>'+o.activeUserCount+' / '+o.userCount+'</td>';
+      h += '<td>'+o.aiCallCount30d+'</td>';
+      h += '<td style="color:var(--dim);">'+o.aiCallCount+'</td>';
+      h += '<td style="font-size:11px;color:var(--dim);white-space:nowrap;">'+(o.lastActivityAt ? esc(String(o.lastActivityAt).replace('T',' ').slice(0,16)) : '—')+'</td>';
+      h += '</tr>';
+    });
+    h += '</tbody></table></div>';
+  }
+  h += '</div>';
+  return h;
 }
 
 // Audit log viewer — read-only, cross-org, platform-admin only.
@@ -7846,10 +7891,16 @@ function adminPanelV(){
   h += '<div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--surf2);">';
   h += '<button onclick="goToAdminTab(\'orgs\')" style="padding:10px 4px;margin-right:16px;background:none;border:none;border-bottom:2px solid '+(adminTab==='orgs'?'#B45309':'transparent')+';color:'+(adminTab==='orgs'?'var(--ink)':'var(--dim)')+';font-weight:700;font-size:13px;cursor:pointer;">Organizations</button>';
   h += '<button onclick="goToAdminTab(\'audit\')" style="padding:10px 4px;margin-right:16px;background:none;border:none;border-bottom:2px solid '+(adminTab==='audit'?'#B45309':'transparent')+';color:'+(adminTab==='audit'?'var(--ink)':'var(--dim)')+';font-weight:700;font-size:13px;cursor:pointer;">Audit Log</button>';
+  h += '<button onclick="goToAdminTab(\'usage\')" style="padding:10px 4px;margin-right:16px;background:none;border:none;border-bottom:2px solid '+(adminTab==='usage'?'#B45309':'transparent')+';color:'+(adminTab==='usage'?'var(--ink)':'var(--dim)')+';font-weight:700;font-size:13px;cursor:pointer;">Usage</button>';
   h += '</div>';
 
   if (adminTab === 'audit') {
     h += auditLogV();
+    h += '</div>';
+    return h;
+  }
+  if (adminTab === 'usage') {
+    h += usageV();
     h += '</div>';
     return h;
   }
