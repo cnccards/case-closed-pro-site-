@@ -5206,6 +5206,7 @@ const EXEC_TABS = [
   ['financial','Financial'],
   ['portfolio','Portfolio'],
   ['attorneys','Attorney Performance'],
+  ['trends','Trends'],
   ['risk','Risk & Alerts'],
   ['reports','Detailed Reports']
 ];
@@ -5232,6 +5233,7 @@ function execV(){
   if (S.execTab === 'financial') h += execFinancialV();
   else if (S.execTab === 'portfolio') h += execPortfolioV();
   else if (S.execTab === 'attorneys') h += execAttorneyPerfV();
+  else if (S.execTab === 'trends') h += execTrendsV();
   else if (S.execTab === 'risk') h += execRiskV();
   else if (S.execTab === 'reports') h += execReportsV();
   else h += execGlanceV();
@@ -5892,6 +5894,145 @@ function execAttorneyPerfV(){
     h += '<div style="background:var(--surf3);height:6px;border-radius:3px;overflow:hidden;"><div style="width:'+pct+'%;height:100%;background:var(--pri2);"></div></div></div>';
   });
   h += '</div></div>';
+  return h;
+}
+
+/* ── TRENDS ────────────────────────────────────────────────
+   Historical trend lines for the three headline metrics that,
+   elsewhere in the dashboard, only ever show as a live snapshot
+   (win rate, cycle time, portfolio CCI) — plus a cross-dimension
+   breakdown by case type and carrier that today only exists by
+   attorney. Everything here is computed from real, timestamped
+   case data (deadline = actual close date for Closed matters) —
+   no seeded or fabricated history. Months with zero closes are
+   left as gaps in the line rather than plotted as 0%, since a
+   month with no data isn't the same as a month with a 0% outcome. */
+function execTrendsV(){
+  let h = '';
+  h += '<div class="section-band">📈 Performance Trends Over Time</div>';
+
+  const closedAll = CASES.filter(c => c.status === 'Closed' && c.deadline && !isNaN(new Date(c.deadline).getTime()));
+  if (!closedAll.length) {
+    h += '<div class="card"><div style="padding:24px;text-align:center;color:var(--muted);">No closed matters with valid close dates yet — trend lines will populate as matters close.</div></div>';
+    return h;
+  }
+
+  const closeMs = closedAll.map(c => new Date(c.deadline).getTime());
+  const ref = new Date(Math.max(...closeMs));
+  const MONTHS_BACK = 12;
+  const months = []; for (let i=MONTHS_BACK-1; i>=0; i--) { months.push(new Date(ref.getFullYear(), ref.getMonth()-i, 1)); }
+  const buckets = months.map(d => closedAll.filter(c => {
+    const cd = new Date(c.deadline);
+    return cd.getFullYear()===d.getFullYear() && cd.getMonth()===d.getMonth();
+  }));
+  const counts = buckets.map(list => list.length);
+
+  const winRates = buckets.map(list => {
+    if (!list.length) return null;
+    const wins = list.filter(c => (c.exposure.settlementAmount||0) < (c.exposure.demandAmount||c.value)).length;
+    return Math.round(wins/list.length*100);
+  });
+  const cycleTimes = buckets.map(list => list.length ? Math.round(list.reduce((s,c)=>s+daysOpen(c),0)/list.length) : null);
+  const cciVals = buckets.map(list => list.length ? Math.round(list.reduce((s,c)=>s+cci(c),0)/list.length) : null);
+
+  h += trendChartCard('Win Rate Trend', 'Share of closed matters won, by month closed', 'var(--green)', months, winRates, counts, v=>v+'%', 0, 100);
+  h += trendChartCard('Cycle Time Trend', 'Avg. days to close, by month closed', 'var(--pri2)', months, cycleTimes, counts, v=>v+'d', null, null);
+  h += trendChartCard('Portfolio Favorability (CCI) Trend', 'Avg. CCI of matters at time of closing, by month closed', '#7C3AED', months, cciVals, counts, v=>v, 0, 100);
+
+  h += '<div style="font-size:10.5px;color:var(--dim);margin:2px 0 18px;">Based on '+closedAll.length+' closed matters with a recorded close date, over the '+MONTHS_BACK+' months ending '+ref.toLocaleDateString('en-US',{month:'long',year:'numeric'})+'. Months with no closed matters are shown as a gap, not a zero.</div>';
+
+  h += '<div class="section-band">🔎 Breakdown by Case Type &amp; Carrier</div>';
+  h += '<div class="grid-2">';
+  h += breakdownCard('By Case Type', c => c.type, 'Case Type');
+  h += breakdownCard('By Carrier', c => (c.insurance && c.insurance.carrier) || 'Unspecified', 'Carrier');
+  h += '</div>';
+
+  return h;
+}
+
+/* Generic sparse-friendly SVG line chart used by execTrendsV.
+   values[i]===null means "no data that month" and breaks the line
+   rather than dropping to zero. fmt formats the value for the chip
+   strip under the chart; minV/maxV pin the y-axis (pass null to
+   auto-scale to the data). */
+function trendChartCard(title, subtitle, color, months, values, counts, fmt, minV, maxV){
+  let h = '<div class="card"><div class="sh"><span>'+title+'</span><span style="color:var(--dim);font-weight:500;">'+subtitle+'</span></div>';
+  const nums = values.filter(v => v!==null);
+  if (!nums.length) {
+    h += '<div style="padding:18px;color:var(--muted);font-size:12px;text-align:center;">Not enough closed-matter data yet to chart this.</div></div>';
+    return h;
+  }
+  const lo = (minV!==null && minV!==undefined) ? minV : Math.min(...nums);
+  const hi = (maxV!==null && maxV!==undefined) ? maxV : Math.max(...nums);
+  const span = (hi - lo) || 1;
+  const W = 800, H = 140, padL = 24, padR = 24, padT = 14, padB = 26;
+  const n = values.length;
+  const xAt = i => padL + i * ((W - padL - padR) / Math.max(n-1,1));
+  const yAt = v => padT + (H - padT - padB) - ((v - lo) / span) * (H - padT - padB);
+
+  let segs = [], cur = '';
+  values.forEach((v,i) => {
+    if (v === null) { if (cur) segs.push(cur); cur = ''; return; }
+    cur += (cur === '' ? 'M' : 'L') + xAt(i) + ' ' + yAt(v);
+  });
+  if (cur) segs.push(cur);
+
+  h += '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:150px;">';
+  segs.forEach(p => { h += '<path d="'+p+'" stroke="'+color+'" stroke-width="2.5" fill="none"/>'; });
+  values.forEach((v,i) => { if (v !== null) h += '<circle cx="'+xAt(i)+'" cy="'+yAt(v)+'" r="3.5" fill="'+color+'"/>'; });
+  months.forEach((d,i) => {
+    if (n > 8 && i % 2 !== 0 && i !== n-1) return;
+    h += '<text x="'+xAt(i)+'" y="'+(H-6)+'" font-size="9" fill="var(--dim)" text-anchor="middle">'+d.toLocaleDateString('en-US',{month:'short',year:'2-digit'})+'</text>';
+  });
+  h += '</svg>';
+
+  h += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">';
+  months.forEach((d,i) => {
+    const v = values[i];
+    h += '<div style="font-size:9.5px;color:var(--muted);background:var(--surf2);border-radius:4px;padding:3px 7px;" title="'+counts[i]+' closed this month">'
+       + d.toLocaleDateString('en-US',{month:'short',year:'2-digit'}) + ': <strong style="color:'+(v===null?'var(--dim)':'var(--ink)')+';">' + (v===null ? '—' : fmt(v)) + '</strong>'
+       + ' <span style="color:var(--dim);">(n='+counts[i]+')</span></div>';
+  });
+  h += '</div></div>';
+  return h;
+}
+
+/* Cross-dimension breakdown table — win rate / avg CCI / avg cycle
+   time grouped by any case field (case type, carrier, etc). CCI is
+   averaged across all matters in the group (open + closed, since
+   CCI is meaningful for open matters too); win rate and cycle time
+   are computed from closed matters only, since those require a
+   final outcome. */
+function breakdownCard(title, keyFn, colLabel){
+  const groups = {};
+  CASES.forEach(c => {
+    const k = keyFn(c) || 'Unspecified';
+    if (!groups[k]) groups[k] = { all: [], closed: [] };
+    groups[k].all.push(c);
+    if (c.status === 'Closed') groups[k].closed.push(c);
+  });
+  const rows = Object.entries(groups).map(([k,g]) => {
+    const wins = g.closed.filter(c => (c.exposure.settlementAmount||0) < (c.exposure.demandAmount||c.value)).length;
+    const winRate = g.closed.length ? Math.round(wins/g.closed.length*100) : null;
+    const avgCci = g.all.length ? Math.round(g.all.reduce((s,c)=>s+cci(c),0)/g.all.length) : 0;
+    const avgCycle = g.closed.length ? Math.round(g.closed.reduce((s,c)=>s+daysOpen(c),0)/g.closed.length) : null;
+    return { k, n: g.all.length, closedN: g.closed.length, winRate, avgCci, avgCycle };
+  }).sort((a,b) => b.n - a.n);
+
+  let h = '<div class="card"><div class="sh"><span>'+title+'</span><span style="color:var(--dim);font-weight:500;">'+rows.length+' '+colLabel.toLowerCase()+(rows.length===1?'':'s')+'</span></div>';
+  h += '<div style="overflow-x:auto;"><table><thead><tr><th>'+colLabel+'</th><th>Matters</th><th>Closed</th><th>Win Rate</th><th>Avg CCI</th><th>Avg Cycle</th></tr></thead><tbody>';
+  rows.forEach(r => {
+    const wrColor = r.winRate===null ? 'var(--dim)' : (r.winRate>=60 ? 'var(--green)' : r.winRate>=40 ? 'var(--gold)' : 'var(--red)');
+    h += '<tr>';
+    h += '<td style="font-weight:700;">'+esc(r.k)+'</td>';
+    h += '<td>'+r.n+'</td>';
+    h += '<td>'+r.closedN+'</td>';
+    h += '<td style="color:'+wrColor+';font-weight:700;">'+(r.winRate===null?'—':r.winRate+'%')+'</td>';
+    h += '<td style="color:'+cciColor(r.avgCci)+';font-weight:700;">'+r.avgCci+'</td>';
+    h += '<td>'+(r.avgCycle===null?'—':r.avgCycle+' days')+'</td>';
+    h += '</tr>';
+  });
+  h += '</tbody></table></div></div>';
   return h;
 }
 
@@ -7780,6 +7921,52 @@ function goToAdminTab(tab){
   if (tab === 'usage' && !S.usageData) fetchUsage();
   if (tab === 'errors' && !S.errorLogEntries) fetchErrors();
   if (tab === 'retention' && !S.retentionData) fetchRetention();
+  if (tab === 'backups' && !S.backupData) fetchBackups();
+}
+
+// Backup history viewer — shows whether the independent daily backup
+// (see runDailyBackupCheck in server.js) has actually been running,
+// same "did the scheduled thing really work" visibility as the
+// Weekly Digest and Audit Log already give you.
+async function fetchBackups(){
+  st({backupLoading:true, backupError:''});
+  try {
+    const data = await apiFetch('/api/admin/backups');
+    st({backupData:data.runs, backupSmtpConfigured:data.smtpConfigured, backupRecipient:data.recipient, backupLoading:false});
+  } catch (e) {
+    st({backupError:e.message, backupLoading:false});
+  }
+}
+function backupsV(){
+  let h = '';
+  if (!S.backupSmtpConfigured) {
+    h += '<div class="alert-warn" style="margin-bottom:16px;">Email isn\'t configured on this server yet, so the daily backup has nowhere to send to and isn\'t running. Set SMTP_HOST/PORT/USER/PASS (and optionally BACKUP_RECIPIENT_EMAIL) — see SETUP.md.</div>';
+  } else {
+    h += '<div class="alert-good" style="margin-bottom:16px;">Daily backups send to <strong>'+esc(S.backupRecipient||'')+'</strong>. Every application table is exported, gzip-compressed, and emailed once a day.</div>';
+  }
+  h += '<div class="card">';
+  h += '<div class="sh"><span>Backup History</span><button class="btn btn-ghost" style="font-size:11px;" onclick="fetchBackups()">Refresh</button></div>';
+  if (S.backupLoading) {
+    h += '<div style="padding:30px;text-align:center;color:var(--muted);">Loading…</div>';
+  } else if (S.backupError) {
+    h += '<div class="alert-bad">'+esc(S.backupError)+'</div>';
+  } else if (!S.backupData || S.backupData.length === 0) {
+    h += '<div style="padding:24px;text-align:center;color:var(--muted);font-size:12.5px;">No backup runs recorded yet — the first one runs automatically within an hour of the server starting.</div>';
+  } else {
+    h += '<div style="overflow-x:auto;"><table><thead><tr><th>When</th><th>Status</th><th>Rows Exported</th><th>Error</th></tr></thead><tbody>';
+    S.backupData.forEach(r => {
+      const totalRows = r.tableCounts ? Object.values(r.tableCounts).reduce((a,b)=>a+b,0) : null;
+      h += '<tr>';
+      h += '<td style="font-size:11px;color:var(--dim);white-space:nowrap;">'+esc(String(r.createdAt).replace('T',' ').slice(0,19))+'</td>';
+      h += '<td>'+(r.status==='success' ? '<span class="tag" style="background:var(--green)18;color:var(--green);font-weight:700;">✓ Success</span>' : '<span class="tag" style="background:var(--red)18;color:var(--red);font-weight:700;">✗ Failed</span>')+'</td>';
+      h += '<td>'+(totalRows===null?'—':totalRows)+'</td>';
+      h += '<td style="font-size:11px;color:var(--red);">'+(r.error?esc(r.error):'')+'</td>';
+      h += '</tr>';
+    });
+    h += '</tbody></table></div>';
+  }
+  h += '</div>';
+  return h;
 }
 
 // Customer retention / health dashboard — see the scoring rubric's
@@ -8075,6 +8262,7 @@ function adminPanelV(){
   h += '<button onclick="goToAdminTab(\'usage\')" style="padding:10px 4px;margin-right:16px;background:none;border:none;border-bottom:2px solid '+(adminTab==='usage'?'#B45309':'transparent')+';color:'+(adminTab==='usage'?'var(--ink)':'var(--dim)')+';font-weight:700;font-size:13px;cursor:pointer;">Usage</button>';
   h += '<button onclick="goToAdminTab(\'errors\')" style="padding:10px 4px;margin-right:16px;background:none;border:none;border-bottom:2px solid '+(adminTab==='errors'?'#B45309':'transparent')+';color:'+(adminTab==='errors'?'var(--ink)':'var(--dim)')+';font-weight:700;font-size:13px;cursor:pointer;">Errors</button>';
   h += '<button onclick="goToAdminTab(\'retention\')" style="padding:10px 4px;margin-right:16px;background:none;border:none;border-bottom:2px solid '+(adminTab==='retention'?'#B45309':'transparent')+';color:'+(adminTab==='retention'?'var(--ink)':'var(--dim)')+';font-weight:700;font-size:13px;cursor:pointer;">Retention</button>';
+  h += '<button onclick="goToAdminTab(\'backups\')" style="padding:10px 4px;margin-right:16px;background:none;border:none;border-bottom:2px solid '+(adminTab==='backups'?'#B45309':'transparent')+';color:'+(adminTab==='backups'?'var(--ink)':'var(--dim)')+';font-weight:700;font-size:13px;cursor:pointer;">Backups</button>';
   h += '</div>';
 
   if (adminTab === 'audit') {
@@ -8094,6 +8282,11 @@ function adminPanelV(){
   }
   if (adminTab === 'retention') {
     h += retentionV();
+    h += '</div>';
+    return h;
+  }
+  if (adminTab === 'backups') {
+    h += backupsV();
     h += '</div>';
     return h;
   }
