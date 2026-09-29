@@ -1634,6 +1634,22 @@ function lg(cid, au, ty, tx){
    a real customer's cabinet, while still funneling straight into a
    real conversation. Points back to the marketing site's contact
    form rather than duplicating it here. */
+/* Shown across the entire app for the whole duration of an admin
+   "View as" session — never subtle, on purpose. Every screen a
+   platform admin sees while impersonating carries this, with a
+   one-click way out, and a live countdown so it's never ambiguous
+   whether the session they're looking at is their own. */
+function impersonationBannerV(){
+  const im = S.impersonation;
+  if (!im || !im.active) return '';
+  const msLeft = new Date(im.expiresAt).getTime() - Date.now();
+  const minsLeft = Math.max(0, Math.round(msLeft / 60000));
+  return '<div style="background:linear-gradient(90deg,#7C2D12,#9A3412);color:#fff;padding:9px 18px;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;font-size:12.5px;font-weight:600;text-align:center;position:sticky;top:0;z-index:60;">' +
+    '<span>👁 Viewing as <strong>'+esc(im.userName||im.userEmail)+'</strong> at <strong>'+esc(im.orgName)+'</strong> — every action is being logged. Session ends in ~'+minsLeft+' min.</span>' +
+    '<button onclick="endImpersonation()" class="btn" style="background:#fff;color:#7C2D12;padding:5px 14px;border-radius:20px;font-weight:700;border:none;cursor:pointer;">Exit — Back to Admin</button>' +
+  '</div>';
+}
+
 function demoModeBannerV(){
   return '<div style="background:linear-gradient(90deg,#B45309,#D97706);color:#fff;padding:9px 18px;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;font-size:12.5px;font-weight:600;text-align:center;">' +
     '<span>🔎 You\'re viewing a live demo with sample data — nothing here is a real customer\'s.</span>' +
@@ -3357,6 +3373,7 @@ function render(){
     return;
   }
   let html = '';
+  if (S.impersonation?.active) html += impersonationBannerV();
   if (S.verifyEmailResult) html += verifyResultBannerV();
   if (S.isDemoMode) html += demoModeBannerV();
   // Email verification isn't implemented in the current backend
@@ -3800,6 +3817,8 @@ async function attemptRegister(){
 
 function logout(){
   if (supabaseClient) supabaseClient.auth.signOut();
+  if (_impersonationTimer) { clearInterval(_impersonationTimer); _impersonationTimer = null; }
+  S.impersonation = null;
   authToken = null;
   S.isAuthenticated = false;
   S.currentUser = null;
@@ -8039,6 +8058,50 @@ async function openManageUsers(orgId, orgName){
 function closeManageUsers(){
   st({ showManageUsersModal: false, manageUsersOrgId: null, manageUsersOrgName: null, manageUsersData: null, manageUsersError: null });
 }
+let _impersonationTimer = null;
+async function startImpersonation(orgId, orgName, userId, userEmail, userName){
+  if (!confirm('View the app as '+(userName||userEmail)+' at '+orgName+'?\n\nEvery action you take will be logged to the audit trail as an impersonation action, and the session automatically ends after 20 minutes.')) return;
+  try {
+    const result = await apiFetch('/api/admin/organizations/'+orgId+'/impersonate', {
+      method: 'POST',
+      body: JSON.stringify(userId ? { userId } : {})
+    });
+    const adminToken = authToken;
+    const adminUser = S.currentUser;
+    authToken = result.token;
+    S.currentUser = {
+      name: result.user.name, email: result.user.email, persona: null,
+      orgId: result.organization.id, role: result.user.role, platformAdmin: false
+    };
+    S.impersonation = {
+      active: true, orgId: result.organization.id, orgName: result.organization.name,
+      userEmail: result.user.email, userName: result.user.name, expiresAt: result.expiresAt,
+      adminToken, adminUser
+    };
+    CASES.length = 0;
+    await loadCasesFromApi();
+    if (_impersonationTimer) clearInterval(_impersonationTimer);
+    _impersonationTimer = setInterval(() => {
+      if (!S.impersonation?.active) { clearInterval(_impersonationTimer); return; }
+      if (new Date(S.impersonation.expiresAt).getTime() <= Date.now()) { endImpersonation(true); return; }
+      render();
+    }, 15000);
+    st({ role: 'litigation', showManageUsersModal: false, caseId: null, showWelcome: false });
+  } catch (e) {
+    alert('Could not start "View as" session: ' + e.message);
+  }
+}
+async function endImpersonation(expired){
+  const im = S.impersonation;
+  if (!im) return;
+  try { await apiFetch('/api/admin/impersonate/end', { method: 'POST' }); } catch (e) { /* best-effort */ }
+  if (_impersonationTimer) { clearInterval(_impersonationTimer); _impersonationTimer = null; }
+  authToken = im.adminToken;
+  S.currentUser = im.adminUser;
+  S.impersonation = null;
+  st({ role: 'admin', adminTab: 'orgs', caseId: null, showWelcome: false });
+  if (expired) alert('The "View as" session ended after 20 minutes. You\'re back in the admin panel.');
+}
 async function resetUserPassword(userId, email, name){
   if (!confirm('Reset the password for '+email+'?\n\nTheir current password will stop working immediately, and you\'ll be shown a one-time temporary password to relay to them through another channel (phone, a separate email thread, etc.) — never paste it back into this app for them.')) return;
   st({ manageUsersResettingId: userId });
@@ -8074,7 +8137,10 @@ function manageUsersModalV(){
         h += '<td style="font-size:11.5px;color:var(--muted);">'+esc(u.email)+'</td>';
         h += '<td><span class="tag" style="text-transform:capitalize;">'+esc(u.role)+'</span></td>';
         h += '<td>'+(u.isActive ? '<span class="tag" style="background:var(--green)18;color:var(--green);">Active</span>' : '<span class="tag" style="background:var(--red)18;color:var(--red);">Inactive</span>')+'</td>';
-        h += '<td style="white-space:nowrap;"><button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;" '+(S.manageUsersResettingId===u.id?'disabled':'')+' onclick="resetUserPassword(\''+u.id+'\',\''+escAttr(u.email)+'\',\''+escAttr(u.name||'')+'\')">'+(S.manageUsersResettingId===u.id?'Resetting…':'Reset Password')+'</button></td>';
+        h += '<td style="white-space:nowrap;">';
+        h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;" onclick="startImpersonation(\''+S.manageUsersOrgId+'\',\''+escAttr(S.manageUsersOrgName||'')+'\',\''+u.id+'\',\''+escAttr(u.email)+'\',\''+escAttr(u.name||'')+'\')">View As</button> ';
+        h += '<button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;" '+(S.manageUsersResettingId===u.id?'disabled':'')+' onclick="resetUserPassword(\''+u.id+'\',\''+escAttr(u.email)+'\',\''+escAttr(u.name||'')+'\')">'+(S.manageUsersResettingId===u.id?'Resetting…':'Reset Password')+'</button>';
+        h += '</td>';
         h += '</tr>';
       });
       h += '</tbody></table></div>';
