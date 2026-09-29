@@ -1068,6 +1068,46 @@ app.post('/api/admin/organizations/:id/activate', requirePlatformAdmin, async (r
   res.json({ activated: true, organization: result.rows[0] });
 });
 
+// List the users inside one org, for the platform admin support
+// tools (password reset needs a user to target). Deliberately
+// separate from the customer-facing /api/team/members, which only
+// shows the CALLER's own org — this one is cross-org by design.
+app.get('/api/admin/organizations/:id/users', requirePlatformAdmin, async (req, res) => {
+  const org = await q('SELECT id, name FROM organizations WHERE id = $1', [req.params.id]);
+  if (!org.rows[0]) return res.status(404).json({ error: 'Organization not found' });
+  const users = await q(
+    `SELECT id, email, name, role, is_active, last_login_at FROM users WHERE org_id = $1 ORDER BY created_at ASC`,
+    [req.params.id]
+  );
+  res.json({
+    organization: org.rows[0],
+    users: users.rows.map(u => ({ id: u.id, email: u.email, name: u.name, role: u.role, isActive: u.is_active, lastLoginAt: u.last_login_at }))
+  });
+});
+
+// Support-driven password reset. A platform admin sets a brand-new,
+// one-time temporary password for ANY user, in ANY org — for when
+// someone is locked out and can't complete the normal self-service
+// forgot-password flow (lost their email access, etc). The new
+// password is returned ONCE in this response, never logged or
+// stored anywhere but its bcrypt hash — same handling as the
+// temp password issued when a new org is created. This is a
+// high-trust action, so it's audited loudly, against BOTH the
+// user's own org (so their org's own audit trail shows it) and
+// tagged with which platform admin did it.
+app.post('/api/admin/users/:id/reset-password', requirePlatformAdmin, async (req, res) => {
+  const target = await q('SELECT id, org_id, email, name FROM users WHERE id = $1', [req.params.id]);
+  if (!target.rows[0]) return res.status(404).json({ error: 'User not found' });
+  const user = target.rows[0];
+
+  const tempPassword = crypto.randomBytes(9).toString('base64').replace(/[+/=]/g, '').slice(0, 12);
+  const passwordHash = await bcrypt.hash(tempPassword, BCRYPT_ROUNDS);
+  await q('UPDATE users SET password_hash = $1 WHERE id = $2', [passwordHash, user.id]);
+  await audit(user.org_id, req.user.sub, 'admin.password_reset_by_platform_admin', 'user', user.id, { targetEmail: user.email, resetBy: req.user.email }, req.ip);
+
+  res.json({ reset: true, email: user.email, name: user.name, tempPassword });
+});
+
 // ---------------------------------------------------------------
 // Team management — lets a customer's own owner/admin add
 // colleagues into THEIR org, instead of every new user
