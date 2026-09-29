@@ -716,6 +716,45 @@ app.post('/api/team/accept-invite', async (req, res) => {
   }
 });
 
+// Client-side error reporting — deliberately public/unauthenticated
+// and registered before the auth gate below, because the whole point
+// is to catch errors that happen BEFORE someone is logged in too (a
+// broken login screen is exactly the kind of thing this should catch,
+// and an auth-gated endpoint couldn't). The frontend's
+// reportClientError() posts here on every window 'error' and
+// 'unhandledrejection' event. Deliberately permissive about what it
+// accepts — a malformed report is still worth keeping a trimmed,
+// best-effort record of, not worth 400ing away — but every field is
+// hard-capped in length so nobody can use this as a way to store
+// arbitrary large payloads.
+async function logError(source, { orgId, userEmail, message, stack, url, method, statusCode }) {
+  try {
+    await q(
+      `INSERT INTO error_log (source, org_id, user_email, message, stack, url, method, status_code)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [
+        source,
+        orgId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgId) ? orgId : null,
+        userEmail ? String(userEmail).slice(0, 320) : null,
+        String(message || 'Unknown error').slice(0, 2000),
+        stack ? String(stack).slice(0, 5000) : null,
+        url ? String(url).slice(0, 500) : null,
+        method ? String(method).slice(0, 10) : null,
+        Number.isInteger(statusCode) ? statusCode : null
+      ]
+    );
+  } catch (e) {
+    // Logging an error must never itself throw or take down the request.
+    console.error('Failed to write to error_log:', e.message);
+  }
+}
+
+app.post('/api/errors', async (req, res) => {
+  const { message, stack, url, orgId, userEmail } = req.body || {};
+  await logError('client', { message, stack, url, orgId, userEmail });
+  res.status(204).end();
+});
+
 // ---------------------------------------------------------------
 // Auth gate for everything else. Two ways in:
 //  1. User JWT (normal path) — req.user + req.orgId set from token.
@@ -1049,6 +1088,54 @@ app.get('/api/admin/usage', requirePlatformAdmin, async (req, res) => {
       lastActivityAt: r.last_activity_at
     }))
   });
+});
+
+// Error tracking — a lightweight, self-hosted stand-in for a real
+// service (Sentry, etc). Two sources feed error_log: the global
+// Express error handler below (source='server', every unhandled
+// exception in a route) and POST /api/errors above (source='client',
+// what the frontend's window.onerror/unhandledrejection listeners
+// report). Unresolved-first by default so a platform admin's first
+// look at this tab is "what's actually still broken," not a wall of
+// already-handled noise.
+app.get('/api/admin/errors', requirePlatformAdmin, async (req, res) => {
+  const { source, orgId, resolved, limit, offset } = req.query;
+  const lim = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500);
+  const off = Math.max(parseInt(offset, 10) || 0, 0);
+  const conditions = [];
+  const params = [];
+  if (source) { params.push(source); conditions.push(`source = $${params.length}`); }
+  if (orgId) { params.push(orgId); conditions.push(`org_id = $${params.length}`); }
+  if (resolved === 'true' || resolved === 'false') { params.push(resolved === 'true'); conditions.push(`resolved = $${params.length}`); }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  params.push(lim); const limParam = params.length;
+  params.push(off); const offParam = params.length;
+  const result = await q(
+    `SELECT el.*, o.name AS org_name
+     FROM error_log el
+     LEFT JOIN organizations o ON o.id = el.org_id
+     ${where}
+     ORDER BY el.resolved ASC, el.created_at DESC
+     LIMIT $${limParam} OFFSET $${offParam}`,
+    params
+  );
+  const counts = await q(`SELECT resolved, COUNT(*) FROM error_log GROUP BY resolved`);
+  const unresolvedCount = Number(counts.rows.find(r => r.resolved === false)?.count || 0);
+  res.json({
+    count: result.rows.length, limit: lim, offset: off, unresolvedCount,
+    errors: result.rows.map(r => ({
+      id: r.id, source: r.source, orgId: r.org_id, orgName: r.org_name || null,
+      userEmail: r.user_email, message: r.message, stack: r.stack,
+      url: r.url, method: r.method, statusCode: r.status_code,
+      resolved: r.resolved, createdAt: r.created_at
+    }))
+  });
+});
+
+app.post('/api/admin/errors/:id/resolve', requirePlatformAdmin, async (req, res) => {
+  const result = await q('UPDATE error_log SET resolved = true WHERE id = $1 RETURNING id', [req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ error: 'Error not found' });
+  res.json({ resolved: true });
 });
 
 // Provision a brand-new customer directly — this is "give them
@@ -2021,6 +2108,11 @@ runWeeklyDigestCheck(); // also check once on startup, in case the process just 
 
 app.use((err, req, res, next) => {
   console.error(err);
+  logError('server', {
+    orgId: req.orgId, userEmail: req.user?.email,
+    message: err.message, stack: err.stack,
+    url: req.originalUrl, method: req.method, statusCode: 500
+  });
   res.status(500).json({ error: 'Internal server error' });
 });
 
