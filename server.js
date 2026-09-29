@@ -27,6 +27,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
+import zlib from 'zlib';
 
 const { Pool } = pkg;
 
@@ -515,6 +516,15 @@ app.post('/api/contact-sales', async (req, res) => {
     console.error('Contact-sales email failed to send:', e.message);
     res.status(502).json({ error: 'Could not send your message right now — please email sales@cclosed.com directly.' });
   }
+});
+
+// Health check — deliberately does no database work, so it answers
+// even if Postgres is slow or briefly unreachable, and it's what a
+// load test's baseline should hit first: this measures the server
+// and network alone, before adding database-backed endpoints on top.
+// Also the right target for an external uptime monitor later.
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // ---------------------------------------------------------------
@@ -2343,6 +2353,104 @@ async function runWeeklyDigestCheck(){
 }
 setInterval(runWeeklyDigestCheck, 60 * 60 * 1000); // every hour
 runWeeklyDigestCheck(); // also check once on startup, in case the process just woke up on the right day
+
+// ---------------------------------------------------------------
+// Independent daily backup — separate from, and in addition to,
+// whatever automatic point-in-time recovery your database host
+// provides. That platform-level recovery is real and valuable, but
+// it only protects you against database-level problems, and it ties
+// your only copy of your own data to staying with that one host.
+// This gives you a second, portable copy you control.
+//
+// How it works: once a day, every application table is exported to
+// JSON, gzip-compressed, and emailed as an attachment to
+// BACKUP_RECIPIENT_EMAIL (falls back to FROM_EMAIL/SMTP_USER if
+// unset). Every run — success or failure — is logged to
+// backup_runs so you can see at a glance in the admin panel whether
+// the last one actually went through.
+//
+// Deliberately NOT using cloud object storage (S3, etc.) — that
+// would mean a new vendor account and new credentials to manage.
+// Email is something you already have configured and already
+// control. The real limitation: most inboxes cap attachments around
+// 25MB, so this works well now and will need to move to real
+// storage once your data volume grows past that. Treat every backup
+// email exactly like production data — it contains real client and
+// case information — and restrict who receives it accordingly.
+const BACKUP_TABLES = [
+  'organizations', 'users', 'password_resets', 'team_invites',
+  'cases', 'case_access', 'saved_reports', 'payees', 'payables',
+  'weekly_digest_config', 'audit_log', 'error_log'
+];
+async function runDailyBackupCheck(){
+  if (!SMTP_CONFIGURED) return;
+  const already = await q(
+    `SELECT id FROM backup_runs WHERE status = 'success' AND created_at::date = now()::date LIMIT 1`
+  );
+  if (already.rows[0]) return; // already backed up today, nothing to do
+
+  const tableCounts = {};
+  let payload;
+  try {
+    const client = await pool.connect();
+    let dump;
+    try {
+      await client.query('BEGIN');
+      await client.query(`SET LOCAL app.is_platform_admin = 'true'`); // cross-org export, same bypass pattern as the admin org directory
+      dump = {};
+      for (const table of BACKUP_TABLES) {
+        const result = await client.query(`SELECT * FROM ${table}`); // table names come only from the fixed BACKUP_TABLES list above, never user input
+        dump[table] = result.rows;
+        tableCounts[table] = result.rows.length;
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
+    payload = zlib.gzipSync(Buffer.from(JSON.stringify({ exportedAt: new Date().toISOString(), tables: dump }), 'utf8'));
+  } catch (e) {
+    console.error('Daily backup export failed:', e.message);
+    await q(`INSERT INTO backup_runs (status, table_counts, error) VALUES ('failed', $1, $2)`, [tableCounts, e.message]).catch(() => {});
+    return;
+  }
+
+  const recipient = process.env.BACKUP_RECIPIENT_EMAIL || process.env.FROM_EMAIL || process.env.SMTP_USER;
+  const dateStr = new Date().toISOString().slice(0, 10);
+  try {
+    await mailer.sendMail({
+      from: process.env.FROM_EMAIL || process.env.SMTP_USER,
+      to: recipient,
+      subject: `Case Closed Pro — daily backup — ${dateStr}`,
+      text: `Attached: a full export of every application table as of ${new Date().toISOString()}.\n\n` +
+        Object.entries(tableCounts).map(([t, n]) => `  ${t}: ${n} row(s)`).join('\n') +
+        `\n\nThis file contains real customer data — store and delete it accordingly. It is gzip-compressed JSON; ` +
+        `unzip with any standard tool (e.g. \`gunzip\`) to read it.`,
+      attachments: [{ filename: `case-closed-pro-backup-${dateStr}.json.gz`, content: payload }]
+    });
+    await q(`INSERT INTO backup_runs (status, table_counts) VALUES ('success', $1)`, [tableCounts]);
+    console.log(`Daily backup sent to ${recipient} (${Object.values(tableCounts).reduce((a,b)=>a+b,0)} total rows)`);
+  } catch (e) {
+    console.error('Daily backup email failed to send:', e.message);
+    await q(`INSERT INTO backup_runs (status, table_counts, error) VALUES ('failed', $1, $2)`, [tableCounts, 'Export succeeded but email failed: ' + e.message]).catch(() => {});
+  }
+}
+setInterval(runDailyBackupCheck, 60 * 60 * 1000); // checks hourly, actually runs once per day (see the already-ran guard above)
+runDailyBackupCheck(); // also check once on startup
+
+// Lets the admin panel show backup history without needing direct
+// database access — same "did the last scheduled thing actually
+// work" visibility the Weekly Digest and Audit Log already give you.
+app.get('/api/admin/backups', requirePlatformAdmin, async (req, res) => {
+  const result = await q('SELECT id, status, table_counts, error, created_at FROM backup_runs ORDER BY created_at DESC LIMIT 30');
+  res.json({
+    smtpConfigured: SMTP_CONFIGURED,
+    recipient: SMTP_CONFIGURED ? (process.env.BACKUP_RECIPIENT_EMAIL || process.env.FROM_EMAIL || process.env.SMTP_USER) : null,
+    runs: result.rows.map(r => ({ id: r.id, status: r.status, tableCounts: r.table_counts, error: r.error, createdAt: r.created_at }))
+  });
+});
 
 app.use((err, req, res, next) => {
   console.error(err);
