@@ -1021,6 +1021,36 @@ app.get('/api/admin/audit-log', requirePlatformAdmin, async (req, res) => {
   });
 });
 
+// Per-org usage dashboard — every number here is derived from data
+// that already exists (cases, users, audit_log), nothing new to
+// instrument or keep in sync. "AI calls" counts audit_log entries
+// written by the five Sentinel endpoints (action LIKE 'ai.%'), which
+// is already how every Sentinel call logs itself — so this is really
+// just a different view onto the same audit trail as the Audit Log
+// tab, aggregated per org instead of shown as a raw feed.
+app.get('/api/admin/usage', requirePlatformAdmin, async (req, res) => {
+  const result = await q(`
+    SELECT
+      o.id, o.name, o.plan_tier, o.access_status, o.created_at,
+      (SELECT COUNT(*) FROM cases c WHERE c.org_id = o.id) AS case_count,
+      (SELECT COUNT(*) FROM users u WHERE u.org_id = o.id) AS user_count,
+      (SELECT COUNT(*) FROM users u WHERE u.org_id = o.id AND u.is_active = true) AS active_user_count,
+      (SELECT COUNT(*) FROM audit_log al WHERE al.org_id = o.id AND al.action LIKE 'ai.%') AS ai_call_count,
+      (SELECT COUNT(*) FROM audit_log al WHERE al.org_id = o.id AND al.action LIKE 'ai.%' AND al.created_at > now() - interval '30 days') AS ai_call_count_30d,
+      (SELECT MAX(al.created_at) FROM audit_log al WHERE al.org_id = o.id) AS last_activity_at
+    FROM organizations o
+    ORDER BY o.created_at DESC
+  `);
+  res.json({
+    organizations: result.rows.map(r => ({
+      id: r.id, name: r.name, planTier: r.plan_tier, accessStatus: r.access_status, createdAt: r.created_at,
+      caseCount: Number(r.case_count), userCount: Number(r.user_count), activeUserCount: Number(r.active_user_count),
+      aiCallCount: Number(r.ai_call_count), aiCallCount30d: Number(r.ai_call_count_30d),
+      lastActivityAt: r.last_activity_at
+    }))
+  });
+});
+
 // Provision a brand-new customer directly — this is "give them
 // access to their own cabinet." Creates the organization AND its
 // first (owner) user in one step, active immediately, and returns a
