@@ -3416,6 +3416,7 @@ function render(){
   if (S.showSecurityModal) html += securityModalV();
   if (S.showTeamModal) html += teamModalV();
   if (S.showCreateOrgModal) html += createOrgModalV();
+  if (S.showHealthCheckModal) html += healthCheckModalV();
   if (S.activateOrgResult) html += activateOrgResultModalV();
   if (S.showManageUsersModal) html += manageUsersModalV();
   if (S.resetPasswordResult) html += resetPasswordResultModalV();
@@ -7901,6 +7902,22 @@ async function runIsolationTest(){
   }
 }
 
+// Wipes and reseeds the fictional sandbox organization used for
+// sales demos — same effect as running sandbox-seed.mjs from a
+// terminal, but reachable with one tap from the Admin Panel. Always
+// safe to run again before the next call; it never touches any real
+// customer's organization.
+async function resetSandbox(){
+  if (!confirm('Reset the sandbox? This wipes every case currently in the sandbox org and replaces it with a fresh set of fictional matters, and issues a new password.')) return;
+  st({sandboxResetRunning:true, sandboxResetResult:null});
+  try {
+    const result = await apiFetch('/api/admin/sandbox/reset', { method:'POST' });
+    st({sandboxResetRunning:false, sandboxResetResult:result});
+  } catch (e) {
+    st({sandboxResetRunning:false, sandboxResetResult:{error:e.message}});
+  }
+}
+
 function goToAdmin(){
   st({role:'admin', caseId:null, showUserMenu:false, showWelcome:false, adminTab: S.adminTab || 'orgs'});
   if (API_BASE && authToken) fetchAdminOrgs();
@@ -8253,7 +8270,26 @@ function adminPanelV(){
   h += '<div class="hero"><div class="hero-l"><div class="hero-eyebrow" style="color:#B45309;">⚙ Platform Admin</div>';
   h += '<h1 class="hero-title">Customer Organizations</h1>';
   h += '<p class="hero-sub">Every customer\'s cabinet, in one place — provision new ones, or turn access on and off for existing ones.</p></div>';
-  h += '<div class="hero-r"><button class="btn btn-out" onclick="runIsolationTest()" '+(S.isolationTestRunning?'disabled':'')+'>'+(S.isolationTestRunning?'Running…':'🔒 Run Isolation Test')+'</button> <button class="btn btn-pri" style="background:#B45309;" onclick="openCreateOrgModal()">+ Create New Customer</button></div></div>';
+  h += '<div class="hero-r"><button class="btn btn-out" onclick="runIsolationTest()" '+(S.isolationTestRunning?'disabled':'')+'>'+(S.isolationTestRunning?'Running…':'🔒 Run Isolation Test')+'</button> <button class="btn btn-out" onclick="resetSandbox()" '+(S.sandboxResetRunning?'disabled':'')+'>'+(S.sandboxResetRunning?'Resetting…':'🧪 Reset Sandbox')+'</button> <button class="btn btn-out" onclick="openHealthCheckModal()">🩺 Sentinel Health Check</button> <button class="btn btn-pri" style="background:#B45309;" onclick="openCreateOrgModal()">+ Create New Customer</button></div></div>';
+
+  if (S.sandboxResetResult) {
+    const r = S.sandboxResetResult;
+    if (r.error) {
+      h += '<div class="alert-bad" style="margin-bottom:16px;">Sandbox reset failed: '+esc(r.error)+'</div>';
+    } else {
+      h += '<div class="card" style="margin-bottom:16px;border-left:3px solid var(--green);">';
+      h += '<div class="sh"><span>✓ Sandbox Reset</span><span style="color:var(--dim);font-weight:500;">'+r.casesCreated+' fictional matters seeded</span></div>';
+      h += '<div style="display:flex;gap:24px;flex-wrap:wrap;padding:8px 0;font-size:13px;">';
+      h += '<div><div style="color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Email</div><div style="font-weight:700;font-family:monospace;">'+esc(r.email)+'</div></div>';
+      h += '<div><div style="color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Password</div><div style="font-weight:700;font-family:monospace;">'+esc(r.temporaryPassword)+'</div></div>';
+      h += '</div>';
+      if (r.unassignedMatters && r.unassignedMatters.length) {
+        h += '<div style="font-size:11.5px;color:var(--dim);margin-top:6px;">Unassigned on purpose — open one and use Sentinel Match live: '+r.unassignedMatters.map(esc).join(', ')+'</div>';
+      }
+      h += '<div style="font-size:10.5px;color:var(--dim);margin-top:10px;">This password is shown once and isn\'t stored anywhere — copy it now. Log out of this admin session and log back in with these credentials to see the sandbox yourself, or hand them to a prospect.</div>';
+      h += '</div>';
+    }
+  }
 
   const adminTab = S.adminTab || 'orgs';
   h += '<div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--surf2);">';
@@ -8415,17 +8451,43 @@ async function activateOrg(id, name){
   }
 }
 
+/* ── ONBOARD NEW CUSTOMER ─────────────────────────────────
+   Creates the org + owner in one step (same as the old "Create New
+   Customer" did), but also captures what they actually purchased —
+   plan tier + optional add-ons + extra seats + a one-time
+   implementation fee — writes that into the org's features so the
+   right Sentinel modules actually turn on for them, and fires an
+   itemized invoice-request email back to the platform admin doing
+   the onboarding. That admin turns the email into a real invoice in
+   your own accounting tool. See POST /api/admin/onboard-customer in
+   server.js — nothing here charges the customer automatically. */
 function openCreateOrgModal(){
   st({showCreateOrgModal:true, createOrgError:'', createOrgResult:null});
+  window._coAddOns = []; window._coImplFeeTouched = false;
+  if (!S.pricingCatalog) fetchPricingCatalog();
 }
 function closeCreateOrgModal(){
   st({showCreateOrgModal:false, createOrgResult:null});
   fetchAdminOrgs();
 }
+async function fetchPricingCatalog(){
+  try {
+    const data = await apiFetch('/api/admin/pricing-catalog');
+    st({pricingCatalog:data});
+  } catch (e) {
+    console.error('Could not load pricing catalog:', e.message);
+  }
+}
+function coRecalc(){ st({}); } // cheap full re-render so the price summary reflects the latest form inputs
+function toggleCoAddOn(key, checked){
+  const cur = window._coAddOns || [];
+  window._coAddOns = checked ? [...new Set([...cur, key])] : cur.filter(k => k !== key);
+  st({});
+}
 function createOrgModalV(){
   let h = '<div class="modal-bg" onclick="if(event.target===this && !S.createOrgLoading)closeCreateOrgModal()">';
-  h += '<div class="modal" style="max-width:480px;">';
-  h += '<div class="modal-h"><div class="serif" style="font-size:18px;font-weight:700;">+ Create New Customer</div>';
+  h += '<div class="modal" style="max-width:560px;">';
+  h += '<div class="modal-h"><div class="serif" style="font-size:18px;font-weight:700;">+ Onboard New Customer</div>';
   h += '<button class="x" onclick="closeCreateOrgModal()">×</button></div>';
   h += '<div class="modal-b">';
 
@@ -8437,18 +8499,81 @@ function createOrgModalV(){
     h += '<div><strong>Owner login:</strong> '+esc(r.owner.email)+'</div>';
     h += '<div><strong>Temporary password:</strong> <span style="font-family:monospace;background:#fff;padding:2px 8px;border-radius:5px;border:1px solid var(--line);">'+esc(r.temporaryPassword)+'</span></div>';
     h += '</div>';
-    h += '<div style="font-size:10.5px;color:var(--dim);margin-top:10px;">Billed by your accounting team through your usual process — nothing here charges them anything.</div>';
+
+    if (r.billing) {
+      h += '<div style="background:var(--surf2);border:1px solid var(--line);border-radius:8px;padding:16px;margin-top:12px;font-size:12.5px;">';
+      h += '<div style="font-weight:700;margin-bottom:8px;">Purchase summary</div>';
+      (r.billing.lineItems||[]).forEach(li => {
+        h += '<div style="display:flex;justify-content:space-between;padding:2px 0;"><span>'+esc(li.label)+'</span><span>'+fM(li.amount)+'/mo</span></div>';
+      });
+      h += '<div style="display:flex;justify-content:space-between;padding:4px 0;font-weight:700;border-top:1px solid var(--line);margin-top:4px;"><span>Monthly total</span><span>'+fM(r.billing.monthlyTotal)+'/mo</span></div>';
+      h += '<div style="display:flex;justify-content:space-between;padding:2px 0;"><span>Implementation fee (one-time)</span><span>'+fM(r.billing.implementationFee)+'</span></div>';
+      h += '<div style="display:flex;justify-content:space-between;padding:4px 0;font-weight:700;color:var(--pri2);"><span>Due at signing</span><span>'+fM(r.billing.dueAtSigning)+'</span></div>';
+      h += '</div>';
+    }
+    if (r.invoiceEmail) {
+      h += r.invoiceEmail.sent
+        ? '<div class="alert-good" style="margin-top:12px;">Invoice-request email sent to '+esc(r.invoiceEmail.to)+'. Turn it into a real invoice in your accounting tool and send it on to the customer.</div>'
+        : '<div class="alert-bad" style="margin-top:12px;">Email wasn\'t sent ('+esc(r.invoiceEmail.error || 'SMTP not configured')+') — copy the purchase summary above manually for now.</div>';
+    }
+
+    h += '<div style="font-size:10.5px;color:var(--dim);margin-top:10px;">Nothing above has actually been billed — this app never charges customers automatically. Billed by your accounting team through your usual process.</div>';
     h += '<button class="btn btn-pri" style="width:100%;justify-content:center;margin-top:16px;" onclick="closeCreateOrgModal()">Done</button>';
+  } else if (!S.pricingCatalog) {
+    h += '<div style="padding:24px 0;color:var(--dim);text-align:center;">Loading pricing…</div>';
   } else {
+    const cat = S.pricingCatalog;
+    const tierKeys = Object.keys(cat.tiers);
+    const tierKey = tierKeys.includes(window._coTier) ? window._coTier : 'starter';
+    window._coTier = tierKey;
+    const tierInfo = cat.tiers[tierKey];
+    if (window._coImplFeeTouched !== true) window._coImplFee = tierInfo.implementationFee;
+    const seats = Math.max(0, parseInt(window._coSeats || '0', 10) || 0);
+    const selectedAddOns = window._coAddOns || [];
+
     h += '<div class="grid-2">';
-    h += '<div>'+sel('Customer Type', 'window._coPersona=this.value', ['carrier','defense'], S._coPersona||'carrier')+'</div>';
-    h += '<div>'+sel('Plan Tier', 'window._coTier=this.value', ['starter','growth','enterprise'], S._coTier||'starter')+'</div>';
+    h += '<div>'+sel('Customer Type', 'window._coPersona=this.value;coRecalc()', ['carrier','defense'], window._coPersona||'carrier')+'</div>';
+    h += '<div>'+sel('Plan Tier', 'window._coTier=this.value;coRecalc()', tierKeys, tierKey)+'</div>';
     h += '</div>';
-    h += inp('Organization Name', '', 'window._coOrgName=this.value', 'text', 'placeholder="Acme Insurance Co"');
-    h += inp('Owner Name', '', 'window._coOwnerName=this.value', 'text', 'placeholder="Jane Doe"');
-    h += inp('Owner Email', '', 'window._coOwnerEmail=this.value', 'email', 'placeholder="jane@acmeinsurance.com"');
+    h += '<div style="font-size:11px;color:var(--dim);margin:-6px 0 12px;">'+esc(tierInfo.label)+' — '+fM(tierInfo.monthly)+'/mo · '+esc(tierInfo.matterNote)+'</div>';
+    h += inp('Organization Name', window._coOrgName||'', 'window._coOrgName=this.value', 'text', 'placeholder="Acme Insurance Co"');
+    h += inp('Owner Name', window._coOwnerName||'', 'window._coOwnerName=this.value', 'text', 'placeholder="Jane Doe"');
+    h += inp('Owner Email', window._coOwnerEmail||'', 'window._coOwnerEmail=this.value', 'email', 'placeholder="jane@acmeinsurance.com"');
+
+    h += '<div style="margin-top:14px;"><div class="lbl">Add-ons</div>';
+    cat.addOns.forEach(a => {
+      const checked = selectedAddOns.includes(a.key);
+      h += '<label style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12.5px;cursor:pointer;">';
+      h += '<input type="checkbox" '+(checked?'checked':'')+' onchange="toggleCoAddOn(\''+a.key+'\',this.checked)"> ';
+      h += esc(a.label)+' <span style="color:var(--dim);margin-left:auto;">'+fM(a.monthly)+'/mo</span>';
+      h += '</label>';
+    });
+    h += '</div>';
+
+    h += '<div class="grid-2" style="margin-top:10px;">';
+    h += '<div>'+inp('Extra User Seats', String(seats), 'window._coSeats=this.value;coRecalc()', 'number', 'min="0" placeholder="0"')+'</div>';
+    h += '<div>'+inpMoney('Implementation Fee ($)', window._coImplFee, 'window._coImplFee=moneyVal(this.value);window._coImplFeeTouched=true;coRecalc()')+'</div>';
+    h += '</div>';
+    h += ta('Notes (internal only)', window._coNotes||'', 'window._coNotes=this.value', 'Anything your team should remember about this deal');
+
+    let monthlyTotal = tierInfo.monthly;
+    const lines = [tierInfo.label + ' plan: ' + fM(tierInfo.monthly) + '/mo'];
+    selectedAddOns.forEach(k => {
+      const a = cat.addOns.find(x => x.key === k);
+      if (a) { monthlyTotal += a.monthly; lines.push(a.label + ': ' + fM(a.monthly) + '/mo'); }
+    });
+    if (seats > 0) { const seatAmt = seats * cat.extraSeatPrice; monthlyTotal += seatAmt; lines.push(seats+' extra seat(s): '+fM(seatAmt)+'/mo'); }
+    const implFee = Number(window._coImplFee) || 0;
+    h += '<div style="background:var(--surf2);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-top:14px;font-size:12px;">';
+    lines.forEach(l => h += '<div style="padding:2px 0;">'+esc(l)+'</div>');
+    h += '<div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid var(--line);margin-top:6px;padding-top:6px;"><span>Monthly total</span><span>'+fM(monthlyTotal)+'/mo</span></div>';
+    h += '<div style="display:flex;justify-content:space-between;"><span>+ Implementation fee</span><span>'+fM(implFee)+'</span></div>';
+    h += '<div style="display:flex;justify-content:space-between;font-weight:700;color:var(--pri2);"><span>Due at signing</span><span>'+fM(implFee+monthlyTotal)+'</span></div>';
+    h += '</div>';
+
     if (S.createOrgError) h += '<div class="alert-bad" style="margin-top:10px;">'+esc(S.createOrgError)+'</div>';
-    h += '<button class="btn btn-pri" style="width:100%;justify-content:center;margin-top:14px;" onclick="submitCreateOrg()" '+(S.createOrgLoading?'disabled':'')+'>'+(S.createOrgLoading?'Creating…':'Create Organization')+'</button>';
+    h += '<div style="font-size:10.5px;color:var(--dim);margin-top:10px;">Submitting this emails an itemized invoice request to you ('+esc((S.currentUser&&S.currentUser.email)||'your account')+') — nothing is charged automatically.</div>';
+    h += '<button class="btn btn-pri" style="width:100%;justify-content:center;margin-top:14px;" onclick="submitCreateOrg()" '+(S.createOrgLoading?'disabled':'')+'>'+(S.createOrgLoading?'Onboarding…':'Onboard Customer')+'</button>';
   }
   h += '</div></div></div>';
   return h;
@@ -8459,18 +8584,209 @@ async function submitCreateOrg(){
   const ownerEmail = (window._coOwnerEmail||'').trim();
   const persona = window._coPersona || 'carrier';
   const planTier = window._coTier || 'starter';
+  const addOns = window._coAddOns || [];
+  const extraSeats = Math.max(0, parseInt(window._coSeats||'0',10) || 0);
+  const implementationFee = Number(window._coImplFee) || 0;
+  const notes = window._coNotes || '';
   if (!orgName) { st({createOrgError:'Enter an organization name.'}); return; }
   if (!ownerEmail || !ownerEmail.includes('@')) { st({createOrgError:'Enter a valid owner email.'}); return; }
   st({createOrgLoading:true, createOrgError:''});
   try {
-    const data = await apiFetch('/api/admin/organizations', {
+    const data = await apiFetch('/api/admin/onboard-customer', {
       method:'POST',
-      body: JSON.stringify({ orgName, ownerName, ownerEmail, persona, planTier })
+      body: JSON.stringify({ orgName, ownerName, ownerEmail, persona, planTier, addOns, extraSeats, implementationFee, notes })
     });
     st({createOrgLoading:false, createOrgResult:data});
   } catch (e) {
     st({createOrgLoading:false, createOrgError:e.message});
   }
+}
+
+/* ── SENTINEL HEALTH CHECK ─────────────────────────────────
+   A paid, pre-sales diagnostic your team runs FOR a prospect, on
+   their real open caseload — not a self-serve prospect-facing
+   flow. Collect the prospect's open matters as a CSV (their own
+   export, reshaped to the template below), paste it in here, and
+   this creates a dedicated isolated org, imports the matters with
+   their real status, and runs the same risk-signal engine +
+   Sentinel Watch AI brief a paying customer would see on their own
+   book. See the matching /api/admin/sentinel-health-check route in
+   server.js for why this deliberately uses OPEN cases, never closed
+   ones with an already-known outcome. */
+const HEALTH_CHECK_CSV_HEADERS = ['Client','Type','Status','Attorney','Carrier','ClaimNo','Filed','SOL','Value','Reserve','Demand','Offer','LastActivity','TotalBilled'];
+// One clean example row only — anything else here would risk being
+// parsed as a real matter if someone forgets to delete it before
+// sending the CSV back. Column notes live in the modal's own copy
+// instead, not in the file.
+const HEALTH_CHECK_CSV_TEMPLATE = HEALTH_CHECK_CSV_HEADERS.join(',') + '\n' +
+  'Acme Manufacturing Co,Contract Dispute,Active,,Zurich,CLM-2025-1234,2025-03-01,2027-03-01,1200000,450000,1500000,300000,2025-09-15,18500\n';
+
+function downloadHealthCheckTemplate(){
+  const blob = new Blob([HEALTH_CHECK_CSV_TEMPLATE], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'sentinel-health-check-template.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// Minimal CSV line splitter — handles quoted fields containing commas
+// (e.g. "Acme, Inc."), which a naive split(',') would break on.
+function splitCsvLine(line){
+  const out = []; let cur = '', inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i+1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') { inQuotes = false; }
+      else cur += ch;
+    } else {
+      if (ch === '"') inQuotes = true;
+      else if (ch === ',') { out.push(cur); cur = ''; }
+      else cur += ch;
+    }
+  }
+  out.push(cur);
+  return out.map(s => s.trim());
+}
+
+// Header-driven, case-insensitive — so reordering columns in Excel
+// (which people always do) doesn't silently misalign the data.
+function parseHealthCheckCSV(text){
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length);
+  if (lines.length < 2) throw new Error('CSV needs a header row plus at least one matter.');
+  const headers = splitCsvLine(lines[0]).map(h => h.toLowerCase());
+  const col = name => headers.indexOf(name.toLowerCase());
+  const idx = {
+    client: col('Client'), type: col('Type'), status: col('Status'), attorney: col('Attorney'),
+    carrier: col('Carrier'), claimNo: col('ClaimNo'), filed: col('Filed'), sol: col('SOL'),
+    value: col('Value'), reserve: col('Reserve'), demand: col('Demand'), offer: col('Offer'),
+    lastActivity: col('LastActivity'), totalBilled: col('TotalBilled')
+  };
+  if (idx.client === -1) throw new Error('CSV is missing a required "Client" column. Download the template to see the expected format.');
+  const num = v => { const n = parseFloat(String(v||'').replace(/[^0-9.-]/g,'')); return isNaN(n) ? 0 : n; };
+
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cells = splitCsvLine(lines[i]);
+    const client = idx.client >= 0 ? cells[idx.client] : '';
+    if (!client) continue; // skip blank/example rows
+    const filed = idx.filed >= 0 ? cells[idx.filed] : '';
+    const sol = idx.sol >= 0 ? cells[idx.sol] : '';
+    const lastActivity = (idx.lastActivity >= 0 && cells[idx.lastActivity]) ? cells[idx.lastActivity] : filed;
+    rows.push({
+      client,
+      type: (idx.type >= 0 && cells[idx.type]) || 'Other',
+      status: (idx.status >= 0 && cells[idx.status]) || 'Active',
+      litigationStage: 'Active',
+      attorney: idx.attorney >= 0 ? cells[idx.attorney] : '',
+      carrier: idx.carrier >= 0 ? cells[idx.carrier] : '',
+      claimNo: idx.claimNo >= 0 ? cells[idx.claimNo] : '',
+      filed: filed || null,
+      deadline: sol || null,
+      value: idx.value >= 0 ? num(cells[idx.value]) : 0,
+      reserveAmount: idx.reserve >= 0 ? num(cells[idx.reserve]) : 0,
+      data: {
+        exposure: {
+          demandAmount: idx.demand >= 0 ? num(cells[idx.demand]) : 0,
+          offerAmount: idx.offer >= 0 ? num(cells[idx.offer]) : 0,
+          reserveAmount: idx.reserve >= 0 ? num(cells[idx.reserve]) : 0
+        },
+        keyDates: { sol: sol || '' },
+        billing: { totalBilled: idx.totalBilled >= 0 ? num(cells[idx.totalBilled]) : 0 },
+        updates: lastActivity ? [{ date: lastActivity, author: 'Import', type: 'Last Known Activity', text: 'Most recent activity date from prospect\'s source data.' }] : []
+      }
+    });
+  }
+  if (!rows.length) throw new Error('No matters found in that CSV — check that rows have a value in the Client column.');
+  return rows;
+}
+
+function openHealthCheckModal(){
+  st({showHealthCheckModal:true, healthCheckError:'', healthCheckResult:null, healthCheckCsvText:''});
+}
+function closeHealthCheckModal(){
+  st({showHealthCheckModal:false});
+}
+async function submitHealthCheck(){
+  const prospectName = (window._hcProspectName||'').trim();
+  const csvText = (document.getElementById('hcCsvInput')||{}).value || '';
+  const pricePaidRaw = (window._hcPricePaid !== undefined) ? window._hcPricePaid : '5000';
+  const pricePaid = pricePaidRaw === '' ? null : moneyVal(pricePaidRaw);
+  if (!prospectName) { st({healthCheckError:'Enter the prospect\'s name.'}); return; }
+  let cases;
+  try {
+    cases = parseHealthCheckCSV(csvText);
+  } catch (e) {
+    st({healthCheckError:e.message});
+    return;
+  }
+  st({healthCheckLoading:true, healthCheckError:''});
+  try {
+    const data = await apiFetch('/api/admin/sentinel-health-check', {
+      method:'POST',
+      body: JSON.stringify({ prospectName, cases, pricePaid })
+    });
+    st({healthCheckLoading:false, healthCheckResult:data});
+  } catch (e) {
+    st({healthCheckLoading:false, healthCheckError:e.message});
+  }
+}
+function healthCheckModalV(){
+  let h = '<div class="modal-bg" onclick="if(event.target===this && !S.healthCheckLoading)closeHealthCheckModal()">';
+  h += '<div class="modal" style="max-width:640px;max-height:88vh;overflow-y:auto;">';
+  h += '<div class="modal-h"><div class="serif" style="font-size:18px;font-weight:700;">🩺 Sentinel Health Check</div>';
+  h += '<button class="x" onclick="closeHealthCheckModal()">×</button></div>';
+  h += '<div class="modal-b">';
+
+  if (S.healthCheckResult) {
+    const r = S.healthCheckResult;
+    h += '<div id="hcReport">';
+    h += '<div class="alert-good" style="margin-bottom:14px;">Imported '+r.imported+' matter'+(r.imported===1?'':'s')+' into a dedicated, isolated engagement org'+(r.failed?' ('+r.failed+' row'+(r.failed===1?'':'s')+' skipped — see below)':'')+'.</div>';
+    if (r.billing && r.billing.pricePaid != null) {
+      h += '<div style="background:#FFF7ED;border:1px solid #FDBA74;border-radius:8px;padding:12px 14px;margin-bottom:16px;">';
+      h += '<div style="font-weight:700;font-size:13px;color:#9A3412;">💳 '+fM(r.billing.pricePaid)+' paid · credit expires '+esc(r.billing.creditExpiresAt)+'</div>';
+      h += '<div style="font-size:11px;color:#9A3412;margin-top:2px;">Fully credited toward their first invoice if they sign by this date. This isn\'t tracked automatically anywhere else — put it on your own calendar or CRM too.</div>';
+      h += '</div>';
+    }
+
+    h += '<div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:16px;">';
+    h += '<div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Portfolio Value</div><div style="font-size:20px;font-weight:700;">'+fM(r.stats.totalValue)+'</div></div>';
+    h += '<div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Total Reserves</div><div style="font-size:20px;font-weight:700;">'+fM(r.stats.totalReserves)+'</div></div>';
+    h += '<div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Under-Reserved</div><div style="font-size:20px;font-weight:700;color:'+(r.stats.underReservedCount?'var(--red)':'var(--green)')+';">'+r.stats.underReservedCount+' of '+r.stats.matterCount+'</div></div>';
+    h += '<div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">SOL Within 180 Days</div><div style="font-size:20px;font-weight:700;color:'+(r.stats.solRiskCount?'var(--red)':'var(--green)')+';">'+r.stats.solRiskCount+'</div></div>';
+    h += '</div>';
+
+    if (r.stats.concentration?.topType) {
+      h += '<div style="font-size:12.5px;margin-bottom:6px;"><strong>Concentration:</strong> '+r.stats.concentration.topType.pct+'% of portfolio value is in '+esc(r.stats.concentration.topType.type)+' matters'+(r.stats.concentration.topCarrier?'; '+r.stats.concentration.topCarrier.pct+'% sits with '+esc(r.stats.concentration.topCarrier.carrier):'')+'.</div>';
+    }
+    if (r.stats.underReservedMatters?.length) {
+      h += '<div style="font-size:11.5px;color:var(--dim);margin-bottom:10px;">Under-reserved (reserve below 80% of likely exposure): '+r.stats.underReservedMatters.map(m=>esc(m.client)).join(', ')+(r.stats.underReservedCount>r.stats.underReservedMatters.length?' + '+(r.stats.underReservedCount-r.stats.underReservedMatters.length)+' more':'')+'</div>';
+    }
+
+    h += '<div class="card" style="margin-top:6px;"><div class="sh"><span>Sentinel Watch — Portfolio Risk Brief</span><span style="color:var(--dim);font-weight:500;">'+r.sentinelWatch.flaggedCount+' matter'+(r.sentinelWatch.flaggedCount===1?'':'s')+' flagged</span></div>';
+    h += '<div style="font-size:13px;line-height:1.7;white-space:pre-wrap;">'+esc(r.sentinelWatch.analysis)+'</div></div>';
+
+    if (r.failed) {
+      h += '<div style="font-size:10.5px;color:var(--dim);margin-top:12px;">Skipped rows: '+r.importErrors.map(e=>'#'+(e.index+1)+' ('+esc(e.error)+')').join(', ')+'</div>';
+    }
+    h += '<div style="font-size:10.5px;color:var(--dim);margin-top:12px;">This engagement lives in its own isolated organization ("'+esc(r.organization.name)+'"), separate from your sandbox and every real customer. Billing is handled the same way as everything else in this app — outside it, by your team.</div>';
+    h += '</div>';
+    h += '<div style="display:flex;gap:8px;margin-top:16px;"><button class="btn btn-out" style="flex:1;justify-content:center;" onclick="window.print()">🖨 Print / Save as PDF</button><button class="btn btn-pri" style="flex:1;justify-content:center;" onclick="closeHealthCheckModal()">Done</button></div>';
+  } else {
+    h += '<p style="font-size:12.5px;color:var(--muted);margin-bottom:14px;">Runs the same portfolio risk-signal engine and Sentinel Watch AI brief a paying customer sees, against a prospect\'s real OPEN caseload — deliberately not closed cases with a known outcome. Creates its own isolated org; never touches the sandbox or any real customer\'s data.</p>';
+    h += '<p style="font-size:11px;color:var(--dim);margin-bottom:14px;">Columns can be in any order. Only Client is required — Attorney, LastActivity, and TotalBilled can be left blank if the prospect doesn\'t have that data handy. SOL = statute of limitations date. LastActivity falls back to Filed if left blank.</p>';
+    h += inp('Prospect / Company Name', window._hcProspectName||'', 'window._hcProspectName=this.value', 'text', 'placeholder="Acme Insurance Co"');
+    h += inpMoney('Price Paid For This Engagement ($)', window._hcPricePaid!==undefined ? window._hcPricePaid : '5000', 'window._hcPricePaid=this.value');
+    h += '<div style="font-size:10.5px;color:var(--dim);margin:-8px 0 12px;">Fully credited toward their first invoice if they sign within 30 days of today. Leave blank if this one\'s free / not being charged for.</div>';
+    h += '<div class="fld"><label class="lbl">Their Open Caseload (CSV)</label>';
+    h += '<textarea id="hcCsvInput" class="inp" style="min-height:160px;font-family:monospace;font-size:11.5px;" placeholder="Paste CSV here, or download the template below and fill it in.">'+esc(S.healthCheckCsvText||'')+'</textarea></div>';
+    h += '<button class="btn btn-out" style="margin-bottom:10px;" onclick="downloadHealthCheckTemplate()">⬇ Download CSV Template</button>';
+    if (S.healthCheckError) h += '<div class="alert-bad" style="margin-bottom:10px;">'+esc(S.healthCheckError)+'</div>';
+    h += '<button class="btn btn-pri" style="width:100%;justify-content:center;" onclick="submitHealthCheck()" '+(S.healthCheckLoading?'disabled':'')+'>'+(S.healthCheckLoading?'Running Sentinel Health Check…':'Run Sentinel Health Check')+'</button>';
+  }
+  h += '</div></div></div>';
+  return h;
 }
 
 /* Shown exactly once, right after first-time activation — the raw
