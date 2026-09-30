@@ -1,0 +1,45 @@
+# Save this file as .github/workflows/load-test.yml in your repo
+# (GitHub only recognizes workflow files in that exact folder — it's
+# named without the dots here just so it uploads as one plain file).
+#
+# Runs the load test against your LIVE site from GitHub's own
+# servers, which can reach the public internet (unlike this session,
+# which is network-restricted and can't reach cclosed.com directly).
+#
+# Manual run: go to your repo's "Actions" tab → "Load Test" → "Run workflow".
+#
+# Needed once, in your repo's Settings → Secrets and variables → Actions:
+#   TARGET_URL      e.g. https://your-api.onrender.com  (NOT the static site — your server.js API)
+#   TEST_EMAIL      a real login for a test/demo organization (never a real customer's)
+#   TEST_PASSWORD   that account's password
+# TEST_EMAIL/TEST_PASSWORD are optional — omit both and it still runs
+# the unauthenticated health-check phase on its own.
+
+name: Load Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      concurrency:
+        description: 'Concurrent virtual users'
+        default: '10'
+      duration_sec:
+        description: 'Seconds per phase'
+        default: '20'
+
+jobs:
+  load-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run load test
+        env:
+          TARGET_URL: ${{ secrets.TARGET_URL }}
+          TEST_EMAIL: ${{ secrets.TEST_EMAIL }}
+          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+          CONCURRENCY: ${{ github.event.inputs.concurrency }}
+          DURATION_SEC: ${{ github.event.inputs.duration_sec }}
+        run: node loadtest.js | tee -a "$GITHUB_STEP_SUMMARY"
