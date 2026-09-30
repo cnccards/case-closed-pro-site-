@@ -2151,6 +2151,52 @@ app.post('/api/cases/import', async (req, res) => {
   res.status(201).json({ imported: created.length, failed: errors.length, errors, cases: created });
 });
 
+// ---------------------------------------------------------------
+// Bulk import a customer's CURRENT, OPEN caseload into their own
+// real org — deliberately separate from POST /api/cases/import
+// above, which hard-codes every row to status 'Closed' on purpose
+// (it exists for historical case-history dumps). This one keeps
+// each row's real status instead, defaulting to 'Active' only when
+// a row doesn't specify one — same shape/behavior as the Sentinel
+// Health Check's import (see computeRiskSignals/sentinel-health-check
+// above), just reachable by a real signed-in customer for their own
+// account rather than platform-admin-only for a one-off prospect org.
+//
+// Restricted to admin/owner — bulk-loading a caseload (and the
+// matter numbers it creates) is significant enough that a plain
+// member shouldn't be able to do it unsupervised. This is exactly
+// what a customer would use to bring over the caseload from a
+// Sentinel Health Check, or from whatever system they used before,
+// once they've actually signed up.
+// ---------------------------------------------------------------
+app.post('/api/cases/import-open', requireOrgRole('admin'), async (req, res) => {
+  const records = req.body;
+  if (!Array.isArray(records) || records.length === 0) return res.status(400).json({ error: 'Body must be a non-empty JSON array' });
+  if (records.length > 2000) return res.status(413).json({ error: 'Batch too large — split into batches of 2000 or fewer' });
+
+  const created = [];
+  const errors = [];
+  for (let i = 0; i < records.length; i++) {
+    const b = records[i];
+    try {
+      if (!b.client) throw new Error('client is required');
+      const matterNo = b.matterNo || ('IMP-' + String(i + 1).padStart(4, '0') + '-' + Date.now().toString(36).slice(-4));
+      const data = { ...defaultCaseData(), ...(b.data || {}) };
+      const result = await req.db.query(
+        `INSERT INTO cases (org_id, matter_no, client, type, status, litigation_stage, attorney, carrier, claim_no, reserve_amount, filed_date, deadline_date, value, data)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+        [req.orgId, matterNo, b.client, b.type || 'Other', b.status || 'Active', b.litigationStage || 'Pre-Suit',
+         b.attorney || null, b.carrier || null, b.claimNo || null, b.reserveAmount || 0, b.filed || null, b.deadline || null, b.value || 0, JSON.stringify(data)]
+      );
+      created.push(rowToCase(result.rows[0]));
+    } catch (e) {
+      errors.push({ index: i, error: e.message });
+    }
+  }
+  await audit(req.orgId, req.user?.sub, 'case.import_open', 'case', null, { imported: created.length, failed: errors.length }, req.ip);
+  res.status(201).json({ imported: created.length, failed: errors.length, errors, cases: created });
+});
+
 app.patch('/api/cases/:id', async (req, res) => {
   const existing = await req.db.query('SELECT * FROM cases WHERE id = $1 AND org_id = $2', [req.params.id, req.orgId]);
   if (!existing.rows[0]) return res.status(404).json({ error: 'Case not found' });
