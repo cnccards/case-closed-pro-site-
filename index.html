@@ -84,7 +84,7 @@ section{padding:84px 0;}
 .job-apply{align-self:flex-start;background:var(--pri);color:#fff;border:none;padding:10px 20px;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;display:inline-block;transition:background .15s;}
 .job-apply:hover{background:var(--pri2);}
 
-/* ---------- CALCULATOR (shared with pricing.html) ---------- */
+/* ---------- PRICING SECTION (no numbers shown publicly — CTA only) ---------- */
 .calc-wrap{background:linear-gradient(160deg,#001C41 0%,#012a5e 45%,#0056D2 130%);border-radius:22px;padding:52px 8px;color:#fff;}
 .calc{background:#fff;border-radius:18px;margin:0 auto;max-width:640px;box-shadow:0 30px 70px rgba(0,10,30,.35);overflow:hidden;color:var(--ink);}
 .calc-top{padding:30px 34px 24px;}
@@ -187,7 +187,7 @@ footer{padding:44px 0 36px;}
       <a href="#calculator">Pricing</a>
       <a href="roi-calculator.html">ROI Calculator</a>
       <a href="#counsel">For Defense Counsel</a>
-      <a href="pricing.html">Full Pricing Details</a>
+      <a href="javascript:void(0)" onclick="openContactModal()">Get a Quote</a>
       <a href="#careers">Careers</a>
     </div>
     <div class="nav-r">
@@ -265,29 +265,14 @@ footer{padding:44px 0 36px;}
     </div>
     <div class="calc-wrap">
       <div class="calc">
-        <div class="calc-top">
-          <div class="calc-label">Your Plan, Calculated Live</div>
-          <div class="calc-q">How many litigated matters do you have open right now?</div>
-          <div class="calc-row">
-            <div class="calc-num" id="calcNum">250</div>
-            <div class="calc-num-label">active matters<br/>across your program</div>
-          </div>
-          <input type="range" min="10" max="1000" value="250" step="5" id="calcSlider" aria-label="Number of active litigated matters"/>
-          <div class="calc-ticks"><span>10</span><span>250</span><span>750</span><span>1000+</span></div>
-        </div>
-        <div class="calc-bottom">
-          <div class="calc-tier">
-            <span class="calc-tier-badge" id="calcTierBadge">Starter</span>
-            <span style="font-size:12.5px;color:var(--muted);" id="calcTierDesc">For smaller programs and self-insureds</span>
-          </div>
-          <div class="calc-price">
-            <div class="amt" id="calcPrice">$2,500<span style="font-size:13px;">/mo</span></div>
-            <div class="per">defense firms: unlimited seats, $0</div>
-          </div>
+        <div class="calc-top" style="padding-bottom:30px;">
+          <div class="calc-label">Your Plan, Built Around You</div>
+          <div class="calc-q">Every plan is scoped to your open litigation volume — not seats, not logins.</div>
+          <p style="color:var(--muted);font-size:13.5px;line-height:1.7;margin:0;">Tell us how many active matters you're running today and we'll put a real number in front of you, same day — no generic tiers, no per-seat math to untangle later.</p>
         </div>
       </div>
       <div class="calc-cta">
-        <a href="pricing.html" class="btn-white">See Full Plan Details &amp; FAQ →</a>
+        <a href="javascript:void(0)" onclick="openContactModal()" class="btn-white">Get Your Pricing →</a>
       </div>
     </div>
   </div>
@@ -389,7 +374,7 @@ footer{padding:44px 0 36px;}
       <p>Most conversations start with a 20-minute look at your current open matters — no commitment, no seat count to negotiate.</p>
       <div class="footcta-btns">
         <a href="javascript:void(0)" onclick="openContactModal()" class="btn-white">Talk to Sales</a>
-        <a href="pricing.html" class="btn-outline-w">See Full Pricing</a>
+        <a href="javascript:void(0)" onclick="openContactModal()" class="btn-outline-w">Request Pricing</a>
       </div>
     </div>
   </div>
@@ -412,7 +397,7 @@ footer{padding:44px 0 36px;}
       </div>
       <div class="foot-links">
         <a href="#features">Product</a>
-        <a href="pricing.html">Pricing</a>
+        <a href="javascript:void(0)" onclick="openContactModal()">Pricing</a>
         <a href="#careers">Careers</a>
         <a href="case-closed-pro.html">Sign In</a>
         <a href="javascript:void(0)" onclick="openContactModal()">Talk to Sales</a>
@@ -449,39 +434,6 @@ footer{padding:44px 0 36px;}
 </div>
 
 <script>
-const slider = document.getElementById('calcSlider');
-const calcNum = document.getElementById('calcNum');
-const tierBadge = document.getElementById('calcTierBadge');
-const tierDesc = document.getElementById('calcTierDesc');
-const calcPrice = document.getElementById('calcPrice');
-
-const TIERS = {
-  starter: {name:'Starter', desc:'For smaller programs and self-insureds', price:2500},
-  growth: {name:'Growth', desc:'For multi-line carriers at scale', price:6500},
-  enterprise: {name:'Enterprise', desc:'National carriers & complex integrations', price:null}
-};
-
-function updateCalc(){
-  const v = parseInt(slider.value, 10);
-  calcNum.textContent = v >= 1000 ? '1000+' : v;
-
-  let tier;
-  if (v <= 250) tier = TIERS.starter;
-  else if (v <= 750) tier = TIERS.growth;
-  else tier = TIERS.enterprise;
-
-  tierBadge.textContent = tier.name;
-  tierDesc.textContent = tier.desc;
-
-  if (tier.price) {
-    calcPrice.innerHTML = '$' + tier.price.toLocaleString() + '<span style="font-size:13px;">/mo</span>';
-  } else {
-    calcPrice.innerHTML = 'Custom<span style="font-size:13px;"> pricing</span>';
-  }
-}
-slider.addEventListener('input', updateCalc);
-updateCalc();
-
 /* ── CONTACT SALES ─────────────────────────────────────────
    Set window.CCP_API_BASE (same convention as the product app) to
    send through a real backend at /api/contact-sales. Left unset,
