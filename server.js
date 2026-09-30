@@ -1038,6 +1038,131 @@ app.post('/api/admin/self-test-isolation', requirePlatformAdmin, async (req, res
   res.json({ allPassed, results });
 });
 
+// ---------------------------------------------------------------
+// SANDBOX RESET — one click from the Admin Panel to (re)provision a
+// single fictional demo organization for sales calls. This is NOT a
+// separate "sandbox mode" in the app — it's the exact same
+// organizations/users/cases machinery every real customer runs on,
+// just aimed at one dedicated org (found by name, created the first
+// time this is called). Writes to `cases` go through
+// withOrgScopedTransaction because that table is RLS-protected —
+// same rule every other write in this file follows.
+//
+// Safe to call repeatedly: it always wipes whatever is currently in
+// the sandbox org and reseeds fresh, so a previous demo's clutter
+// never carries into the next one. Returns a fresh login every time
+// (existing sandbox sessions elsewhere will need to log in again).
+// ---------------------------------------------------------------
+const SANDBOX_ORG_NAME = process.env.SANDBOX_ORG_NAME || 'Case Closed Pro — Sandbox';
+const SANDBOX_OWNER_EMAIL = (process.env.SANDBOX_OWNER_EMAIL || 'sandbox@cclosed.com').toLowerCase();
+const SANDBOX_OWNER_NAME = process.env.SANDBOX_OWNER_NAME || 'Sandbox Demo';
+
+function sandboxSeedCaseData({ favorability, probabilityOfLoss, demandAmount, offerAmount, settlementAmount, reserveAmount }) {
+  return {
+    ...defaultCaseData(),
+    favorability: favorability || 3,
+    probabilityOfLoss: probabilityOfLoss || 'Reasonably Possible',
+    exposure: {
+      demandAmount: demandAmount || 0, offerAmount: offerAmount || 0, settlementAmount: settlementAmount || 0,
+      reserveAmount: reserveAmount || 0,
+      likelyExposure: Math.round((reserveAmount || 0) * 0.9),
+      worstCase: demandAmount || 0, bestCase: offerAmount || 0, notes: ''
+    }
+  };
+}
+
+// Same fictional portfolio as sandbox-seed.mjs (the standalone
+// script), kept in sync by hand — both exist because the script is
+// useful for CI/local resets outside the running app, and this route
+// is what the Admin Panel button calls. matterNo must be unique per
+// org (schema has a UNIQUE index on org_id+matter_no) and NOT NULL.
+const SANDBOX_SEED_CASES = [
+  { matterNo: 'SB-001', client: 'Harmon Industries', type: 'Contract Dispute', status: 'Active', litigationStage: 'Discovery', attorney: 'Sarah Chen', filed: '2025-01-15', deadline: '2026-11-01', value: 2400000, carrier: 'Zurich', claimNo: 'CLM-2025-8801', reserveAmount: 850000, favorability: 4, probabilityOfLoss: 'Reasonably Possible', demandAmount: 5000000, offerAmount: 800000 },
+  { matterNo: 'SB-002', client: 'Novak & Sons LLC', type: 'Employment Law', status: 'Active', litigationStage: 'Discovery', attorney: 'James Ortega', filed: '2025-03-08', deadline: '2026-10-15', value: 480000, carrier: 'Hartford', claimNo: 'CLM-2025-9942', reserveAmount: 200000, favorability: 3, probabilityOfLoss: 'Reasonably Possible', demandAmount: 650000, offerAmount: 150000 },
+  { matterNo: 'SB-003', client: 'Apex Pharma Corp', type: 'IP Litigation', status: 'Active', litigationStage: 'Pleadings', attorney: 'David Park', filed: '2025-05-01', deadline: '2026-12-30', value: 8200000, carrier: 'AIG', claimNo: 'CLM-2025-7721', reserveAmount: 3000000, favorability: 2, probabilityOfLoss: 'Probable', demandAmount: 9500000, offerAmount: 1200000 },
+  { matterNo: 'SB-004', client: 'Gerald Whitmore', type: 'Premises Liability', status: 'Active', litigationStage: 'Mediation', attorney: 'Sarah Chen', filed: '2025-02-22', deadline: '2026-09-20', value: 1100000, carrier: 'Nationwide', claimNo: 'PR-2025-4820', reserveAmount: 450000, favorability: 3, probabilityOfLoss: 'Reasonably Possible', demandAmount: 1100000, offerAmount: 175000 },
+  { matterNo: 'SB-005', client: 'Greenleaf Capital', type: 'Coverage Dispute', status: 'Active', litigationStage: 'Mediation', attorney: 'James Ortega', filed: '2025-04-14', deadline: '2026-11-10', value: 5700000, carrier: 'Chubb', claimNo: 'CLM-2025-3304', reserveAmount: 2200000, favorability: 3, probabilityOfLoss: 'Reasonably Possible', demandAmount: 6000000, offerAmount: 1900000 },
+  { matterNo: 'SB-006', client: 'Westfield Medical', type: 'Malpractice Defense', status: 'Active', litigationStage: 'Trial', attorney: 'Sarah Chen', filed: '2025-03-19', deadline: '2026-12-01', value: 3100000, carrier: 'CNA', claimNo: 'CLM-2025-6633', reserveAmount: 1200000, favorability: 4, probabilityOfLoss: 'Reasonably Possible', demandAmount: 3400000, offerAmount: 900000 },
+  { matterNo: 'SB-007', client: 'Torres Construction', type: 'Personal Injury', status: 'Closed', litigationStage: 'Closed', attorney: 'David Park', filed: '2024-11-02', deadline: '2025-12-01', value: 320000, carrier: 'Travelers', claimNo: 'CLM-2024-5514', reserveAmount: 150000, favorability: 4, probabilityOfLoss: 'Remote', demandAmount: 320000, offerAmount: 140000, settlementAmount: 138000 },
+  { matterNo: 'SB-008', client: 'Kline Brothers Realty', type: 'Real Estate', status: 'Active', litigationStage: 'Closing', attorney: 'David Park', filed: '2025-04-03', deadline: '2026-08-30', value: 950000, carrier: 'Hartford', claimNo: 'CLM-2025-8812', reserveAmount: 400000, favorability: 4, probabilityOfLoss: 'Remote', demandAmount: 950000, offerAmount: 380000 },
+  { matterNo: 'SB-009', client: 'Summit Energy Partners', type: 'Contract Dispute', status: 'Active', litigationStage: 'Pre-Suit', attorney: 'Maria Santos', filed: '2025-06-07', deadline: '2027-01-01', value: 6400000, carrier: 'Chubb', claimNo: 'CLM-2025-0011', reserveAmount: 2000000, favorability: 3, probabilityOfLoss: 'Probable', demandAmount: 7000000, offerAmount: 2000000 },
+  { matterNo: 'SB-010', client: 'Okafor Tech Inc', type: 'Employment Law', status: 'Active', litigationStage: 'Discovery', attorney: 'James Ortega', filed: '2025-05-20', deadline: '2026-10-15', value: 275000, carrier: 'Hartford', claimNo: 'CLM-2025-9981', reserveAmount: 125000, favorability: 3, probabilityOfLoss: 'Reasonably Possible', demandAmount: 300000, offerAmount: 90000 },
+  { matterNo: 'SB-011', client: 'Beacon Property LLC', type: 'Property Damage', status: 'Active', litigationStage: 'Pleadings', attorney: 'Rachel Goldberg', filed: '2025-07-15', deadline: '2027-02-01', value: 680000, carrier: 'Travelers', claimNo: 'CLM-2025-0142', reserveAmount: 280000, favorability: 3, probabilityOfLoss: 'Reasonably Possible', demandAmount: 680000, offerAmount: 210000 },
+  { matterNo: 'SB-012', client: 'Diaz Auto Group', type: 'Auto Liability', status: 'Active', litigationStage: 'Discovery', attorney: 'Maria Santos', filed: '2025-04-22', deadline: '2026-11-10', value: 1850000, carrier: 'Progressive', claimNo: 'CLM-2025-9112', reserveAmount: 900000, favorability: 2, probabilityOfLoss: 'Probable', demandAmount: 2100000, offerAmount: 700000 },
+  { matterNo: 'SB-013', client: 'Coastal Restoration', type: 'Insurance Defense', status: 'Active', litigationStage: 'Active', attorney: 'Rachel Goldberg', filed: '2025-06-10', deadline: '2027-01-01', value: 420000, carrier: 'State Farm', claimNo: 'AOB-2025-0044', reserveAmount: 180000, favorability: 3, probabilityOfLoss: 'Reasonably Possible', demandAmount: 420000, offerAmount: 120000 },
+  { matterNo: 'SB-014', client: 'Pinnacle Realty Trust', type: 'Premises Liability', status: 'Closed', litigationStage: 'Closed', attorney: 'Sarah Chen', filed: '2024-10-30', deadline: '2025-10-15', value: 2200000, carrier: 'Liberty Mutual', claimNo: 'CLM-2024-7203', reserveAmount: 1100000, favorability: 4, probabilityOfLoss: 'Reasonably Possible', demandAmount: 2200000, offerAmount: 950000, settlementAmount: 975000 },
+  { matterNo: 'SB-015', client: 'Lighthouse Aerospace', type: 'Product Liability', status: 'Closed', litigationStage: 'Closed', attorney: 'David Park', filed: '2024-08-12', deadline: '2025-09-20', value: 12500000, carrier: 'AIG', claimNo: 'CLM-2024-9971', reserveAmount: 5500000, favorability: 2, probabilityOfLoss: 'Probable', demandAmount: 12500000, offerAmount: 6200000, settlementAmount: 6800000 },
+  { matterNo: 'SB-016', client: 'Springfield Manufacturing Co.', type: 'Property Damage', status: 'Active', litigationStage: 'Active', attorney: 'David Park', filed: '2025-08-15', deadline: '2027-03-01', value: 275000, carrier: 'Chubb', claimNo: 'CLM-2025-1000', reserveAmount: 137500, favorability: 3, probabilityOfLoss: 'Reasonably Possible', demandAmount: 275000, offerAmount: 80000 },
+  // Deliberately unassigned — open one of these in the demo and use
+  // Sentinel Match / Recommend Attorney to fill it in live.
+  { matterNo: 'SB-017', client: 'VentureTech Corp', type: 'Patent Dispute', status: 'Active', litigationStage: 'Pleadings', attorney: '', filed: '2025-09-01', deadline: '2027-01-01', value: 5500000, carrier: 'Zurich', claimNo: 'CLM-2025-8001', reserveAmount: 2200000, favorability: 3, probabilityOfLoss: 'Reasonably Possible', demandAmount: 5500000, offerAmount: 0 },
+  { matterNo: 'SB-018', client: 'RetailMax LLC', type: 'Employment Claim', status: 'Active', litigationStage: 'Pleadings', attorney: '', filed: '2025-09-10', deadline: '2026-11-01', value: 2800000, carrier: 'Hartford', claimNo: 'CLM-2025-8002', reserveAmount: 1100000, favorability: 3, probabilityOfLoss: 'Reasonably Possible', demandAmount: 2800000, offerAmount: 0 },
+  { matterNo: 'SB-019', client: 'HealthFirst Inc', type: 'Medical Dispute', status: 'Active', litigationStage: 'Pleadings', attorney: '', filed: '2025-08-30', deadline: '2027-02-15', value: 4100000, carrier: 'CNA', claimNo: 'CLM-2025-8003', reserveAmount: 1650000, favorability: 3, probabilityOfLoss: 'Reasonably Possible', demandAmount: 4100000, offerAmount: 0 },
+];
+
+app.post('/api/admin/sandbox/reset', requirePlatformAdmin, async (req, res) => {
+  try {
+    // 1. Find or create the sandbox org + its owner user. A fresh
+    // temp password is issued every time — including on reuse — so
+    // this button always hands back a login that's guaranteed to
+    // work right now, rather than one that might be stale.
+    let org = (await q('SELECT * FROM organizations WHERE name = $1', [SANDBOX_ORG_NAME])).rows[0];
+    let ownerId, temporaryPassword;
+
+    if (!org) {
+      const orgResult = await q(
+        `INSERT INTO organizations (name, persona, plan_tier, access_status, internal_notes) VALUES ($1,'carrier','growth','active',$2) RETURNING *`,
+        [SANDBOX_ORG_NAME, 'Fictional sandbox org for sales demos — created and reset from Admin Panel > Reset Sandbox. Safe to reset any time.']
+      );
+      org = orgResult.rows[0];
+      temporaryPassword = crypto.randomBytes(9).toString('base64').replace(/[+/=]/g, '').slice(0, 12);
+      const passwordHash = await bcrypt.hash(temporaryPassword, BCRYPT_ROUNDS);
+      const userResult = await q(
+        `INSERT INTO users (org_id, email, password_hash, name, persona, role) VALUES ($1,$2,$3,$4,'carrier','owner') RETURNING id`,
+        [org.id, SANDBOX_OWNER_EMAIL, passwordHash, SANDBOX_OWNER_NAME]
+      );
+      ownerId = userResult.rows[0].id;
+    } else {
+      const existingOwner = (await q(`SELECT id FROM users WHERE org_id = $1 AND email = $2`, [org.id, SANDBOX_OWNER_EMAIL])).rows[0]
+        || (await q(`SELECT id FROM users WHERE org_id = $1 ORDER BY created_at ASC LIMIT 1`, [org.id])).rows[0];
+      if (!existingOwner) return res.status(500).json({ error: 'Sandbox organization exists but has no users. Delete it directly in the database and try again.' });
+      ownerId = existingOwner.id;
+      temporaryPassword = crypto.randomBytes(9).toString('base64').replace(/[+/=]/g, '').slice(0, 12);
+      const passwordHash = await bcrypt.hash(temporaryPassword, BCRYPT_ROUNDS);
+      await q('UPDATE users SET password_hash = $1 WHERE id = $2', [passwordHash, ownerId]);
+    }
+
+    // 2. Wipe + reseed, scoped to the sandbox org exactly like a real
+    // request from it would be — `cases` is RLS-protected, so this
+    // has to go through the same org-scoped connection pattern as
+    // every other write to that table in this file.
+    const casesCreated = await withOrgScopedTransaction(org.id, async (client) => {
+      await client.query('DELETE FROM cases WHERE org_id = $1', [org.id]);
+      for (const c of SANDBOX_SEED_CASES) {
+        await client.query(
+          `INSERT INTO cases (org_id, matter_no, client, type, status, litigation_stage, attorney, carrier, claim_no, reserve_amount, filed_date, deadline_date, value, data)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+          [org.id, c.matterNo, c.client, c.type, c.status, c.litigationStage, c.attorney || null, c.carrier, c.claimNo,
+           c.reserveAmount, c.filed, c.deadline, c.value, JSON.stringify(sandboxSeedCaseData(c))]
+        );
+      }
+      return SANDBOX_SEED_CASES.length;
+    });
+
+    await audit(org.id, req.user.sub, 'admin.sandbox_reset', 'organization', org.id, { by: req.user.email, casesCreated }, req.ip);
+    res.json({
+      organization: { id: org.id, name: org.name },
+      email: SANDBOX_OWNER_EMAIL,
+      temporaryPassword,
+      casesCreated,
+      unassignedMatters: SANDBOX_SEED_CASES.filter(c => !c.attorney).map(c => c.client)
+    });
+  } catch (e) {
+    console.error('Sandbox reset failed:', e);
+    res.status(500).json({ error: 'Sandbox reset failed: ' + e.message });
+  }
+});
+
 app.get('/api/admin/organizations', requirePlatformAdmin, async (req, res) => {
   const result = await req.db.query(`
     SELECT o.*,
@@ -1365,6 +1490,140 @@ app.post('/api/admin/organizations', requirePlatformAdmin, async (req, res) => {
     await client.query('ROLLBACK');
     console.error(e);
     res.status(500).json({ error: 'Could not create organization: ' + e.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Pricing/feature catalog for the Admin Panel's onboarding form — a
+// thin read of the constants above, so the frontend never hardcodes
+// its own copy of these numbers and the two can't drift apart.
+app.get('/api/admin/pricing-catalog', requirePlatformAdmin, (req, res) => {
+  res.json({ tiers: TIER_PRICING, addOns: ADDON_CATALOG, extraSeatPrice: EXTRA_SEAT_PRICE });
+});
+
+// ---------------------------------------------------------------
+// Onboard a new paying customer in one step: create the org + owner
+// (same shape as POST /api/admin/organizations above), record what
+// they purchased (plan tier + any add-ons + extra seats) into the new
+// features JSONB column so it actually turns those Sentinel modules
+// on for them, and fire an itemized invoice-request email to the
+// platform admin who's doing the onboarding — the same person then
+// turns that email into a real invoice in your own accounting tool
+// and sends it to the customer. Nothing here charges anyone or talks
+// to a payment processor; see the file-level billing note.
+// ---------------------------------------------------------------
+app.post('/api/admin/onboard-customer', requirePlatformAdmin, async (req, res) => {
+  const { orgName, persona, ownerName, ownerEmail, planTier, addOns, extraSeats, implementationFee, notes } = req.body || {};
+  if (!orgName || !orgName.trim()) return res.status(400).json({ error: 'orgName is required' });
+  if (!isValidEmail(ownerEmail)) return res.status(400).json({ error: 'A valid ownerEmail is required' });
+  const tierVal = TIER_PRICING[planTier] ? planTier : 'starter';
+  const tierInfo = TIER_PRICING[tierVal];
+  const normalizedEmail = ownerEmail.trim().toLowerCase();
+
+  const seats = Number.isFinite(Number(extraSeats)) && Number(extraSeats) > 0 ? Math.floor(Number(extraSeats)) : 0;
+  const implFee = implementationFee != null && implementationFee !== '' ? Number(implementationFee) : tierInfo.implementationFee;
+  if (!Number.isFinite(implFee) || implFee < 0) return res.status(400).json({ error: 'implementationFee must be a non-negative number' });
+
+  const selectedAddOns = Array.isArray(addOns) ? [...new Set(addOns)].filter(k => ADDON_CATALOG.some(a => a.key === k)) : [];
+  const features = {};
+  selectedAddOns.forEach(k => { features[k] = true; });
+  if (seats > 0) features.extra_seats = seats;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const existing = await client.query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
+    if (existing.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'A user with that email already exists' });
+    }
+    const personaVal = persona === 'defense' ? 'defense' : 'carrier';
+    const orgResult = await client.query(
+      `INSERT INTO organizations (name, persona, plan_tier, access_status, features, internal_notes) VALUES ($1,$2,$3,'active',$4,$5) RETURNING *`,
+      [orgName.trim(), personaVal, tierVal, JSON.stringify(features), notes && notes.trim() ? notes.trim() : null]
+    );
+    const org = orgResult.rows[0];
+
+    const tempPassword = crypto.randomBytes(9).toString('base64').replace(/[+/=]/g, '').slice(0, 12);
+    const passwordHash = await bcrypt.hash(tempPassword, BCRYPT_ROUNDS);
+    const userResult = await client.query(
+      `INSERT INTO users (org_id, email, password_hash, name, persona, role) VALUES ($1,$2,$3,$4,$5,'owner') RETURNING *`,
+      [org.id, normalizedEmail, passwordHash, (ownerName || normalizedEmail.split('@')[0]).trim(), personaVal]
+    );
+    const user = userResult.rows[0];
+    await client.query('COMMIT');
+
+    // Itemized purchase summary — this is what turns into a real
+    // invoice in your own accounting tool.
+    const lineItems = [{ label: `${tierInfo.label} plan (monthly)`, amount: tierInfo.monthly }];
+    let monthlyTotal = tierInfo.monthly;
+    selectedAddOns.forEach(k => {
+      const a = ADDON_CATALOG.find(x => x.key === k);
+      if (a) { lineItems.push({ label: `${a.label} (add-on, monthly)`, amount: a.monthly }); monthlyTotal += a.monthly; }
+    });
+    if (seats > 0) {
+      const seatAmount = seats * EXTRA_SEAT_PRICE;
+      lineItems.push({ label: `${seats} extra user seat(s) (monthly)`, amount: seatAmount });
+      monthlyTotal += seatAmount;
+    }
+    const dueAtSigning = implFee + monthlyTotal;
+
+    const emailLines = [
+      `New customer onboarded: ${org.name}`,
+      `Owner: ${(ownerName || normalizedEmail.split('@')[0]).trim()} <${normalizedEmail}>`,
+      `Plan: ${tierInfo.label} (${tierInfo.matterNote})`,
+      '',
+      'Purchase summary — turn this into an invoice in your accounting tool:',
+      ...lineItems.map(li => `  ${li.label.padEnd(45)} $${li.amount.toLocaleString()}/mo`),
+      `  ${'MONTHLY TOTAL'.padEnd(45)} $${monthlyTotal.toLocaleString()}/mo`,
+      '',
+      `  ${'One-time implementation fee'.padEnd(45)} $${implFee.toLocaleString()}`,
+      `  ${'DUE AT SIGNING (implementation fee + first month)'.padEnd(45)} $${dueAtSigning.toLocaleString()}`,
+      '',
+      notes && notes.trim() ? `Notes: ${notes.trim()}` : null,
+      '',
+      `Organization ID: ${org.id}`,
+      `Temporary owner password: ${tempPassword}  (also returned in this API response — share it with the customer securely, it won't be shown again)`,
+      `Onboarded by: ${req.user.email}`,
+      '',
+      'This app never charges customers automatically — nothing above has actually been billed yet. Use these numbers to generate and send the real invoice.'
+    ].filter(l => l !== null).join('\n');
+
+    let emailSent = false, emailError = null;
+    if (SMTP_CONFIGURED) {
+      try {
+        await mailer.sendMail({
+          from: process.env.FROM_EMAIL || process.env.SMTP_USER,
+          to: req.user.email,
+          subject: `Invoice request — ${org.name} (${tierInfo.label})`,
+          text: emailLines
+        });
+        emailSent = true;
+      } catch (e) {
+        console.error('Onboarding invoice-request email failed to send:', e.message);
+        emailError = e.message;
+      }
+    } else {
+      console.warn('SMTP not configured — invoice-request email not sent. Body:\n' + emailLines);
+    }
+
+    await audit(org.id, req.user.sub, 'admin.customer_onboarded', 'organization', org.id, {
+      orgName: org.name, planTier: tierVal, addOns: selectedAddOns, extraSeats: seats,
+      implementationFee: implFee, monthlyTotal, onboardedBy: req.user.email, emailSent
+    }, req.ip);
+
+    res.status(201).json({
+      organization: { id: org.id, name: org.name, persona: org.persona, planTier: org.plan_tier, features: org.features, accessStatus: org.access_status },
+      owner: publicUser(user),
+      temporaryPassword: tempPassword,
+      billing: { tier: tierInfo.label, lineItems, monthlyTotal, implementationFee: implFee, dueAtSigning },
+      invoiceEmail: { sent: emailSent, error: emailError, to: req.user.email, body: emailLines }
+    });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: 'Could not onboard customer: ' + e.message });
   } finally {
     client.release();
   }
@@ -2040,8 +2299,85 @@ async function loadOneCase(req, caseId){
   return result.rows[0] ? rowToCase(result.rows[0]) : null;
 }
 
+// ---------------------------------------------------------------
+// Pricing reference + feature entitlements.
+//
+// TIER_PRICING / ADDON_CATALOG / EXTRA_SEAT_PRICE are used only to
+// build the itemized invoice-request email sent on customer
+// onboarding (POST /api/admin/onboard-customer, below the Sentinel
+// routes) and to render the Admin Panel's onboarding form. Same as
+// everywhere else in this file: none of this charges anyone or talks
+// to a payment processor — your accounting team turns it into a real
+// invoice and collects payment entirely outside this system.
+//
+// TIER_FEATURES / requireFeature() are the one place in the app where
+// plan_tier actually gates something (everywhere else it's reference
+// only — see the file-level billing note). An org's real entitlement
+// is its tier's baseline bundle, plus whatever the organizations.features
+// JSONB column adds on top (a la carte Sentinel modules bought as
+// add-ons). Only the 5 Sentinel AI routes are technically enforced —
+// multi_carrier/priority_support/extra_seats are recorded in features
+// for billing reference but nothing currently blocks on them.
+// ---------------------------------------------------------------
+const TIER_PRICING = {
+  starter:    { label: 'Starter',    monthly: 2500,  implementationFee: 7500,  matterNote: 'up to ~250 open matters' },
+  growth:     { label: 'Growth',     monthly: 7500,  implementationFee: 15000, matterNote: 'up to ~750 open matters' },
+  enterprise: { label: 'Enterprise', monthly: 10000, implementationFee: 30000, matterNote: 'unlimited open matters' }
+};
+const EXTRA_SEAT_PRICE = 25;
+const ADDON_CATALOG = [
+  { key: 'sentinel_match',    label: 'Sentinel Match',                      monthly: 150, gates: true  },
+  { key: 'sentinel_settle',   label: 'Sentinel Settle',                     monthly: 150, gates: true  },
+  { key: 'sentinel_strategy', label: 'Sentinel Strategy',                   monthly: 150, gates: true  },
+  { key: 'sentinel_horizon',  label: 'Sentinel Horizon',                    monthly: 150, gates: true  },
+  { key: 'sentinel_watch',    label: 'Sentinel Watch',                      monthly: 150, gates: true  },
+  { key: 'trends',            label: 'Executive Trends dashboard',          monthly: 100, gates: true  },
+  { key: 'multi_carrier',     label: 'Multi-carrier / defense-firm access', monthly: 300, gates: false },
+  { key: 'priority_support',  label: 'Priority support',                    monthly: 200, gates: false }
+];
+const TIER_FEATURES = {
+  starter:    { sentinel_match: false, sentinel_settle: false, sentinel_strategy: false, sentinel_horizon: false, sentinel_watch: false, trends: false },
+  growth:     { sentinel_match: true,  sentinel_settle: true,  sentinel_strategy: false, sentinel_horizon: false, sentinel_watch: false, trends: true  },
+  enterprise: { sentinel_match: true,  sentinel_settle: true,  sentinel_strategy: true,  sentinel_horizon: true,  sentinel_watch: true,  trends: true  }
+};
+const FEATURE_LABELS = {
+  sentinel_match: 'Sentinel Match', sentinel_settle: 'Sentinel Settle', sentinel_strategy: 'Sentinel Strategy',
+  sentinel_horizon: 'Sentinel Horizon', sentinel_watch: 'Sentinel Watch', trends: 'Executive Trends dashboard'
+};
+// Baseline bundle for the org's tier, overlaid with whatever's in its
+// features JSONB — add-ons only ever add on top in the onboarding
+// flow, but this merge also lets a platform admin hand-edit an org's
+// features row to explicitly turn something off if they ever need to.
+function orgFeatures(org) {
+  const baseline = TIER_FEATURES[org.plan_tier] || TIER_FEATURES.starter;
+  const addOns = org.features && typeof org.features === 'object' ? org.features : {};
+  return { ...baseline, ...addOns };
+}
+function requireFeature(key) {
+  return async (req, res, next) => {
+    if (req.user?.platformAdmin) return next(); // platform admins can always exercise any module (support, demos, the sandbox)
+    try {
+      const orgResult = await q('SELECT plan_tier, features FROM organizations WHERE id = $1', [req.orgId]);
+      const org = orgResult.rows[0];
+      if (!org) return res.status(404).json({ error: 'Organization not found' });
+      if (!orgFeatures(org)[key]) {
+        return res.status(403).json({
+          error: `${FEATURE_LABELS[key] || key} isn't included on your current plan.`,
+          feature: key,
+          planTier: org.plan_tier,
+          upgradeContact: 'sales@cclosed.com'
+        });
+      }
+      next();
+    } catch (e) {
+      console.error('Feature entitlement check failed:', e.message);
+      res.status(500).json({ error: 'Could not verify plan entitlements' });
+    }
+  };
+}
+
 // Sentinel Match — recommends which attorney should handle this matter.
-app.post('/api/ai/sentinel-match/:caseId', async (req, res) => {
+app.post('/api/ai/sentinel-match/:caseId', requireFeature('sentinel_match'), async (req, res) => {
   try {
     const c = await loadOneCase(req, req.params.caseId);
     if (!c) return res.status(404).json({ error: 'Case not found' });
@@ -2061,7 +2397,7 @@ app.post('/api/ai/sentinel-match/:caseId', async (req, res) => {
 });
 
 // Sentinel Settle — recommends a settlement number.
-app.post('/api/ai/sentinel-settle/:caseId', async (req, res) => {
+app.post('/api/ai/sentinel-settle/:caseId', requireFeature('sentinel_settle'), async (req, res) => {
   try {
     const c = await loadOneCase(req, req.params.caseId);
     if (!c) return res.status(404).json({ error: 'Case not found' });
@@ -2076,7 +2412,7 @@ app.post('/api/ai/sentinel-settle/:caseId', async (req, res) => {
 });
 
 // Sentinel Strategy — models opposing counsel's likely next move.
-app.post('/api/ai/sentinel-strategy/:caseId', async (req, res) => {
+app.post('/api/ai/sentinel-strategy/:caseId', requireFeature('sentinel_strategy'), async (req, res) => {
   try {
     const c = await loadOneCase(req, req.params.caseId);
     if (!c) return res.status(404).json({ error: 'Case not found' });
@@ -2091,7 +2427,7 @@ app.post('/api/ai/sentinel-strategy/:caseId', async (req, res) => {
 });
 
 // Sentinel Horizon — forecasts time-to-close and cost.
-app.post('/api/ai/sentinel-horizon/:caseId', async (req, res) => {
+app.post('/api/ai/sentinel-horizon/:caseId', requireFeature('sentinel_horizon'), async (req, res) => {
   try {
     const c = await loadOneCase(req, req.params.caseId);
     if (!c) return res.status(404).json({ error: 'Case not found' });
@@ -2110,27 +2446,184 @@ app.post('/api/ai/sentinel-horizon/:caseId', async (req, res) => {
 // burn, staleness, approaching deadlines) — Claude's job is turning
 // that into a clear, prioritized written flag, not inventing the
 // signals itself.
-app.post('/api/ai/sentinel-watch', async (req, res) => {
+//
+// Factored into two pieces (computeRiskSignals / sentinelWatchNarrative
+// below) so the exact same logic can run against a normal customer's
+// own org (the route below, scoped by their own req.db/req.orgId) AND
+// against a one-off prospect org created for a paid Sentinel Health
+// Check (see /api/admin/sentinel-health-check) — one source of truth
+// for what "at risk" means, not two copies that could drift apart.
+function computeRiskSignals(cases) {
+  return cases.map(c => {
+    const reserveBurn = c.insurance?.reserveAmount ? ((c.billing?.totalBilled||0) / c.insurance.reserveAmount) * 100 : 0;
+    const lastUpdate = (c.updates||[]).slice(-1)[0];
+    const daysSinceActivity = lastUpdate ? Math.floor((Date.now() - new Date(lastUpdate.date)) / 864e5) : null;
+    const daysToSol = c.keyDates?.sol ? Math.floor((new Date(c.keyDates.sol) - Date.now()) / 864e5) : null;
+    return { matterNo: c.matterNo, client: c.client, reserveBurnPct: Math.round(reserveBurn), daysSinceActivity, daysToSol };
+  }).filter(s => s.reserveBurnPct > 70 || (s.daysSinceActivity !== null && s.daysSinceActivity > 14) || (s.daysToSol !== null && s.daysToSol < 90));
+}
+async function sentinelWatchNarrative(signals) {
+  if (signals.length === 0) return { analysis: 'No matters currently trip a risk threshold — reserve burn, staleness, or approaching deadlines all look normal across the open portfolio.', flaggedCount: 0 };
+  const system = 'You are Sentinel Watch, an AI that turns a list of flagged risk signals (reserve burn, stale activity, approaching deadlines) into a short, prioritized written brief for a claims leader. Rank by severity, be specific about matter names, and keep it to a tight paragraph or short list — this is meant to be read in 30 seconds, not a report.';
+  const prompt = `Flagged matters this week:\n${JSON.stringify(signals, null, 2)}\n\nWrite the prioritized risk brief.`;
+  const analysis = await callClaude(system, prompt, 500);
+  return { analysis, flaggedCount: signals.length };
+}
+
+app.post('/api/ai/sentinel-watch', requireFeature('sentinel_watch'), async (req, res) => {
   try {
     const casesResult = await req.db.query(`SELECT * FROM cases WHERE org_id = $1 AND status != 'Closed'`, [req.orgId]);
     const cases = casesResult.rows.map(rowToCase);
-    const signals = cases.map(c => {
-      const reserveBurn = c.insurance?.reserveAmount ? ((c.billing?.totalBilled||0) / c.insurance.reserveAmount) * 100 : 0;
-      const lastUpdate = (c.updates||[]).slice(-1)[0];
-      const daysSinceActivity = lastUpdate ? Math.floor((Date.now() - new Date(lastUpdate.date)) / 864e5) : null;
-      const daysToSol = c.keyDates?.sol ? Math.floor((new Date(c.keyDates.sol) - Date.now()) / 864e5) : null;
-      return { matterNo: c.matterNo, client: c.client, reserveBurnPct: Math.round(reserveBurn), daysSinceActivity, daysToSol };
-    }).filter(s => s.reserveBurnPct > 70 || (s.daysSinceActivity !== null && s.daysSinceActivity > 14) || (s.daysToSol !== null && s.daysToSol < 90));
-
-    if (signals.length === 0) return res.json({ analysis: 'No matters currently trip a risk threshold — reserve burn, staleness, or approaching deadlines all look normal across the open portfolio.' });
-
-    const system = 'You are Sentinel Watch, an AI that turns a list of flagged risk signals (reserve burn, stale activity, approaching deadlines) into a short, prioritized written brief for a claims leader. Rank by severity, be specific about matter names, and keep it to a tight paragraph or short list — this is meant to be read in 30 seconds, not a report.';
-    const prompt = `Flagged matters this week:\n${JSON.stringify(signals, null, 2)}\n\nWrite the prioritized risk brief.`;
-    const analysis = await callClaude(system, prompt, 500);
-    await audit(req.orgId, req.user?.sub, 'ai.sentinel_watch', null, null, { flaggedCount: signals.length }, req.ip);
-    res.json({ analysis, flaggedCount: signals.length });
+    const signals = computeRiskSignals(cases);
+    const { analysis, flaggedCount } = await sentinelWatchNarrative(signals);
+    await audit(req.orgId, req.user?.sub, 'ai.sentinel_watch', null, null, { flaggedCount }, req.ip);
+    res.json({ analysis, flaggedCount });
   } catch (e) {
     res.status(e.statusCode || 500).json({ error: e.message });
+  }
+});
+
+// Portfolio-wide aggregate stats (adequacy, concentration, SOL
+// exposure) — separate from computeRiskSignals above, which flags
+// individual matters. This is the "shape of the whole book" view:
+// how much is under-reserved, where the concentration risk sits, how
+// many matters have a statute of limitations coming up. Used by the
+// Sentinel Health Check report below; also generically reusable
+// anywhere else a portfolio-level summary is useful.
+function computePortfolioStats(cases) {
+  const totalValue = cases.reduce((s, c) => s + (c.value || 0), 0);
+  const totalReserves = cases.reduce((s, c) => s + (c.insurance?.reserveAmount || 0), 0);
+  const underReserved = cases.filter(c => {
+    const exposure = c.exposure?.likelyExposure || c.value || 0;
+    const reserve = c.insurance?.reserveAmount || 0;
+    return exposure > 0 && reserve < exposure * 0.8;
+  });
+  const byType = {}, byCarrier = {};
+  cases.forEach(c => {
+    byType[c.type || 'Other'] = (byType[c.type || 'Other'] || 0) + (c.value || 0);
+    const carrier = c.insurance?.carrier || 'Unspecified';
+    byCarrier[carrier] = (byCarrier[carrier] || 0) + (c.value || 0);
+  });
+  const topType = Object.entries(byType).sort((a, b) => b[1] - a[1])[0];
+  const topCarrier = Object.entries(byCarrier).sort((a, b) => b[1] - a[1])[0];
+  const solRisk = cases.filter(c => {
+    const days = c.keyDates?.sol ? Math.floor((new Date(c.keyDates.sol) - Date.now()) / 864e5) : null;
+    return days !== null && days >= 0 && days < 180;
+  });
+  return {
+    matterCount: cases.length,
+    totalValue, totalReserves,
+    underReservedCount: underReserved.length,
+    underReservedMatters: underReserved.slice(0, 10).map(c => ({ matterNo: c.matterNo, client: c.client })),
+    solRiskCount: solRisk.length,
+    solRiskMatters: solRisk.slice(0, 10).map(c => ({ matterNo: c.matterNo, client: c.client, sol: c.keyDates?.sol })),
+    concentration: {
+      topType: topType ? { type: topType[0], value: topType[1], pct: totalValue ? Math.round(topType[1] / totalValue * 100) : 0 } : null,
+      topCarrier: topCarrier ? { carrier: topCarrier[0], value: topCarrier[1], pct: totalValue ? Math.round(topCarrier[1] / totalValue * 100) : 0 } : null
+    }
+  };
+}
+
+// ---------------------------------------------------------------
+// SENTINEL HEALTH CHECK — a paid, pre-sales diagnostic your team
+// runs FOR a prospect, on their real, currently OPEN caseload.
+//
+// Deliberately not the same thing as grading Sentinel against
+// already-closed cases: a closed case's data already contains its
+// own outcome (the attorney who handled it, how it settled), so
+// asking the AI to "recommend" against it would just read back a
+// fact that's already sitting in the prompt — convincing-looking,
+// proves nothing. Running the SAME risk-signal engine Sentinel Watch
+// uses against real, currently undecided matters has no known answer
+// to quietly agree with — the prospect can check every flagged
+// matter against their own memory of that file, live.
+//
+// Flow: your team collects the prospect's open caseload (a CSV
+// export from whatever they use today, converted to this app's case
+// shape), and posts it here. This creates one dedicated, isolated
+// organization for the engagement — RLS applies exactly as it does
+// for a real customer, so this data never touches any other org,
+// including the sales sandbox — imports the matters with their REAL
+// status (unlike /api/cases/import, which forces everything to
+// Closed for historical-import use cases), and returns both the raw
+// portfolio stats and the same Sentinel Watch AI brief a paying
+// customer would see on their own book.
+//
+// Billing for the engagement itself happens the same way every other
+// invoice in this app does: outside the system, by your team — see
+// the file-level note on billing near the top of this file. The
+// created org's internal_notes is tagged clearly so it's easy to
+// tell apart from a real customer or the sandbox in the Admin Panel.
+// ---------------------------------------------------------------
+app.post('/api/admin/sentinel-health-check', requirePlatformAdmin, async (req, res) => {
+  const { prospectName, cases: inputCases, pricePaid } = req.body || {};
+  if (!prospectName || !prospectName.trim()) return res.status(400).json({ error: 'prospectName is required' });
+  if (!Array.isArray(inputCases) || inputCases.length === 0) return res.status(400).json({ error: 'cases must be a non-empty array' });
+  if (inputCases.length > 2000) return res.status(413).json({ error: 'Batch too large — split into batches of 2000 or fewer' });
+  const price = pricePaid != null && pricePaid !== '' ? Number(pricePaid) : null;
+  if (price != null && (!Number.isFinite(price) || price < 0)) return res.status(400).json({ error: 'pricePaid must be a non-negative number' });
+
+  try {
+    // The 30-day credit clock: if this prospect signs within 30 days
+    // of the engagement, the price paid here is meant to come off
+    // their first invoice. Nothing in this app enforces that
+    // automatically (billing is manual everywhere, on purpose — see
+    // the file-level billing note) — this just makes sure the
+    // deadline and amount are recorded somewhere durable instead of
+    // living only in someone's memory or a Slack message, so it
+    // shows up right in the Admin Panel org list later.
+    const today = new Date();
+    const creditExpiresAt = price != null ? new Date(today.getTime() + 30 * 864e5).toISOString().slice(0, 10) : null;
+    const billingNote = price != null
+      ? `Price paid: $${price.toLocaleString()}. Fully credited toward the first invoice if they sign by ${creditExpiresAt} (30 days from this engagement) — track this manually, nothing in the app enforces the credit automatically.`
+      : 'No price recorded for this engagement.';
+
+    const orgName = `Health Check — ${prospectName.trim()} (${today.toISOString().slice(0, 10)})`;
+    const orgResult = await q(
+      `INSERT INTO organizations (name, persona, plan_tier, access_status, internal_notes) VALUES ($1,'carrier','starter','active',$2) RETURNING *`,
+      [orgName, `Paid Sentinel Health Check engagement for ${prospectName.trim()}. Not a customer account — created by ${req.user.email} to diagnose their real open caseload pre-sale. ${billingNote} Safe to suspend or delete once the report has been delivered and the credit window (if any) has passed.`]
+    );
+    const org = orgResult.rows[0];
+
+    let imported = 0;
+    const importErrors = [];
+    const { signals, stats } = await withOrgScopedTransaction(org.id, async (client) => {
+      for (let i = 0; i < inputCases.length; i++) {
+        const b = inputCases[i];
+        try {
+          if (!b.client) throw new Error('client is required');
+          const matterNo = b.matterNo || ('HC-' + String(i + 1).padStart(3, '0'));
+          const data = { ...defaultCaseData(), ...(b.data || {}) };
+          await client.query(
+            `INSERT INTO cases (org_id, matter_no, client, type, status, litigation_stage, attorney, carrier, claim_no, reserve_amount, filed_date, deadline_date, value, data)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+            [org.id, matterNo, b.client, b.type || 'Other', b.status || 'Active', b.litigationStage || 'Pre-Suit',
+             b.attorney || null, b.carrier || null, b.claimNo || null, b.reserveAmount || 0, b.filed || null, b.deadline || null, b.value || 0, JSON.stringify(data)]
+          );
+          imported++;
+        } catch (e) {
+          importErrors.push({ index: i, error: e.message });
+        }
+      }
+      const casesResult = await client.query(`SELECT * FROM cases WHERE org_id = $1 AND status != 'Closed'`, [org.id]);
+      const openCases = casesResult.rows.map(rowToCase);
+      return { signals: computeRiskSignals(openCases), stats: computePortfolioStats(openCases) };
+    });
+
+    const { analysis, flaggedCount } = await sentinelWatchNarrative(signals);
+
+    await audit(org.id, req.user.sub, 'admin.sentinel_health_check', 'organization', org.id, { prospectName: prospectName.trim(), imported, failed: importErrors.length, pricePaid: price, creditExpiresAt }, req.ip);
+
+    res.status(201).json({
+      organization: { id: org.id, name: org.name },
+      imported, failed: importErrors.length, importErrors,
+      stats,
+      billing: { pricePaid: price, creditExpiresAt },
+      sentinelWatch: { analysis, flaggedCount }
+    });
+  } catch (e) {
+    console.error('Sentinel Health Check failed:', e);
+    res.status(500).json({ error: 'Sentinel Health Check failed: ' + e.message });
   }
 });
 
