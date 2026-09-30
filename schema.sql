@@ -41,9 +41,23 @@ CREATE TABLE organizations (
   -- Internal support/sales notes — never surfaced to the customer
   -- anywhere in the app. Purely for your own team's context.
   internal_notes  TEXT,
+  -- Per-org feature entitlements, on top of plan_tier's baseline
+  -- bundle (see TIER_FEATURES in server.js). Boolean flags for
+  -- Sentinel AI modules purchased a la carte (e.g. {"sentinel_strategy":true})
+  -- actually gate those routes; a couple of other keys (multi_carrier,
+  -- priority_support, extra_seats) are recorded here too for billing
+  -- reference even though nothing currently blocks on them — same
+  -- "reference, not enforced" treatment plan_tier itself gets
+  -- elsewhere. Set by POST /api/admin/onboard-customer. Never
+  -- billed against automatically — see the file-level billing note
+  -- in server.js.
+  features        JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Migration for an existing (already-deployed) database — safe to
+-- run more than once:
+--   ALTER TABLE organizations ADD COLUMN IF NOT EXISTS features JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 -- ---------------------------------------------------------------
 -- Users. Every user belongs to exactly one org.
