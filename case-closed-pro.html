@@ -1477,6 +1477,23 @@ async function loadCasesFromApi() {
   }
 }
 
+// Loads this org's actual plan entitlements (GET /api/org/features)
+// so gated UI (Sentinel buttons, the AI Case Assistant tab) can show
+// an upgrade message instead of a button that just errors when
+// clicked. Called right after a successful real login, same as
+// loadCasesFromApi(). Failure defaults to nothing enabled rather than
+// silently leaving old data in place — safer to under-show a feature
+// than to show one that then 403s.
+async function loadMyFeatures() {
+  try {
+    const data = await apiFetch('/api/org/features');
+    S.myFeatures = data.features || {};
+  } catch (e) {
+    console.error('Failed to load plan features:', e.message);
+    S.myFeatures = {};
+  }
+}
+
 /* Best-effort background sync — the UI updates instantly from the
    local CASES array (unchanged from the prototype's behavior), and
    this fires the same change at the server without blocking or
@@ -3769,7 +3786,7 @@ async function attemptLogin(){
         return;
       }
       completeLoginSession(data);
-      await loadCasesFromApi();
+      await Promise.all([loadCasesFromApi(), loadMyFeatures()]);
       render();
     } catch (e) {
       st({loginError: e.message, loginLoading:false});
@@ -3800,7 +3817,7 @@ async function attempt2FALogin(){
       method:'POST', body: JSON.stringify({ pendingToken: S._pending2FAToken, code })
     });
     completeLoginSession(data);
-    await loadCasesFromApi();
+    await Promise.all([loadCasesFromApi(), loadMyFeatures()]);
     render();
   } catch (e) {
     st({loginError: e.message, loginLoading:false});
@@ -3820,7 +3837,7 @@ async function attemptRegister(){
   try {
     const data = await apiFetch('/api/auth/register', { method:'POST', body: JSON.stringify({ email, password, name, orgName, persona }) });
     completeLoginSession(data);
-    await loadCasesFromApi();
+    await Promise.all([loadCasesFromApi(), loadMyFeatures()]);
     render();
   } catch (e) {
     st({loginError: e.message, loginLoading:false});
@@ -4898,6 +4915,42 @@ function partV(){
   h += '<div class="kpi"><div class="kpi-l">Accounts At Risk</div><div class="kpi-v" style="color:'+(atRisk.length?'var(--red)':'var(--green)')+';">'+atRisk.length+'</div></div>';
   h += '</div>';
 
+  /* ── THE BOOK, VISUALIZED — a KPI column, a client-concentration
+     donut, and a new-vs-resolved bar chart in one row, so the shape
+     of the book and its direction read together at a glance. ── */
+  const collRate0 = totalBilled ? Math.round((totalPaid/totalBilled)*100) : 0;
+  const topClients0 = carrierList.slice(0,3);
+  const top3Reserves0 = topClients0.reduce((s,[,d])=>s+d.reserve, 0);
+  const otherReserves0 = Math.max(0, totalReserves-top3Reserves0);
+  const donutColorsT = ['#0056D2','#00C9DB','#A16207','#94A3B8'];
+  const donutSegsT = topClients0.map(([name,d]) => ({label:name, pct: totalReserves ? (d.reserve/totalReserves)*100 : 0}));
+  donutSegsT.push({label:'Everyone Else', pct: totalReserves ? (otherReserves0/totalReserves)*100 : 0});
+
+  const fdT = CASES.map(c=>new Date(c.filed).getTime()).filter(t=>!isNaN(t));
+  const refT = fdT.length ? new Date(Math.max(...fdT)) : new Date();
+  const monthsT = []; for (let i=5;i>=0;i--){ const d=new Date(refT.getFullYear(),refT.getMonth()-i,1); monthsT.push(d); }
+  const inflowT = monthsT.map(d => CASES.filter(c=>{ const f=new Date(c.filed); return !isNaN(f) && f.getFullYear()===d.getFullYear() && f.getMonth()===d.getMonth(); }).length);
+  const outflowT = monthsT.map(d => CASES.filter(c=>{ if (c.status!=='Closed') return false; const cd=new Date(c.deadline); return !isNaN(cd) && cd.getFullYear()===d.getFullYear() && cd.getMonth()===d.getMonth(); }).length);
+  const monthLabelsT = monthsT.map(d=>d.toLocaleDateString('en-US',{month:'short'}));
+
+  h += '<div class="section-band" style="margin-top:4px;">📊 The Book, Visualized</div>';
+  h += kpiDonutBarRow({
+    kpis: [
+      {label:'Total Customers', value: carrierList.length},
+      {label:'Total Reserves', value: fV(totalReserves), color:'var(--gold)'},
+      {label:'Collection Rate', value: collRate0+'%', color: collRate0>=85?'var(--green)':collRate0>=65?'var(--gold)':'var(--red)'},
+      {label:'Accounts At Risk', value: atRisk.length, color: atRisk.length?'var(--red)':'var(--green)'}
+    ],
+    donutTitle: 'Client Concentration', donutSub: 'Reserves by top customer',
+    donutSegs: donutSegsT, donutColors: donutColorsT,
+    barTitle: 'New Litigation vs. Resolved', barSub: 'Last 6 months',
+    barLabels: monthLabelsT,
+    barSeries: [
+      {label:'New Litigation', color:'var(--red)', values: inflowT},
+      {label:'Resolved', color:'var(--green)', values: outflowT}
+    ]
+  });
+
   /* ── WHAT C-LEVEL ACTUALLY LOOKS AT ─────────────────────────
      Fee revenue/collection health, client concentration risk,
      SLA/cycle-time performance against the company's own 100-200
@@ -5427,6 +5480,75 @@ async function syncWeeklyDigestSchedule(){
   }
 }
 
+/* ── SHARED WIDGET: KPI column + donut chart + grouped bar chart,
+   laid out as three cards in a row. Built to match the clean,
+   flat chart layout the firm asked us to match — own palette,
+   own data, just the same structural idea: numbers you can read
+   in one glance, a shape for composition, a shape for trend. ── */
+function kpiDonutBarRow(opt){
+  const kpis = opt.kpis||[], donutSegs = opt.donutSegs||[], donutColors = opt.donutColors||[];
+  const barLabels = opt.barLabels||[], barSeries = opt.barSeries||[];
+  let h = '<div class="grid-3" style="margin-top:14px;align-items:stretch;">';
+
+  h += '<div class="card" style="display:flex;flex-direction:column;justify-content:center;">';
+  kpis.forEach((k,i) => {
+    h += '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:10px 0;'+(i<kpis.length-1?'border-bottom:1px solid var(--surf2);':'')+'">';
+    h += '<span style="font-size:11px;color:var(--muted);">'+k.label+'</span>';
+    h += '<span class="serif" style="font-size:20px;font-weight:700;color:'+(k.color||'var(--ink)')+';">'+k.value+'</span>';
+    h += '</div>';
+  });
+  h += '</div>';
+
+  const donutTotal = donutSegs.reduce((s,d)=>s+d.pct,0) || 1;
+  const R = 15.9155, circ = 2*Math.PI*R;
+  let cumulative = 0;
+  h += '<div class="card"><div class="sh"><span>'+opt.donutTitle+'</span>'+(opt.donutSub?'<span style="color:var(--dim);font-weight:500;">'+opt.donutSub+'</span>':'')+'</div>';
+  h += '<div style="display:flex;justify-content:center;padding:4px 0 12px;">';
+  h += '<svg viewBox="0 0 42 42" style="width:128px;height:128px;transform:rotate(-90deg);">';
+  h += '<circle cx="21" cy="21" r="'+R+'" fill="transparent" stroke="var(--surf3)" stroke-width="6"></circle>';
+  donutSegs.forEach((seg,i) => {
+    if (seg.pct <= 0) return;
+    const dash = (seg.pct/donutTotal)*circ, gap = circ-dash;
+    h += '<circle cx="21" cy="21" r="'+R+'" fill="transparent" stroke="'+(donutColors[i]||'var(--pri2)')+'" stroke-width="6" stroke-dasharray="'+dash+' '+gap+'" stroke-dashoffset="'+(-cumulative)+'"></circle>';
+    cumulative += dash;
+  });
+  h += '</svg></div>';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:9px 14px;justify-content:center;">';
+  donutSegs.forEach((seg,i) => {
+    if (seg.pct <= 0) return;
+    h += '<div style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--muted);"><span style="width:8px;height:8px;border-radius:2px;background:'+(donutColors[i]||'var(--pri2)')+';display:inline-block;"></span>'+esc(seg.label)+' <strong style="color:var(--ink);">'+Math.round(seg.pct/donutTotal*100)+'%</strong></div>';
+  });
+  h += '</div></div>';
+
+  const chartW = 400, chartH = 118, padL = 4, padR = 4;
+  const n = Math.max(barLabels.length,1);
+  const groupW = (chartW-padL-padR)/n;
+  const barGap = 3;
+  const barW = Math.max(2, (groupW-barGap*(barSeries.length+1))/Math.max(barSeries.length,1));
+  const maxV = Math.max(1, ...barSeries.flatMap(s=>s.values||[0]));
+  h += '<div class="card"><div class="sh"><span>'+opt.barTitle+'</span>'+(opt.barSub?'<span style="color:var(--dim);font-weight:500;">'+opt.barSub+'</span>':'')+'</div>';
+  h += '<svg viewBox="0 0 '+chartW+' '+(chartH+16)+'" style="width:100%;height:150px;">';
+  barLabels.forEach((lab,i) => {
+    const gx = padL + i*groupW;
+    barSeries.forEach((s,si) => {
+      const v = (s.values||[])[i]||0;
+      const bh = (v/maxV)*chartH;
+      const bx = gx + barGap + si*(barW+barGap);
+      h += '<rect x="'+bx+'" y="'+(chartH-bh)+'" width="'+barW+'" height="'+Math.max(bh,0.5)+'" rx="1.5" fill="'+s.color+'"></rect>';
+    });
+    h += '<text x="'+(gx+groupW/2)+'" y="'+(chartH+13)+'" text-anchor="middle" font-size="8.5" fill="var(--dim)">'+esc(lab)+'</text>';
+  });
+  h += '</svg>';
+  h += '<div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:2px;">';
+  barSeries.forEach(s => {
+    h += '<div style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--muted);"><span style="width:10px;height:10px;border-radius:2px;background:'+s.color+';display:inline-block;"></span>'+esc(s.label)+'</div>';
+  });
+  h += '</div></div>';
+
+  h += '</div>';
+  return h;
+}
+
 /* ── 1. FIRM AT A GLANCE ──────────────────────────────────── */
 function execGlanceV(){
   const open = CASES.filter(c => c.status !== 'Closed');
@@ -5524,35 +5646,44 @@ function execGlanceV(){
   }
   h += '</div>';
 
-  /* ── 4. VOLUME TREND + STATUS MIX ── */
-  h += '<div class="grid-2" style="margin-top:14px;">';
-  h += '<div class="card"><div class="sh"><span>New Matters Filed</span><span style="color:var(--dim);font-weight:500;">Last 12 months</span></div>';
-  const filedDates = CASES.map(c=>new Date(c.filed).getTime()).filter(t=>!isNaN(t));
-  const nowRef = new Date(Math.max(...filedDates));
-  const months = []; for (let i=11;i>=0;i--){ const d=new Date(nowRef.getFullYear(),nowRef.getMonth()-i,1); months.push(d); }
-  const monthlyFilings = months.map(d => CASES.filter(c=>{ const f=new Date(c.filed); return !isNaN(f) && f.getFullYear()===d.getFullYear() && f.getMonth()===d.getMonth(); }).length);
-  const maxFilings = Math.max(...monthlyFilings, 1);
-  h += '<svg viewBox="0 0 400 140" style="width:100%;height:150px;">';
-  let path = '';
-  monthlyFilings.forEach((v,i) => { const x=20+i*(360/11); const y=120-(v/maxFilings)*100; path += (i===0?'M':'L')+x+' '+y; });
-  h += '<path d="'+path+'" stroke="var(--pri2)" stroke-width="2.5" fill="none"/>';
-  monthlyFilings.forEach((v,i) => { const x=20+i*(360/11); const y=120-(v/maxFilings)*100; h += '<circle cx="'+x+'" cy="'+y+'" r="3" fill="var(--pri2)"/><text x="'+x+'" y="'+(y-8)+'" text-anchor="middle" font-size="9" fill="var(--muted)">'+(v||'')+'</text>'; });
-  h += '</svg>';
-  h += '<div style="display:flex;justify-content:space-between;font-size:9.5px;color:var(--dim);"><span>'+months[0].toLocaleDateString('en-US',{month:'short',year:'2-digit'})+'</span><span>'+months[11].toLocaleDateString('en-US',{month:'short',year:'2-digit'})+'</span></div></div>';
-
-  h += '<div class="card"><div class="sh"><span>Cases by Status</span></div>';
+  /* ── 4. PORTFOLIO AT A GLANCE — a KPI column, a status donut, and
+     a filed-vs-closed bar chart in one row, so leadership sees the
+     book's shape and its trend side by side instead of hunting
+     across separate cards. ── */
+  const fa = firmAverages();
   const statusCounts = {};
   CASES.forEach(c => { statusCounts[c.status] = (statusCounts[c.status]||0)+1; });
   const statusColors = {Active:'var(--pri2)', Closed:'var(--green)', Trial:'var(--red)', Discovery:'var(--gold)', Settlement:'#6D28D9'};
-  Object.entries(statusCounts).sort((a,b)=>b[1]-a[1]).forEach(([s,ct]) => {
-    const pct = Math.round(ct/CASES.length*100);
-    h += '<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;"><span style="color:var(--muted);">'+esc(s)+'</span><span style="font-weight:700;">'+ct+' ('+pct+'%)</span></div>';
-    h += '<div style="background:var(--surf3);height:6px;border-radius:3px;overflow:hidden;"><div style="width:'+pct+'%;height:100%;background:'+(statusColors[s]||'var(--pri2)')+';"></div></div></div>';
+  const statusEntries = Object.entries(statusCounts).sort((a,b)=>b[1]-a[1]);
+  const statusTotal = CASES.length || 1;
+  const donutSegs4 = statusEntries.map(([s,ct]) => ({label:s, pct: ct/statusTotal*100}));
+  const donutColors4 = statusEntries.map(([s]) => statusColors[s] || 'var(--pri2)');
+
+  const filedDates = CASES.map(c=>new Date(c.filed).getTime()).filter(t=>!isNaN(t));
+  const nowRef = filedDates.length ? new Date(Math.max(...filedDates)) : new Date();
+  const months4 = []; for (let i=5;i>=0;i--){ const d=new Date(nowRef.getFullYear(),nowRef.getMonth()-i,1); months4.push(d); }
+  const filedByMonth = months4.map(d => CASES.filter(c=>{ const f=new Date(c.filed); return !isNaN(f) && f.getFullYear()===d.getFullYear() && f.getMonth()===d.getMonth(); }).length);
+  const closedByMonth = months4.map(d => CASES.filter(c=>{ if (c.status!=='Closed') return false; const cd=new Date(c.deadline); return !isNaN(cd) && cd.getFullYear()===d.getFullYear() && cd.getMonth()===d.getMonth(); }).length);
+  const monthLabels4 = months4.map(d=>d.toLocaleDateString('en-US',{month:'short'}));
+
+  h += kpiDonutBarRow({
+    kpis: [
+      {label:'Open Matters', value: open.length},
+      {label:'Closed to Date', value: closed.length},
+      {label:'Avg. Resolution Time', value: fa.avgCycleTime+'d'},
+      {label:'Win Rate', value: winRate+'%', color: winRate>=60?'var(--green)':'var(--gold)'}
+    ],
+    donutTitle: 'Cases by Status',
+    donutSegs: donutSegs4, donutColors: donutColors4,
+    barTitle: 'Matters Filed vs. Closed', barSub: 'Last 6 months',
+    barLabels: monthLabels4,
+    barSeries: [
+      {label:'Filed', color:'var(--pri2)', values: filedByMonth},
+      {label:'Closed', color:'var(--green)', values: closedByMonth}
+    ]
   });
-  h += '</div></div>';
 
   /* ── 5. OUTCOMES SNAPSHOT — are we actually winning? ── */
-  const fa = firmAverages();
   h += '<div class="card" style="margin-top:14px;"><div class="sh"><span>📈 Outcomes Snapshot</span></div>';
   h += '<div style="display:flex;gap:28px;flex-wrap:wrap;">';
   const outcomeStats = [
@@ -7162,7 +7293,7 @@ async function submitAcceptInvite(){
       const data = await apiFetch('/api/team/accept-invite', { method:'POST', body: JSON.stringify({ token:S._inviteTokenFromUrl, name, password }) });
       S._inviteTokenFromUrl = '';
       completeLoginSession(data);
-      await loadCasesFromApi();
+      await Promise.all([loadCasesFromApi(), loadMyFeatures()]);
       render();
     } catch (e) {
       st({loginLoading:false, acceptInviteStatus:e.message, acceptInviteSuccess:false});
@@ -10035,6 +10166,21 @@ function tabAudit(c){
 /* ── TAB: AI ───────────────────────────────────────────── */
 function tabAI(c){
   let h = '<div class="section-band">AI Case Assistant — Powered by Claude</div>';
+  // Gated the same way as the Sentinel modules, and for the same
+  // reason: this is a free-text box with full access to the matter's
+  // data, so an unentitled org could otherwise get an equivalent
+  // answer to a paywalled Sentinel module just by asking for it in
+  // plain English. S.myFeatures comes from GET /api/org/features,
+  // loaded right after login (see loadMyFeatures()); platform admins
+  // always come back with every feature true from that endpoint.
+  if (S.myFeatures && !S.myFeatures.ai_assistant) {
+    h += '<div class="card" style="padding:28px 20px;text-align:center;">';
+    h += '<div style="font-size:26px;margin-bottom:10px;">🔒</div>';
+    h += '<div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:6px;">Not included on your current plan</div>';
+    h += '<div style="font-size:12px;color:var(--muted);max-width:420px;margin:0 auto;line-height:1.6;">The AI Case Assistant drafts strategic memos, settlement analysis, client updates and more using this matter\'s real data. Contact your account team to add it to your plan.</div>';
+    h += '</div>';
+    return h;
+  }
   h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:14px;">';
   const prompts = [
     ['Strategic Memo','Draft a brief strategic case assessment with recommended next moves'],
@@ -10301,13 +10447,18 @@ async function aiAssignBestAttorney() {
   try {
     const d = S.aiExtracted;
     const attorneyList = ATTY;
-    
-    // Call attorney recommendation API (returns 3 options)
-    // Same-origin call — Vercel serves this function directly at
-    // /api/recommend-attorney, no separate backend involved.
-    const response = await fetch("/api/recommend-attorney", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+
+    // Real, authenticated call to the actual backend — apiFetch adds
+    // the Bearer token and the API_BASE prefix, unlike the old plain
+    // fetch("/api/recommend-attorney") this replaced, which was a
+    // leftover from a Vercel-Edge-Function-era build that had no
+    // separate auth step. Against the real server.js, that old call
+    // would 401 every time. This route is also plan-gated server-side
+    // (requireFeature('sentinel_match')) — a 403 here means it's not
+    // included on this org's plan, not a real failure, so it gets a
+    // clearer message below instead of the generic one.
+    const recommendations = await apiFetch('/api/recommend-attorney', {
+      method: 'POST',
       body: JSON.stringify({
         caseDetails: {
           client: d.client,
@@ -10319,28 +10470,26 @@ async function aiAssignBestAttorney() {
         attorneys: attorneyList
       })
     });
-    if (!response.ok) throw new Error('Failed to get attorney recommendations');
-    const recommendations = await response.json();
-    
+
     // Validate attorneys exist
     const validateAtty = (name) => ATTY.includes(name) ? name : 'Sarah Chen';
-    
+
     S.attorneyRecommendations = {
       gold: { attorney: validateAtty(recommendations.gold.attorney), reasoning: recommendations.gold.reasoning },
       silver: { attorney: validateAtty(recommendations.silver.attorney), reasoning: recommendations.silver.reasoning },
       bronze: { attorney: validateAtty(recommendations.bronze.attorney), reasoning: recommendations.bronze.reasoning }
     };
-    
+
     console.log('✅ Attorney recommendations:', S.attorneyRecommendations);
-    
+
     // Refresh UI to show selector
     st({ aiAssignLoading: false });
     render();
-    
+
   } catch (error) {
     console.error('Attorney recommendation failed:', error);
     st({ aiAssignLoading: false, showAttorneySelector: false });
-    alert('Failed to recommend attorneys. Please assign manually.');
+    alert(error.message || 'Failed to recommend attorneys. Please assign manually.');
   }
 }
 
@@ -11017,23 +11166,26 @@ async function callClaude(prompt, sys){
   }
 }
 
+// Calls the real backend (POST /api/ai/case-assistant/:caseId), which
+// builds the matter context server-side from caseSummaryForAI and
+// calls Claude with the securely-stored API key. This replaces an
+// older version that built a big context string client-side and
+// called https://api.anthropic.com directly from the browser with no
+// key attached — that call could never actually succeed (browsers
+// can't call Anthropic's API directly like that), which is why it
+// always failed with "Failed to fetch".
 async function runAI(prompt){
   const c = gc(); if (!c || !prompt) return;
   st({aiLoad:true, aiText:''});
-  const ctx = `MATTER: ${c.matterNo||c.id} - ${c.client}
-Type: ${c.type} | Status: ${c.status} | Stage: ${c.litigationStage}
-Attorney: ${c.attorney} | Strategic Track: ${c.strategicTrack} | Favorability: ${c.favorability}/5
-Carrier: ${c.insurance.carrier} | Reserve: ${fM(c.insurance.reserveAmount)} | Claim#: ${c.insurance.claimNo}
-Coverage: ${c.coverageType} | AOB: ${c.aob} | Catastrophe: ${c.catastrophe}
-Filed: ${c.filed} | Days Open: ${daysOpen(c)} | Trial Candidate: ${c.potentialTrialCandidate}
-Demand: ${fM(c.exposure.demandAmount)} | Last Offer: ${fM(c.exposure.offerAmount)} | Likely Exposure: ${fM(c.exposure.likelyExposure)}
-Total Billed: ${fM(c.billing.totalBilled)} | Tasks: ${(c.tasks||[]).length} (${(c.tasks||[]).filter(t=>!t.done).length} open)
-CCI: ${cci(c)} (${cciLabel(cci(c))})
-Recent Activity: ${(c.updates||[]).slice(-3).map(u => u.type+': '+u.text).join(' | ')}
-
-REQUEST: ${prompt}`;
-  const result = await callClaude(ctx);
-  st({aiLoad:false, aiText:result});
+  try {
+    const data = await apiFetch('/api/ai/case-assistant/' + c.id, {
+      method:'POST',
+      body: JSON.stringify({ prompt })
+    });
+    st({aiLoad:false, aiText:data.analysis});
+  } catch (e) {
+    st({aiLoad:false, aiText:'AI request failed: ' + e.message});
+  }
 }
 
 async function genRptAI(rptId){
