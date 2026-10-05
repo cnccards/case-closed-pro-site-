@@ -1376,6 +1376,12 @@ async function loadUserContextAfterAuth(session){
 
 async function apiFetch(path, opts = {}) {
   if (!API_BASE) throw new Error('API_BASE not configured');
+  // Live Claude calls only run inside a signed-in account (they use your
+  // account's plan and the server's API key). On the public sample demo
+  // there's no login, so say that plainly instead of surfacing a raw 401.
+  if (!authToken && /^\/api\/(ai\/|extract-claim|recommend-attorney)/.test(path)) {
+    throw new Error('Live Claude analysis runs inside a signed-in account. This sample demo uses sample data only.');
+  }
   const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
   if (authToken) headers.Authorization = 'Bearer ' + authToken;
   const r = await fetch(API_BASE + path, Object.assign({}, opts, { headers }));
@@ -9277,7 +9283,7 @@ function aiIntakeStep1V() {
         '<div class="fld"><label class="lbl">Claim Details</label>' +
           '<textarea id="aiClaimText" class="inp" placeholder="Paste claim email, incident summary, or any claim details here. Example: Claim CLM-2025-1234, Insured Acme Corp, Auto accident 1/15/2025..." style="min-height:200px;margin-bottom:12px;">' + esc(S.aiClaimText) + '</textarea>' +
         '</div>' +
-        (S.aiError ? '<div class="alert-bad" style="margin-bottom:14px;">' + esc(S.aiError) + '</div>' : '') +
+                (S.aiError ? '<div class="alert-bad" style="margin-bottom:14px;">' + esc(S.aiError) + '</div>' : '') +
       '</div>' +
       '<div class="modal-f">' +
         '<button class="btn btn-out" onclick="closeAiIntake()">Cancel</button>' +
@@ -9302,7 +9308,7 @@ function aiIntakeStep2V() {
       '</div>' +
       '<div class="modal-b">' +
         '<div style="background:var(--surf2);border-radius:8px;padding:14px;margin-bottom:18px;">' +
-          '<div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:6px;">Claude extracted the following. You can edit any fields.</div>' +
+          '<div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:6px;">' + (S.aiSampleFallback ? 'Live AI was unavailable, so these fields came from built-in sample extraction. Please check them. You can edit any field.' : 'Claude extracted the following. You can edit any fields.') + '</div>' +
         '</div>' +
         '<div class="grid-2">' +
           '<div>' + inp('Client / Insured', d.client, 'S.aiExtracted.client=this.value') + '</div>' +
@@ -9484,19 +9490,44 @@ async function aiAssignBestAttorney() {
     // (requireFeature('sentinel_match')) — a 403 here means it's not
     // included on this org's plan, not a real failure, so it gets a
     // clearer message below instead of the generic one.
-    const recommendations = await apiFetch('/api/recommend-attorney', {
-      method: 'POST',
-      body: JSON.stringify({
-        caseDetails: {
-          client: d.client,
-          type: d.type,
-          priority: d.priority,
-          value: d.value,
-          summary: d.summary
-        },
-        attorneys: attorneyList
-      })
-    });
+    let recommendations;
+    if (authToken) {
+      recommendations = await apiFetch('/api/recommend-attorney', {
+        method: 'POST',
+        body: JSON.stringify({
+          caseDetails: {
+            client: d.client,
+            type: d.type,
+            priority: d.priority,
+            value: d.value,
+            summary: d.summary
+          },
+          attorneys: attorneyList
+        })
+      });
+    } else {
+      // Public demo (nobody signed in): the original same-origin call to
+      // this site's own /api/recommend-attorney, as it worked before.
+      // If that's unavailable, rank with the built-in workload/experience
+      // scoring (same as the Assign Cases screen) so the demo still works.
+      try {
+        const response = await fetch('/api/recommend-attorney', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ caseDetails: { client: d.client, type: d.type, priority: d.priority, value: d.value, summary: d.summary }, attorneys: attorneyList })
+        });
+        if (!response.ok) throw new Error('same-origin recommend failed: ' + response.status);
+        recommendations = await response.json();
+      } catch (err) {
+        console.warn('Same-origin recommend-attorney unavailable, using built-in scoring:', err.message);
+        const top = getTop3Recommendations({ type: d.type, value: d.value || 0 });
+        const tiers = ['gold', 'silver', 'bronze'];
+        recommendations = {};
+        top.forEach((a, i) => {
+          recommendations[tiers[i]] = { attorney: a.name, reasoning: a.name + ' scores ' + a.score + '/100 for this matter (' + a.experience + ') on matter-type experience, current workload, and track record.' };
+        });
+      }
+    }
 
     // Validate attorneys exist
     const validateAtty = (name) => ATTY.includes(name) ? name : 'Sarah Chen';
@@ -9572,6 +9603,55 @@ async function selectAttorney(tier) {
   if (msg) alert('✓ ' + msg);
 }
 
+/* SAMPLE-MODE claim extraction — used only when nobody is signed in (the
+   public ?demo=1 link). Pulls the obvious fields out of pasted text with
+   simple pattern matching so the Sentinel Intake flow can be shown end to
+   end without exposing a live AI key to the public. A signed-in account
+   uses the real Claude extraction instead. */
+function sampleExtractClaim(text) {
+  const t = String(text || '');
+  const flat = t.replace(/\s+/g, ' ').trim();
+  const carriers = ['Liberty Mutual','State Farm','Travelers','Zurich','Hartford','Chubb','AIG','Progressive','Allstate','Nationwide','GEICO','CNA','Farmers'];
+  const carrier = carriers.find(c => new RegExp('\\b' + c + '\\b', 'i').test(flat)) || '';
+  const claimNo = (flat.match(/\bCLM[-\s]?[\w-]{4,}/i) || flat.match(/claim\s*(?:no\.?|number|#)?\s*[:#]?\s*([A-Z0-9][\w-]{4,})/i) || [])[0] || '';
+  let client = '';
+  let m = flat.match(/(?:[Ii]nsured|[Cc]lient|[Dd]efendant)\s*[:\-]?\s*([A-Z][A-Za-z0-9&.'-]*(?:\s+[A-Z&][A-Za-z0-9&.'-]*){0,4})/);
+  if (m) client = m[1];
+  if (!client) { m = flat.match(/\b(?:Re|RE|Subject)\s*:\s*([A-Z][A-Za-z0-9&.'-]*(?:\s+[A-Z&][A-Za-z0-9&.'-]*){0,3}?)\s*(?:[-\u2013\u2014,:]|$)/); if (m) client = m[1]; }
+  if (!client) { m = flat.match(/\b([A-Z][A-Za-z0-9&.'-]*(?:\s+[A-Z][A-Za-z0-9&.'-]*){0,3}\s+(?:Corp|Corporation|Inc|LLC|Co|Company|Group|Holdings|Services|Industries|Logistics|Trucking|Transport|Freight|Partners|Enterprises))\b/); if (m) client = m[1]; }
+  client = client.replace(/^(?:Insured|Client|Defendant)\s+/i, '').replace(/\s+(Claim|Auto|Date|Policy|Loss)$/i, '').trim();
+  const amounts = [];
+  const amtRe = /\$\s?([\d][\d,]*(?:\.\d+)?)\s*(k|m|million|thousand)?/gi;
+  let a; while ((a = amtRe.exec(flat))) {
+    let n = parseFloat(a[1].replace(/,/g, '')); const u = (a[2] || '').toLowerCase();
+    if (u === 'k' || u === 'thousand') n *= 1e3; if (u === 'm' || u === 'million') n *= 1e6;
+    amounts.push(Math.round(n));
+  }
+  const value = amounts.length ? Math.max(...amounts) : 0;
+  const resM = flat.match(/reserve[^$]{0,25}\$\s?([\d,]+)/i);
+  const reserve = resM ? parseInt(resM[1].replace(/,/g, ''), 10) : 0;
+  let filed = '';
+  const iso = flat.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
+  const us = flat.match(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/);
+  if (iso) filed = iso[0]; else if (us) filed = us[3] + '-' + us[1].padStart(2,'0') + '-' + us[2].padStart(2,'0');
+  const l = flat.toLowerCase();
+  const type = /product|defect(?:ive)? (?:part|product)|recall/.test(l) ? 'Product Liability'
+    : /employ|harass|wrongful term|discriminat|wage/.test(l) ? 'Employment'
+    : /construction|contractor|roof|scaffold/.test(l) ? 'Construction Defect'
+    : /fire|water damage|property damage|hail|flood/.test(l) ? 'Property Damage'
+    : /auto|vehicle|collision|truck|slip|fall|injur|premises|accident/.test(l) ? 'Personal Injury'
+    : /breach|contract|commercial/.test(l) ? 'Commercial Litigation' : 'Insurance Defense';
+  const priority = (value >= 1000000 || /fatal|death|catastroph|wrongful death/.test(l)) ? 'High' : (value && value < 100000 ? 'Low' : 'Medium');
+  return {
+    client, type, status: 'Active', priority, attorney: 'Unassigned', carrier, claimNo,
+    aob: /assignment of benefits|\bAOB\b/i.test(flat) ? 'Yes' : 'No',
+    catastrophe: /catastroph|hurricane|tornado|wildfire/.test(l) ? 'Yes' : 'No',
+    coverageType: /auto|vehicle|collision|truck/.test(l) ? 'Commercial Auto' : 'General Liability',
+    filed, value, reserve,
+    summary: flat.slice(0, 220) + (flat.length > 220 ? '…' : '')
+  };
+}
+
 /* Process claim text with Claude API */
 async function aiProcessClaimIntake() {
   const claimText = document.getElementById('aiClaimText')?.value || S.aiClaimText;
@@ -9592,10 +9672,30 @@ async function aiProcessClaimIntake() {
     // like every other authenticated call in this app. Available on
     // every plan, not gated behind an add-on — this is basic case
     // intake, not a proprietary Sentinel analysis.
-    const extracted = await apiFetch('/api/extract-claim', {
-      method: 'POST',
-      body: JSON.stringify({ claimText: claimText })
-    });
+    let extracted;
+    S.aiSampleFallback = false;
+    if (authToken) {
+      // Signed in: the real, authenticated backend (plan-aware, audited).
+      extracted = await apiFetch('/api/extract-claim', { method: 'POST', body: JSON.stringify({ claimText: claimText }) });
+    } else {
+      // Public demo (nobody signed in): the original same-origin call to
+      // this site's own /api function, exactly as it worked before the
+      // signed-in backend path was added. Only if THAT fails do we fall
+      // back to built-in sample extraction so the demo never dead-ends.
+      try {
+        const response = await fetch('/api/extract-claim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ claimText: claimText })
+        });
+        if (!response.ok) throw new Error('same-origin extract failed: ' + response.status);
+        extracted = await response.json();
+      } catch (err) {
+        console.warn('Same-origin extract-claim unavailable, using built-in sample extraction:', err.message);
+        extracted = sampleExtractClaim(claimText);
+        S.aiSampleFallback = true;
+      }
+    }
 
     // Validate required fields
     if (!extracted.client) {
