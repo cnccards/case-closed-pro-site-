@@ -2083,6 +2083,30 @@ app.get('/api/billing/status', async (req, res) => {
   });
 });
 
+// Lets the frontend show/hide gated AI features (Sentinel modules,
+// AI Case Assistant) based on what this org actually has, instead of
+// showing a button that just errors when clicked. Any signed-in user
+// can read their own org's entitlements — this is read-only and
+// scoped to req.orgId like everything else, not an admin route.
+// Platform admins get every feature reported as true here too, since
+// requireFeature() always lets them through regardless of plan.
+app.get('/api/org/features', async (req, res) => {
+  const orgResult = await q('SELECT plan_tier, features FROM organizations WHERE id = $1', [req.orgId]);
+  const org = orgResult.rows[0];
+  if (!org) return res.status(404).json({ error: 'Organization not found' });
+  const features = req.user?.platformAdmin
+    ? Object.fromEntries(Object.keys(FEATURE_LABELS).map(k => [k, true]))
+    : orgFeatures(org);
+  res.json({ planTier: org.plan_tier, features });
+});
+
+// matter_no is NOT NULL + unique per org in the schema, so any route that
+// creates a matter without the caller supplying one must generate it.
+async function generateMatterNo(db, orgId, prefix = 'CC') {
+  const r = await db.query('SELECT COUNT(*)::int AS n FROM cases WHERE org_id = $1', [orgId]);
+  return prefix + '-' + String(r.rows[0].n + 1).padStart(3, '0') + '-' + Math.random().toString(36).slice(2, 5).toUpperCase();
+}
+
 app.get('/api/cases', async (req, res) => {
   const { status } = req.query;
   const extra = status ? ' AND c.status = $2' : '';
@@ -2112,10 +2136,11 @@ app.post('/api/cases', async (req, res) => {
   const b = req.body || {};
   if (!b.client) return res.status(400).json({ error: 'client is required' });
   const data = { ...defaultCaseData(), ...(b.data || {}) };
+  const matterNo = b.matterNo || await generateMatterNo(req.db, req.orgId, 'CC');
   const result = await req.db.query(
     `INSERT INTO cases (org_id, matter_no, client, type, status, litigation_stage, attorney, assigned_attorney_user_id, carrier, claim_no, reserve_amount, filed_date, deadline_date, value, data)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
-    [req.orgId, b.matterNo || null, b.client, b.type || 'Other', b.status || 'Active', b.litigationStage || 'Pre-Suit',
+    [req.orgId, matterNo, b.client, b.type || 'Other', b.status || 'Active', b.litigationStage || 'Pre-Suit',
      b.attorney || null, b.assignedAttorneyUserId || null, b.carrier || null, b.claimNo || null, b.reserveAmount || 0, b.filed || null, b.deadline || null, b.value || 0, JSON.stringify(data)]
   );
   await audit(req.orgId, req.user?.sub, 'case.create', 'case', result.rows[0].id, { client: b.client }, req.ip);
@@ -2139,7 +2164,7 @@ app.post('/api/cases/import', async (req, res) => {
       const result = await req.db.query(
         `INSERT INTO cases (org_id, matter_no, client, type, status, litigation_stage, attorney, carrier, claim_no, reserve_amount, filed_date, deadline_date, value, data)
          VALUES ($1,$2,$3,$4,'Closed','Closed',$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-        [req.orgId, b.matterNo || null, b.client, b.type || 'Other', b.attorney || null, b.carrier || null,
+        [req.orgId, b.matterNo || ('HIST-' + String(i + 1).padStart(4, '0') + '-' + Date.now().toString(36).slice(-4)), b.client, b.type || 'Other', b.attorney || null, b.carrier || null,
          b.claimNo || null, b.reserveAmount || 0, b.filed || null, b.deadline || null, b.value || 0, JSON.stringify(data)]
       );
       created.push(rowToCase(result.rows[0]));
@@ -2378,17 +2403,32 @@ const ADDON_CATALOG = [
   { key: 'sentinel_horizon',  label: 'Sentinel Horizon',                    monthly: 150, gates: true  },
   { key: 'sentinel_watch',    label: 'Sentinel Watch',                      monthly: 150, gates: true  },
   { key: 'trends',            label: 'Executive Trends dashboard',          monthly: 100, gates: true  },
+  // AI Case Assistant is the general-purpose, ask-anything AI tool on
+  // every case (custom prompts + preset drafting tasks: strategic
+  // memo, settlement analysis, client update, etc.) — distinct from
+  // the 5 named Sentinel modules, but gated in the SAME bucket on
+  // purpose: it has full access to a case's own data, so an
+  // unentitled org could otherwise just ask it the same question a
+  // paywalled Sentinel module answers (e.g. "what should we offer to
+  // settle this") and get an equivalent answer through the back
+  // door. Its tier defaults below are deliberately set equal to
+  // sentinel_match/sentinel_settle for that reason.
+  { key: 'ai_assistant',      label: 'AI Case Assistant',                   monthly: 150, gates: true  },
   { key: 'multi_carrier',     label: 'Multi-carrier / defense-firm access', monthly: 300, gates: false },
   { key: 'priority_support',  label: 'Priority support',                    monthly: 200, gates: false }
 ];
+// TEMPORARY: sentinel_match is on for every tier (incl. starter) so it can be
+// demoed to any customer. Revisit when add-on pricing is finalized — set the
+// starter value back to false to make it a paid add-on again.
 const TIER_FEATURES = {
-  starter:    { sentinel_match: false, sentinel_settle: false, sentinel_strategy: false, sentinel_horizon: false, sentinel_watch: false, trends: false },
-  growth:     { sentinel_match: true,  sentinel_settle: true,  sentinel_strategy: false, sentinel_horizon: false, sentinel_watch: false, trends: true  },
-  enterprise: { sentinel_match: true,  sentinel_settle: true,  sentinel_strategy: true,  sentinel_horizon: true,  sentinel_watch: true,  trends: true  }
+  starter:    { sentinel_match: true,  sentinel_settle: false, sentinel_strategy: false, sentinel_horizon: false, sentinel_watch: false, trends: false, ai_assistant: false },
+  growth:     { sentinel_match: true,  sentinel_settle: true,  sentinel_strategy: false, sentinel_horizon: false, sentinel_watch: false, trends: true,  ai_assistant: true  },
+  enterprise: { sentinel_match: true,  sentinel_settle: true,  sentinel_strategy: true,  sentinel_horizon: true,  sentinel_watch: true,  trends: true,  ai_assistant: true  }
 };
 const FEATURE_LABELS = {
   sentinel_match: 'Sentinel Match', sentinel_settle: 'Sentinel Settle', sentinel_strategy: 'Sentinel Strategy',
-  sentinel_horizon: 'Sentinel Horizon', sentinel_watch: 'Sentinel Watch', trends: 'Executive Trends dashboard'
+  sentinel_horizon: 'Sentinel Horizon', sentinel_watch: 'Sentinel Watch', trends: 'Executive Trends dashboard',
+  ai_assistant: 'AI Case Assistant'
 };
 // Baseline bundle for the org's tier, overlaid with whatever's in its
 // features JSONB — add-ons only ever add on top in the onboarding
@@ -2524,6 +2564,87 @@ app.post('/api/ai/sentinel-watch', requireFeature('sentinel_watch'), async (req,
     const { analysis, flaggedCount } = await sentinelWatchNarrative(signals);
     await audit(req.orgId, req.user?.sub, 'ai.sentinel_watch', null, null, { flaggedCount }, req.ip);
     res.json({ analysis, flaggedCount });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+});
+
+// ---------------------------------------------------------------
+// AI Case Assistant — the general, ask-anything AI tool that lives
+// on every case (preset drafting tasks like Strategic Memo or Client
+// Update, plus a free-text prompt box). Unlike the 5 Sentinel modules
+// above, this doesn't produce one structured recommendation — it
+// answers whatever's asked, grounded in this one case's real data via
+// caseSummaryForAI (same helper the Sentinel modules use). Gated by
+// 'ai_assistant' on purpose (see the ADDON_CATALOG comment) since a
+// free-text box with full case context could otherwise reproduce
+// what a paywalled Sentinel module does, just by being asked the
+// same question in plain English.
+//
+// This replaces an old prototype version of this feature that called
+// the Anthropic API directly from the browser with no key attached —
+// that version never worked once this real backend existed and
+// should be considered dead code in the frontend.
+// ---------------------------------------------------------------
+app.post('/api/ai/case-assistant/:caseId', requireFeature('ai_assistant'), async (req, res) => {
+  try {
+    const { prompt } = req.body || {};
+    if (!prompt || !prompt.trim()) return res.status(400).json({ error: 'prompt is required' });
+    const c = await loadOneCase(req, req.params.caseId);
+    if (!c) return res.status(404).json({ error: 'Case not found' });
+    const system = 'You are an expert insurance defense litigation analyst embedded in this specific matter. Provide concise, actionable insights formatted in clear paragraphs. Avoid bullet point overuse. Ground every answer only in the matter data given to you — do not invent facts not present in it.';
+    const userPrompt = `MATTER:\n${JSON.stringify(caseSummaryForAI(c), null, 2)}\n\nREQUEST: ${prompt.trim()}`;
+    const analysis = await callClaude(system, userPrompt, 1200);
+    await audit(req.orgId, req.user?.sub, 'ai.case_assistant', 'case', c.id, null, req.ip);
+    res.json({ analysis });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+});
+
+// AI summary of a SAVED REPORT — same real-backend pattern as the
+// case assistant above, replacing an older client-side call that hit
+// api.anthropic.com directly from the browser with no key and always
+// failed. Only the already-rendered rows the report preview is
+// showing get sent (capped at 20 below on the frontend), not the raw
+// portfolio, so this stays a small, targeted call.
+app.post('/api/ai/report-summary', requireFeature('ai_assistant'), async (req, res) => {
+  try {
+    const { reportName, rowCount, sampleRows } = req.body || {};
+    if (!Array.isArray(sampleRows) || sampleRows.length === 0) return res.status(400).json({ error: 'sampleRows is required' });
+    const system = 'You are a senior insurance defense litigation strategist briefing a partner. Be specific and actionable. Ground every observation only in the data given to you — do not invent facts not present in it.';
+    const userPrompt = `REPORT: ${reportName || 'Untitled report'}\nROWS: ${rowCount || sampleRows.length}\n\nSAMPLE DATA:\n${sampleRows.join('\n')}\n\nProvide a concise executive summary of the patterns, risks, and recommended actions from this report. 3-4 paragraphs maximum.`;
+    const analysis = await callClaude(system, userPrompt, 1000);
+    await audit(req.orgId, req.user?.sub, 'ai.report_summary', 'report', null, { reportName }, req.ip);
+    res.json({ analysis });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+});
+
+// Free-form AI question against the ORG'S OWN CURRENT PORTFOLIO —
+// pulled fresh from the database here (scopedCaseQuery, same tenant
+// scoping every other /api/cases route uses) rather than trusting
+// whatever the browser's local CASES array happens to hold, so the
+// answer reflects real data and can't be shaped by stale or tampered
+// client state. Same gating as the rest of the AI surface — this is
+// exactly the kind of free-text box that could otherwise be used to
+// replicate paywalled Sentinel analysis in different words.
+app.post('/api/ai/portfolio-query', requireFeature('ai_assistant'), async (req, res) => {
+  try {
+    const { query } = req.body || {};
+    if (!query || !query.trim()) return res.status(400).json({ error: 'query is required' });
+    const result = await scopedCaseQuery(req);
+    const cases = result.rows.map(r => filterCaseForViewer(rowToCase(r), req.orgId));
+    const portfolio = cases.map(c => {
+      const s = caseSummaryForAI(c);
+      return `${s.matterNo || c.id}|${s.client}|${s.type}|${s.status}|${s.litigationStage}|${s.attorney}|${s.carrier}|reserve:${s.reserveAmount}|exposure:${s.likelyExposure || s.value}|billed:${c.billing?.totalBilled || 0}`;
+    }).join('\n');
+    const system = 'You are a litigation portfolio analyst. Be specific, cite matter numbers, and provide actionable recommendations. Ground every answer only in the portfolio data given to you — do not invent facts not present in it.';
+    const userPrompt = `PORTFOLIO (${cases.length} matters, pipe-separated):\n${portfolio}\n\nREQUEST: ${query.trim()}\n\nAnalyze and provide a structured response addressing the request. Include specific matter numbers when relevant.`;
+    const analysis = await callClaude(system, userPrompt, 1200);
+    await audit(req.orgId, req.user?.sub, 'ai.portfolio_query', 'case', null, { query: query.trim().slice(0, 200) }, req.ip);
+    res.json({ analysis });
   } catch (e) {
     res.status(e.statusCode || 500).json({ error: e.message });
   }
@@ -2712,7 +2833,7 @@ app.post('/api/extract-claim', async (req, res) => {
 // Recommends 3 tiered attorney options (gold/silver/bronze) for a
 // new matter, grounded in real current workload from this org's
 // own cases, not just the bare name list the client sends.
-app.post('/api/recommend-attorney', async (req, res) => {
+app.post('/api/recommend-attorney', requireFeature('sentinel_match'), async (req, res) => {
   try {
     const { caseDetails, attorneys } = req.body || {};
     if (!caseDetails || !Array.isArray(attorneys) || attorneys.length === 0) {
