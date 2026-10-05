@@ -151,6 +151,9 @@ tr.row-link{cursor:pointer;}
 .pill{cursor:pointer;border:1px solid var(--line);background:var(--surf);color:var(--muted);transition:all .12s;}
 .pill:hover{border-color:var(--pri2);color:var(--pri2);}
 table{width:100%;border-collapse:collapse;font-size:12px;}
+th.sortable{cursor:pointer;user-select:none;}
+th.sortable:hover{color:var(--pri2);}
+.sort-arrow{font-size:9px;opacity:.8;}
 table th{text-align:left;padding:9px 11px;background:var(--surf2);color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.1px;border-bottom:1px solid var(--line);}
 table td{padding:9px 11px;border-bottom:1px solid var(--surf3);color:var(--ink);}
 table tr.row-link{cursor:pointer;}
@@ -2442,6 +2445,7 @@ function render(){
     html += teamInviteModalV();
     
     document.getElementById('app').innerHTML = html;
+    try { applyTableSort(); } catch(e) { console.error('table sort', e); }
   } catch (error) {
     /* BLOCKER 4: Error Handling - show error UI instead of blank screen */
     console.error('Render error:', error);
@@ -2462,6 +2466,59 @@ function render(){
     `;
   }
 }
+
+
+/* ── CLICK-TO-SORT FOR EVERY TABLE ───────────────────────────
+   Click any column header to sort that table by the column
+   (click again to reverse). Works on all tables in the app, and the
+   chosen sort is remembered while you move around the screen. */
+window._tblSort = window._tblSort || {};
+function _tblSig(t){ return Array.from(t.querySelectorAll('thead th')).map(h=>h.textContent.replace(/\s*[▲▼]\s*$/,'').trim()).join('|'); }
+function _sortVal(td){
+  if (!td) return {n:null,s:''};
+  const raw = (td.getAttribute('data-sort') != null ? td.getAttribute('data-sort') : td.textContent).trim();
+  const m = raw.replace(/[$,%\s]/g,'').match(/^(-?\d+(?:\.\d+)?)([KMB])?$/i);
+  if (m) { const mult = {K:1e3,M:1e6,B:1e9}[(m[2]||'').toUpperCase()] || 1; return {n:parseFloat(m[1])*mult, s:raw.toLowerCase()}; }
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw) || /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(raw)) { const t = Date.parse(raw); if (!isNaN(t)) return {n:t, s:raw.toLowerCase()}; }
+  const lead = raw.match(/^(-?\d+(?:\.\d+)?)/);
+  return {n:(raw==='—'||raw==='-'||raw==='')?null:(lead && raw.length<=8 ? parseFloat(lead[1]) : null), s:raw.toLowerCase()};
+}
+function _sortTable(t, col, dir){
+  const tb = t.tBodies[0]; if (!tb) return;
+  const rows = Array.from(tb.rows).filter(r => !Array.from(r.cells).some(c => c.colSpan > 1));
+  if (rows.length < 2) return;
+  const vals = rows.map(r => ({r, v:_sortVal(r.cells[col])}));
+  const numeric = vals.every(x => x.v.n !== null || x.v.s === '' || x.v.s === '—' || x.v.s === '-');
+  vals.sort((a,b) => {
+    let c;
+    if (numeric) { const an = a.v.n===null ? -Infinity : a.v.n, bn = b.v.n===null ? -Infinity : b.v.n; c = an===bn ? 0 : (an<bn?-1:1); }
+    else c = a.v.s.localeCompare(b.v.s, undefined, {numeric:true});
+    return dir==='desc' ? -c : c;
+  });
+  vals.forEach(x => tb.appendChild(x.r));
+  t.querySelectorAll('thead th').forEach((h,i) => {
+    const old = h.querySelector('.sort-arrow'); if (old) old.remove();
+    if (i === col) { const sp = document.createElement('span'); sp.className='sort-arrow'; sp.textContent = dir==='desc' ? ' ▼' : ' ▲'; h.appendChild(sp); }
+  });
+}
+function applyTableSort(){
+  document.querySelectorAll('#ct table').forEach(t => {
+    const ths = t.querySelectorAll('thead th'); if (!ths.length || !t.tBodies[0]) return;
+    ths.forEach(h => { if (!h.getAttribute('onclick')) h.classList.add('sortable'); });
+    const st0 = window._tblSort[_tblSig(t)];
+    if (st0) _sortTable(t, st0.col, st0.dir);
+  });
+}
+document.addEventListener('click', function(e){
+  const th = e.target.closest && e.target.closest('#ct thead th');
+  if (!th || th.getAttribute('onclick') || e.target.closest('button,a,input,select')) return;
+  const t = th.closest('table'); if (!t || !t.tBodies[0]) return;
+  const col = Array.from(th.parentElement.children).indexOf(th);
+  const sig = _tblSig(t), cur = window._tblSort[sig];
+  const dir = (cur && cur.col === col && cur.dir === 'asc') ? 'desc' : 'asc';
+  window._tblSort[sig] = {col, dir};
+  _sortTable(t, col, dir);
+});
 
 /* ── HEADER ────────────────────────────────────────────────── */
 function hdr(){
