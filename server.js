@@ -2222,6 +2222,89 @@ app.post('/api/cases/import-open', requireOrgRole('admin'), async (req, res) => 
   res.status(201).json({ imported: created.length, failed: errors.length, errors, cases: created });
 });
 
+// ---------------------------------------------------------------
+// Assign a matter to an attorney (what Sentinel Match calls when a
+// recommendation is accepted). Does three things in one step:
+//   1. Records the assignment on the case (attorney name + the linked
+//      user account, when that attorney has a login in this org).
+//      Linking the user is what makes the case show up on THEIR
+//      dashboard — members only ever see cases assigned to them.
+//   2. Logs it on the matter's activity feed so there's a visible record.
+//   3. Emails the attorney that they've been assigned (if SMTP is
+//      configured and they have a login).
+// If nobody in the org has a login matching that attorney name, the
+// assignment is still saved by name and the response says so, so the UI
+// can tell the person to invite that attorney. Members can't assign.
+// ---------------------------------------------------------------
+app.post('/api/cases/:id/assign', async (req, res) => {
+  try {
+    if (req.user?.role === 'member' && !req.user?.platformAdmin) {
+      return res.status(403).json({ error: 'Only an admin or owner can assign a case.' });
+    }
+    const { attorneyName, attorneyUserId, reason, source } = req.body || {};
+    if (!attorneyName || !String(attorneyName).trim()) return res.status(400).json({ error: 'attorneyName is required' });
+    const name = String(attorneyName).trim();
+
+    const existing = await req.db.query('SELECT * FROM cases WHERE id = $1 AND org_id = $2', [req.params.id, req.orgId]);
+    if (!existing.rows[0]) return res.status(404).json({ error: 'Case not found' });
+    const current = existing.rows[0];
+
+    // Find the attorney's login in this org: explicit id first, else match by name.
+    let attorneyUser = null;
+    if (attorneyUserId) {
+      const r = await req.db.query('SELECT id, name, email FROM users WHERE id = $1 AND org_id = $2 AND is_active = true', [attorneyUserId, req.orgId]);
+      attorneyUser = r.rows[0] || null;
+    }
+    if (!attorneyUser) {
+      const r = await req.db.query('SELECT id, name, email FROM users WHERE org_id = $1 AND is_active = true AND lower(name) = lower($2) LIMIT 1', [req.orgId, name]);
+      attorneyUser = r.rows[0] || null;
+    }
+
+    const assignerName = req.user?.email || 'an administrator';
+    const now = new Date().toISOString();
+    const data = { ...(current.data || {}) };
+    data.assignment = { at: now, byUserId: req.user?.sub || null, byName: assignerName, attorney: name, source: source || 'manual', reason: reason || null };
+    data.updates = [...(data.updates || []), {
+      date: now.slice(0, 10), author: source === 'sentinel_match' ? 'Sentinel Match' : assignerName, type: 'Assignment',
+      text: `Assigned to ${name}${reason ? ' — ' + reason : ''}.${attorneyUser ? '' : ' (No login found for this attorney in the account yet — invite them so they can work the matter.)'}`
+    }];
+
+    const result = await req.db.query(
+      `UPDATE cases SET attorney = $1, assigned_attorney_user_id = $2, data = $3 WHERE id = $4 AND org_id = $5 RETURNING *`,
+      [name, attorneyUser ? attorneyUser.id : null, JSON.stringify(data), req.params.id, req.orgId]
+    );
+    const updated = result.rows[0];
+    await audit(req.orgId, req.user?.sub, 'case.assign', 'case', req.params.id, { attorney: name, linkedUser: !!attorneyUser, source: source || 'manual' }, req.ip);
+
+    // Notify the attorney by email.
+    let notified = false, notifyNote = null;
+    if (!attorneyUser) {
+      notifyNote = 'no_login';
+    } else if (!SMTP_CONFIGURED) {
+      notifyNote = 'email_not_configured';
+    } else {
+      const caseUrl = `${process.env.APP_URL || 'http://localhost:3000'}/case-closed-pro.html`;
+      const sol = data.keyDates?.sol ? `\nStatute of limitations: ${data.keyDates.sol}` : '';
+      try {
+        await mailer.sendMail({
+          from: process.env.FROM_EMAIL || process.env.SMTP_USER,
+          to: attorneyUser.email,
+          subject: `New matter assigned to you: ${updated.matter_no} — ${updated.client}`,
+          text: `Hi ${attorneyUser.name},\n\nYou've been assigned a new matter in Case Closed Pro.\n\nMatter: ${updated.matter_no}\nClient: ${updated.client}\nType: ${updated.type || '—'}\nCarrier: ${updated.carrier || '—'}\nValue: ${updated.value != null ? '$' + Number(updated.value).toLocaleString() : '—'}${sol}\nAssigned by: ${assignerName}${reason ? '\nWhy you: ' + reason : ''}\n\nSign in to open it and get started:\n${caseUrl}\n`
+        });
+        notified = true;
+      } catch (e) {
+        console.error('Assignment email failed to send:', e.message);
+        notifyNote = 'email_failed';
+      }
+    }
+
+    res.json({ case: rowToCase(updated), attorneyLinked: !!attorneyUser, notified, notifyNote });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ error: e.message });
+  }
+});
+
 app.patch('/api/cases/:id', async (req, res) => {
   const existing = await req.db.query('SELECT * FROM cases WHERE id = $1 AND org_id = $2', [req.params.id, req.orgId]);
   if (!existing.rows[0]) return res.status(404).json({ error: 'Case not found' });
