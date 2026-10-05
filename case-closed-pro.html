@@ -294,54 +294,6 @@ function updatePayableStatus(id, newStatus){
 
 const ATTY_COLOR = {'Sarah Chen':'#1F4E8C','James Ortega':'#1A5C2A','David Park':'#5C1A1A','Maria Santos':'#3A1A5C','Rachel Goldberg':'#6B4226','Rickey Henderson':'#2A4C7C','Jennifer Martinez':'#7C2A4C','Michael Tomassi':'#4C7C2A','Amanda Foster':'#7C6B2A','Sean Green':'#2A4C7C'};
 
-/* ════════════════════════════════════════════════════════════════
-   PREMIUM FEATURES - Settlement Intelligence Engine
-   ════════════════════════════════════════════════════════════════ */
-
-// Settlement offers database
-let SETTLEMENT_OFFERS = [
-  {id:'SO-001', caseId:'CC-001', date:'2025-01-15', offeror:'Plaintiff Counsel', amount:750000, status:'Accepted', accepted:'2025-01-16'},
-  {id:'SO-002', caseId:'CC-002', date:'2025-01-20', offeror:'Defense', amount:420000, status:'Countered', countered:'2025-01-21', counterAmount:500000},
-  {id:'SO-003', caseId:'CC-005', date:'2025-02-01', offeror:'Plaintiff Counsel', amount:1200000, status:'Rejected', rejected:'2025-02-02'},
-];
-
-// Judge/Venue database
-let JUDGES = [
-  {id:'J-001', name:'Hon. Sarah Mitchell', venue:'Northern District', defenseWins:58, plaintiffWins:42, avgSettlementPercent:72},
-  {id:'J-002', name:'Hon. James Rodriguez', venue:'Central District', defenseWins:45, plaintiffWins:55, avgSettlementPercent:65},
-  {id:'J-003', name:'Hon. Patricia Liu', venue:'Southern District', defenseWins:62, plaintiffWins:38, avgSettlementPercent:78},
-];
-
-// Opposing counsel database
-let OPPOSING_COUNSEL = [
-  {id:'OC-001', name:'Smith & Associates', avgSettlementDiscount:18, casesHandled:12, typicalFirstOffer:'55% of claimed', patterns:'Always demands 20% more in discovery'},
-  {id:'OC-002', name:'Johnson Law Group', avgSettlementDiscount:8, casesHandled:8, typicalFirstOffer:'75% of claimed', patterns:'Willing to settle early if pressure applied'},
-  {id:'OC-003', name:'Brown, Miller & Co', avgSettlementDiscount:25, casesHandled:5, typicalFirstOffer:'40% of claimed', patterns:'Very aggressive opening position, settles reasonably'},
-];
-
-// Discovery requests database
-let DISCOVERY_REQUESTS = [
-  {id:'DR-001', caseId:'CC-001', type:'Interrogatories', sent:'2025-01-15', dueDate:'2025-02-14', responsesReceived:true, docsProduced:87, status:'Complete'},
-  {id:'DR-002', caseId:'CC-002', type:'Document Request', sent:'2025-01-20', dueDate:'2025-02-19', responsesReceived:false, docsProduced:0, status:'Pending'},
-  {id:'DR-003', caseId:'CC-005', type:'Depositions', sent:'2025-02-01', dueDate:'2025-03-03', responsesReceived:false, docsProduced:0, status:'Pending - 2 days'},
-  {id:'DR-004', caseId:'CC-014', type:'Interrogatories', sent:'2024-12-01', dueDate:'2025-01-30', responsesReceived:false, docsProduced:0, status:'OVERDUE - 10 days!!!'},
-];
-
-// Case outcomes for win prediction
-let CASE_OUTCOMES = [
-  {caseId:'CC-C1', type:'Medical Malpractice', judge:'Sarah Mitchell', venue:'Northern District', verdict:'Won', amount:1400000, claimedAmount:2500000, duration:24},
-  {caseId:'CC-C2', type:'Medical Malpractice', judge:'Sarah Mitchell', venue:'Northern District', verdict:'Settled', amount:900000, claimedAmount:2500000, duration:18},
-  {caseId:'CC-C3', type:'Premises Liability', judge:'James Rodriguez', venue:'Central District', verdict:'Lost', amount:0, claimedAmount:800000, duration:30},
-  {caseId:'CC-C4', type:'Insurance Defense', judge:'Patricia Liu', venue:'Southern District', verdict:'Won', amount:550000, claimedAmount:1200000, duration:20},
-  {caseId:'CC-C5', type:'Medical Malpractice', judge:'Patricia Liu', venue:'Southern District', verdict:'Won', amount:1800000, claimedAmount:2800000, duration:26},
-  {caseId:'CC-C6', type:'Employment Claim', judge:'James Rodriguez', venue:'Central District', verdict:'Settled', amount:350000, claimedAmount:600000, duration:15},
-  {caseId:'CC-C7', type:'Medical Malpractice', judge:'Sarah Mitchell', venue:'Northern District', verdict:'Settled', amount:1100000, claimedAmount:2200000, duration:22},
-  {caseId:'CC-C8', type:'Premises Liability', judge:'Patricia Liu', venue:'Southern District', verdict:'Won', amount:620000, claimedAmount:950000, duration:19},
-];
-
-// Premium password (demo: "premium2025")
-const PREMIUM_PASSWORD = 'premium2025';
-let S_PREMIUM_AUTHENTICATED = false;
 
 /* ── SCORECARD ENGINE (LES — Litigation Effectiveness Score) ──
    Everything below computes real numbers from actual CASES data
@@ -1494,6 +1446,35 @@ async function loadMyFeatures() {
   }
 }
 
+/* Saves a matter that was just created in the browser (Manual Entry or
+   Sentinel Intake) to the real backend. Before this existed, those two
+   flows only pushed into the local CASES array, so new matters — and any
+   attorney assigned to them — disappeared on the next page load. The
+   server assigns the real id and matter number; we copy them back onto
+   the local object so later edits (PATCH) hit the right row. */
+function persistNewCase(c) {
+  if (!API_BASE || !authToken) return;
+  const { id, matterNo, client, type, status, litigationStage, attorney, value, filed, deadline, ...rest } = c;
+  const { insurance, ...data } = rest;
+  c._persisting = apiFetch('/api/cases', {
+    method: 'POST',
+    body: JSON.stringify({
+      client, type, status, litigationStage, attorney: (attorney && attorney !== 'Unassigned') ? attorney : null,
+      value, filed: filed || null, deadline: deadline || null,
+      carrier: insurance?.carrier, claimNo: insurance?.claimNo, reserveAmount: insurance?.reserveAmount,
+      data
+    })
+  }).then(saved => {
+    c.id = saved.id;
+    c.matterNo = saved.matterNo;
+    if (S.caseId && S.caseId !== saved.id && S.caseId === id) S.caseId = saved.id;
+    render();
+  }).catch(e => {
+    alert('This matter was added on screen but could NOT be saved to the server: ' + e.message + '\n\nIt will be lost if you refresh. Try again or use the CSV import.');
+  }).finally(() => { delete c._persisting; });
+  return c._persisting;
+}
+
 /* Best-effort background sync — the UI updates instantly from the
    local CASES array (unchanged from the prototype's behavior), and
    this fires the same change at the server without blocking or
@@ -1502,6 +1483,9 @@ async function loadMyFeatures() {
    story here (see README) before this is fully trustworthy. */
 function syncCaseToApi(c) {
   if (!API_BASE || !authToken) return;
+  // A brand-new matter is still being saved (POST) and doesn't have its
+  // real server id yet — wait for that to finish, then send this update.
+  if (c._persisting) { c._persisting.then(() => syncCaseToApi(c)); return; }
   const { id, matterNo, client, type, status, litigationStage, attorney, value, ...rest } = c;
   const { insurance, ...data } = rest;
   apiFetch('/api/cases/' + id, {
@@ -2360,1006 +2344,6 @@ function carrierLogin() {
   st({role:'carrier', carrierId:carrierId});
 }
 
-/* ════════════════════════════════════════════════════════════════
-   PREMIUM FEATURES - Settlement Intelligence
-   ════════════════════════════════════════════════════════════════ */
-
-function premiumLoginV() {
-  let h = '<div style="padding:40px;max-width:600px;margin:100px auto;text-align:center;">';
-  h += '<div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);padding:60px 40px;border-radius:12px;color:#fff;margin-bottom:30px;">';
-  h += '<div style="font-size:48px;margin-bottom:20px;">🔒</div>';
-  h += '<div class="sh" style="color:#fff;margin-bottom:10px;">Settlement Intelligence Engine</div>';
-  h += '<div style="font-size:14px;opacity:0.9;">Enterprise-grade settlement prediction & opposing counsel intelligence</div>';
-  h += '</div>';
-  
-  h += '<div class="card" style="padding:40px;">';
-  h += '<div style="margin-bottom:20px;text-align:left;">';
-  h += '<label style="display:block;font-weight:600;margin-bottom:10px;color:var(--ink);">Enter Password</label>';
-  h += '<input type="password" id="premiumPwd" placeholder="Enter premium password" style="width:100%;padding:12px;border:1px solid var(--line);border-radius:6px;font-size:14px;font-family:monospace;" onkeypress="if(event.key===\'Enter\') verifyPremiumPassword()">';
-  h += '</div>';
-  
-  h += '<button onclick="verifyPremiumPassword()" class="btn btn-pri" style="width:100%;margin-bottom:10px;">Unlock Premium Features</button>';
-  h += '<button onclick="st({role:\'litigation\'})" class="btn btn-out" style="width:100%;">Back to Dashboard</button>';
-  h += '</div>';
-  
-  h += '<div style="margin-top:30px;padding:20px;background:var(--surf2);border-radius:8px;text-align:left;">';
-  h += '<div style="font-weight:600;margin-bottom:10px;">What\'s Included:</div>';
-  h += '<ul style="margin:0;padding-left:20px;font-size:13px;color:var(--muted);">';
-  h += '<li>Settlement offer tracking & analysis</li>';
-  h += '<li>AI-powered settlement recommendations</li>';
-  h += '<li>Opposing counsel intelligence database</li>';
-  h += '<li>Judge & venue win rate tracking</li>';
-  h += '<li>Historical settlement comparisons</li>';
-  h += '</ul>';
-  h += '</div>';
-  h += '</div>';
-  
-  return h;
-}
-
-function verifyPremiumPassword() {
-  const pwd = document.getElementById('premiumPwd').value;
-  if (pwd === PREMIUM_PASSWORD) {
-    S_PREMIUM_AUTHENTICATED = true;
-    st({role: 'premium'});
-  } else {
-    alert('❌ Incorrect password. Try again.');
-    document.getElementById('premiumPwd').value = '';
-    document.getElementById('premiumPwd').focus();
-  }
-}
-
-/* Calls the real, already-working Vercel functions in /api — these
-   are the actual implementations (found in the repo's api/ folder),
-   not the Render duplicates built earlier by mistake. Same-origin
-   fetch(), since Vercel serves these directly alongside the
-   frontend — no separate backend involved for any of these five. */
-const SENTINEL_ENDPOINTS = {
-  match: '/api/recommend-attorney',
-  settle: '/api/settlement-recommendation',
-  watch: '/api/risk-analysis',
-  strategy: '/api/strategy-prediction',
-  horizon: '/api/timeline-prediction',
-};
-function buildCaseDetailsForAI(c){
-  return {
-    client: c.client, type: c.type, value: c.value || c.exposure?.likelyExposure || 0,
-    priority: c.priority || 'Medium', reserve: c.insurance?.reserveAmount || 0,
-    judge: c.court?.judge || 'Unknown', opposingCounsel: c.opposing?.attorney || c.opposing?.firm || 'Unknown',
-    summary: c.exposure?.notes || (c.matterNo ? c.matterNo + ' — ' + c.type + ' matter for ' + c.client : c.type),
-    currentDemand: c.exposure?.demandAmount || 0,
-    stage: c.litigationStage || c.status || 'Pleadings',
-    jurisdiction: c.court?.jurisdiction || 'Unknown',
-  };
-}
-// Each Vercel function returns a different structured shape — this
-// turns each one into the same kind of readable text block the
-// Sentinel cards already display, instead of raw JSON.
-function formatSentinelResult(key, data){
-  if (key === 'match') {
-    return ['gold','silver','bronze'].map(tier => data[tier] ? `${tier.toUpperCase()}: ${data[tier].attorney} — ${data[tier].reasoning}` : '').filter(Boolean).join('\n\n');
-  }
-  if (key === 'settle') {
-    return `Counter-offer: $${Number(data.counterOffer||0).toLocaleString()}\nExpected range: $${Number(data.expectedRange?.low||0).toLocaleString()}–$${Number(data.expectedRange?.high||0).toLocaleString()}\nWalk-away point: $${Number(data.walkAwayPoint||0).toLocaleString()}\n\n${data.reasoning || ''}\n\nStrategy: ${data.strategy || ''}\nTiming: ${data.timeline || ''}`;
-  }
-  if (key === 'watch') {
-    const risks = (data.risks||[]).map(r => `• ${r.risk} (${r.probability}, ${r.impact} impact)`).join('\n');
-    const mitigations = (data.mitigations||[]).map(m => `• ${m.action} — ${m.effectiveness}`).join('\n');
-    return `Risk Score: ${data.riskScore}/10\n\nRisks:\n${risks}\n\nMitigations:\n${mitigations}\n\nRecommendation: ${data.recommendation || ''}`;
-  }
-  if (key === 'strategy') {
-    const preds = (data.predictions||[]).map(p => `• ${p.tactic} (${p.probability} likely, ${p.difficulty} to counter)`).join('\n');
-    const counters = (data.counterStrategies||[]).map(c => `• ${c.strategy} — ${c.effectiveness}`).join('\n');
-    return `Opposing Strategy: ${data.opposingStrategy || ''}\n\nLikely Tactics:\n${preds}\n\nCounter-Strategies:\n${counters}\n\nSettlement Probability: ${data.settlementProbability || ''}\nYour Success Probability: ${data.successProbability || ''}`;
-  }
-  if (key === 'horizon') {
-    return `Most Likely Close: ${data.mostLikely || ''}\nTimeline: 12mo ${data.timelineProbabilities?.month12||'—'} / 18mo ${data.timelineProbabilities?.month18||'—'} / 24mo ${data.timelineProbabilities?.month24||'—'}\n\nMost Likely Cost: $${Number(data.mostLikelyCost||0).toLocaleString()}\nRange: $${Number(data.costEstimates?.conservative||0).toLocaleString()}–$${Number(data.costEstimates?.highEnd||0).toLocaleString()}\n\n${data.reasoning || ''}`;
-  }
-  return JSON.stringify(data);
-}
-async function runSentinel(key){
-  if (!S.sentinelSelectedCaseId) { alert('Select a matter first.'); return; }
-  const c = CASES.find(x => x.id === S.sentinelSelectedCaseId);
-  if (!c) { alert('Could not find that matter.'); return; }
-
-  S.sentinelLoading = { ...(S.sentinelLoading||{}), [key]: true };
-  render();
-  try {
-    const caseDetails = buildCaseDetailsForAI(c);
-    const body = key === 'match' ? { caseDetails, attorneys: ATTY }
-      : key === 'strategy' ? { caseDetails, opposingCounsel: caseDetails.opposingCounsel }
-      : { caseDetails };
-    const response = await fetch(SENTINEL_ENDPOINTS[key], {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-    });
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.error || 'Request failed: ' + response.status);
-    }
-    const data = await response.json();
-    S.sentinelResults = { ...(S.sentinelResults||{}), [key]: formatSentinelResult(key, data) };
-  } catch (e) {
-    S.sentinelResults = { ...(S.sentinelResults||{}), [key]: 'Error: ' + e.message };
-  }
-  S.sentinelLoading = { ...(S.sentinelLoading||{}), [key]: false };
-  render();
-}
-
-function settlementIntelligenceV() {
-  let h = '<div style="padding:20px;max-width:1400px;margin:0 auto;">';
-  h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:30px;border-bottom:1px solid var(--line);padding-bottom:20px;">';
-  h += '<div>';
-  h += '<div class="sh">🎯 Settlement Intelligence Engine</div>';
-  h += '<div style="font-size:12px;color:var(--muted);margin-top:5px;">AI-powered settlement analysis, opposing counsel intelligence, and judge tracking</div>';
-  h += '</div>';
-  h += '<div style="display:flex;gap:10px;">';
-  h += '<button onclick="st({showSettlementForm:!S.showSettlementForm})" class="btn btn-pri">+ Log Settlement Offer</button>';
-  h += '<button onclick="S_PREMIUM_AUTHENTICATED=false; st({role:\'litigation\'})" class="btn btn-out">🔓 Logout</button>';
-  h += '</div>';
-  h += '</div>';
-  
-  // Sentinel AI Suite — the 5 proprietary AI capabilities, branded
-  // as one cohesive suite. Lives here specifically because this
-  // whole tab is already password-gated (premiumLoginV) — this
-  // panel is never reachable without that login, which is what
-  // "hidden" actually means for something proprietary, not just a
-  // collapsed section on a page anyone can load.
-  h += '<div class="card" style="background:linear-gradient(135deg,#0F172A 0%,#1E293B 100%);color:#fff;padding:26px 28px;margin-bottom:24px;border:none;">';
-  h += '<div style="display:flex;align-items:center;gap:9px;margin-bottom:4px;">';
-  h += '<span style="font-size:20px;">🛡️</span><span style="font-weight:700;font-size:16px;letter-spacing:-.2px;">Sentinel AI Suite</span>';
-  h += '<span style="font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,.12);padding:3px 9px;border-radius:20px;margin-left:4px;">Proprietary</span>';
-  h += '</div>';
-  h += '<div style="font-size:12px;color:#94A3B8;margin-bottom:16px;">Five AI models, one system, watching every matter in your portfolio. (Sentinel Match — attorney assignment — lives on the Litigation Dashboard, where it actually assigns the case, not just recommends one.)</div>';
-
-  // Shared case selector — the 4 per-matter Sentinels all run
-  // against whichever case is picked here. Sentinel Watch is
-  // portfolio-wide and doesn't need one.
-  h += '<div style="margin-bottom:18px;">';
-  h += '<select onchange="st({sentinelSelectedCaseId:this.value})" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#fff;font-size:12.5px;">';
-  h += '<option value="" style="color:#000;">Select a matter to analyze…</option>';
-  CASES.forEach(c => { h += '<option value="'+c.id+'" style="color:#000;" '+(S.sentinelSelectedCaseId===c.id?'selected':'')+'>'+esc((c.matterNo||c.id)+' — '+c.client)+'</option>'; });
-  h += '</select></div>';
-
-  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;align-items:start;">';
-  const sentinelFeatures = [
-    ['💰','Sentinel Settle','Recommends the settlement number the data actually supports, not a gut-feel figure.', 'settle', true],
-    ['🚩','Sentinel Watch','Flags a problem matter before it becomes an expensive one — reserve gaps, stalled cases, missed deadlines.', 'watch', false],
-    ['🧭','Sentinel Strategy','Reads opposing counsel\'s pattern and models their likely next move before they make it.', 'strategy', true],
-    ['⏱️','Sentinel Horizon','Forecasts when a matter actually closes and what it costs to get there — not a guess, a model.', 'horizon', true],
-  ];
-  sentinelFeatures.forEach(([icon,name,desc,key,needsCase]) => {
-    const loading = S.sentinelLoading && S.sentinelLoading[key];
-    const result = S.sentinelResults && S.sentinelResults[key];
-    h += '<div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:16px;display:flex;flex-direction:column;">';
-    h += '<div style="font-size:22px;margin-bottom:8px;">'+icon+'</div>';
-    h += '<div style="font-weight:700;font-size:13.5px;margin-bottom:6px;">'+name+'</div>';
-    h += '<div style="font-size:11.5px;color:#CBD5E1;line-height:1.5;margin-bottom:12px;flex-grow:1;">'+desc+'</div>';
-    h += '<button onclick="runSentinel(\''+key+'\')" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;padding:8px 14px;border-radius:7px;font-weight:700;font-size:11.5px;cursor:pointer;" '+(loading?'disabled':'')+'>'+(loading?'Analyzing…':'▶ Run '+name)+'</button>';
-    if (result) {
-      h += '<div style="margin-top:12px;padding:11px;background:rgba(0,0,0,.25);border-radius:7px;font-size:11.5px;line-height:1.6;color:#E2E8F0;white-space:pre-wrap;">'+esc(result)+'</div>';
-    }
-    h += '</div>';
-  });
-  h += '</div></div>';
-  
-  if (S.showSettlementForm) {
-    h += settlementOfferFormV();
-  }
-  
-  // Tabs for different features
-  h += '<div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:1px solid var(--line);padding-bottom:0;overflow-x:auto;">';
-  const premiumTabs = [
-    {id:'offers', label:'📋 Settlement Offers'},
-    {id:'outcome', label:'🎯 Win Predictor'},
-    {id:'discovery', label:'📊 Discovery'},
-    {id:'attorneys', label:'👥 Attorney Analytics'},
-    {id:'costbenefit', label:'💰 Cost-Benefit'},
-    {id:'demand', label:'🔮 Demand Prediction'}
-  ];
-  premiumTabs.forEach(tab => {
-    const active = (S.premiumTab || 'offers') === tab.id;
-    h += '<button onclick="st({premiumTab:\''+tab.id+'\'})" class="btn" style="border-bottom:3px solid '+(active?'var(--pri)':'transparent')+';background:none;padding:12px 14px;white-space:nowrap;color:'+(active?'var(--pri)':'var(--muted)')+';">' + tab.label + '</button>';
-  });
-  h += '</div>';
-  
-  // Tab content
-  const activeTab = S.premiumTab || 'offers';
-  if (activeTab === 'offers') h += settlementOffersTabV();
-  else if (activeTab === 'outcome') h += caseOutcomePredictorV();
-  else if (activeTab === 'discovery') h += discoveryManagementV();
-  else if (activeTab === 'attorneys') h += attorneyPerformanceV();
-  else if (activeTab === 'costbenefit') h += costBenefitAnalyzerV();
-  else if (activeTab === 'demand') h += plaintiffDemandPredictorV();
-  
-  h += '</div>';
-  return h;
-}
-
-function settlementOfferFormV() {
-  let h = '<div class="card" style="margin-bottom:20px;padding:20px;background:var(--surf2);border-left:4px solid var(--pri);">';
-  h += '<div style="font-weight:600;margin-bottom:15px;">Log New Settlement Offer</div>';
-  
-  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:15px;">';
-  h += '<div>';
-  h += '<label style="display:block;font-size:12px;color:var(--muted);margin-bottom:5px;">Case</label>';
-  h += '<select id="settleCase" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:4px;"><option>Select a case...</option>';
-  CASES.forEach(c => {
-    h += '<option value="'+c.id+'">'+c.matterNo+' - '+c.client+'</option>';
-  });
-  h += '</select>';
-  h += '</div>';
-  
-  h += '<div>';
-  h += '<label style="display:block;font-size:12px;color:var(--muted);margin-bottom:5px;">Settlement Amount</label>';
-  h += '<input type="number" id="settleAmount" placeholder="$0" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:4px;">';
-  h += '</div>';
-  
-  h += '<div>';
-  h += '<label style="display:block;font-size:12px;color:var(--muted);margin-bottom:5px;">Offer From</label>';
-  h += '<select id="settleOfferor" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:4px;"><option>Plaintiff Counsel</option><option>Defense</option><option>Mediator</option></select>';
-  h += '</div>';
-  
-  h += '<div>';
-  h += '<label style="display:block;font-size:12px;color:var(--muted);margin-bottom:5px;">Opposing Counsel</label>';
-  h += '<select id="settleOpCounsel" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:4px;"><option>Select...</option>';
-  OPPOSING_COUNSEL.forEach(oc => {
-    h += '<option value="'+oc.id+'">'+oc.name+'</option>';
-  });
-  h += '</select>';
-  h += '</div>';
-  h += '</div>';
-  
-  h += '<div style="display:flex;gap:10px;">';
-  h += '<button onclick="logSettlementOffer()" class="btn btn-pri" style="flex:1;">Log Offer</button>';
-  h += '<button onclick="st({showSettlementForm:false})" class="btn btn-out" style="flex:1;">Cancel</button>';
-  h += '</div>';
-  h += '</div>';
-  
-  return h;
-}
-
-function logSettlementOffer() {
-  const caseId = document.getElementById('settleCase').value;
-  const amount = parseFloat(document.getElementById('settleAmount').value);
-  const offeror = document.getElementById('settleOfferor').value;
-  const opCounsel = document.getElementById('settleOpCounsel').value;
-  
-  if (!caseId || !amount) {
-    alert('Please fill in required fields');
-    return;
-  }
-  
-  const offer = {
-    id: 'SO-' + (SETTLEMENT_OFFERS.length + 1).toString().padStart(3, '0'),
-    caseId: caseId,
-    date: new Date().toISOString().split('T')[0],
-    offeror: offeror,
-    amount: amount,
-    status: 'Pending',
-    opposingCounsel: opCounsel
-  };
-  
-  SETTLEMENT_OFFERS.push(offer);
-  
-  alert('✓ Settlement offer logged for ' + caseId);
-  st({showSettlementForm: false, premiumTab: 'offers'});
-}
-
-function settlementOffersTabV() {
-  let h = '<div>';
-  
-  // Show opposing counsel and judge intel within settlement context
-  const showIntel = (S.settlementShowIntel || 'counsel');
-  
-  h += '<div style="display:flex;gap:10px;margin-bottom:20px;">';
-  h += '<button onclick="st({settlementShowIntel:\'counsel\'})" class="btn" style="background:'+(showIntel==='counsel'?'var(--pri)':'var(--line)')+';color:'+(showIntel==='counsel'?'#fff':'var(--muted)')+';border:none;">👥 Opposing Counsel</button>';
-  h += '<button onclick="st({settlementShowIntel:\'judges\'})" class="btn" style="background:'+(showIntel==='judges'?'var(--pri)':'var(--line)')+';color:'+(showIntel==='judges'?'#fff':'var(--muted)')+';border:none;">⚖️ Judge Intelligence</button>';
-  h += '</div>';
-  
-  if (showIntel === 'counsel') {
-    h += opposingCounselTabV();
-  } else if (showIntel === 'judges') {
-    h += judgeIntelligenceTabV();
-  } else {
-    // Show settlement offers
-    if (SETTLEMENT_OFFERS.length === 0) {
-      h += '<div class="card" style="padding:40px;text-align:center;color:var(--muted);">No settlement offers logged yet. Click "+ Log Settlement Offer" to get started.</div>';
-      h += '</div>';
-      return h;
-    }
-    
-    h += '<div style="display:grid;gap:15px;">';
-    
-    SETTLEMENT_OFFERS.forEach(offer => {
-      const caseObj = CASES.find(c => c.id === offer.caseId);
-      const predictedRange = calculateSettlementRange(caseObj);
-      const recommendation = getSettlementRecommendation(offer.amount, predictedRange);
-      
-      h += '<div class="card" style="padding:20px;border-left:4px solid '+recommendation.color+';">';
-      h += '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:15px;">';
-      h += '<div>';
-      h += '<div style="font-weight:700;color:var(--pri2);">'+caseObj.matterNo+' - '+caseObj.client+'</div>';
-      h += '<div style="font-size:12px;color:var(--muted);margin-top:4px;">'+offer.date+' from '+offer.offeror+'</div>';
-      h += '</div>';
-      h += '<span style="background:'+recommendation.color+'22;color:'+recommendation.color+';padding:6px 12px;border-radius:4px;font-weight:600;font-size:13px;">'+recommendation.label+'</span>';
-      h += '</div>';
-      
-      h += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:15px;margin-bottom:15px;padding:15px;background:var(--surf2);border-radius:6px;">';
-      h += '<div>';
-      h += '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Received Offer</div>';
-      h += '<div style="font-size:18px;font-weight:700;color:'+recommendation.color+';">'+fV(offer.amount)+'</div>';
-      h += '</div>';
-      h += '<div>';
-      h += '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Predicted Range</div>';
-      h += '<div style="font-size:14px;font-weight:600;">'+fV(predictedRange.low)+' - '+fV(predictedRange.high)+'</div>';
-      h += '</div>';
-      h += '<div>';
-      h += '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Recommendation</div>';
-      h += '<div style="font-size:14px;font-weight:700;color:'+recommendation.color+';">'+recommendation.action+'</div>';
-      h += '</div>';
-      h += '</div>';
-      
-      h += '<div style="font-size:13px;color:var(--ink);padding:12px;background:#f0f7ff;border-radius:6px;margin-bottom:15px;">';
-      h += '<strong>💡 Analysis:</strong> '+recommendation.rationale;
-      h += '</div>';
-      
-      h += '<div style="display:flex;gap:8px;">';
-      h += '<button onclick="updateOfferStatus(\''+offer.id+'\',\'Accepted\')" class="btn btn-pri" style="flex:1;font-size:12px;">✓ Accept</button>';
-      h += '<button onclick="updateOfferStatus(\''+offer.id+'\',\'Rejected\')" class="btn btn-out" style="flex:1;font-size:12px;">✗ Reject</button>';
-      h += '<button onclick="st({showCounterForm:\''+offer.id+'\'})" class="btn" style="flex:1;font-size:12px;background:var(--gold);color:#fff;">↔ Counter</button>';
-      h += '</div>';
-      h += '</div>';
-    });
-    
-    h += '</div>';
-  }
-  
-  h += '</div>';
-  return h;
-}
-
-function calculateSettlementRange(caseObj) {
-  if (!caseObj) return {low: 500000, high: 1500000};
-  
-  // Base calculation from case value
-  const exposure = caseObj.exposure.likelyExposure || caseObj.value;
-  const settled = SETTLEMENT_OFFERS.filter(o => o.caseId === caseObj.id && o.status === 'Accepted').reduce((sum, o) => sum + o.amount, 0);
-  
-  // Find similar cases
-  const similar = CASES.filter(c => c.type === caseObj.type && c.status === 'Closed').sort((a, b) => b.value - a.value);
-  const avgSettlePercent = similar.length > 0 ? similar.reduce((sum, c) => sum + (c.value * 0.72), 0) / similar.length / exposure : 0.72;
-  
-  const low = Math.floor(exposure * (avgSettlePercent - 0.15));
-  const high = Math.floor(exposure * (avgSettlePercent + 0.15));
-  
-  return {low, high};
-}
-
-function getSettlementRecommendation(offerAmount, predictedRange) {
-  const percent = offerAmount / ((predictedRange.high + predictedRange.low) / 2);
-  
-  if (percent >= 0.95) {
-    return {
-      color: '#059669',
-      label: '✓ ACCEPT',
-      action: 'Accept Offer',
-      rationale: 'Offer is ' + Math.round(percent * 100) + '% of predicted range. This is a solid settlement. Recommend accepting.'
-    };
-  } else if (percent >= 0.85) {
-    return {
-      color: '#D97706',
-      label: '⚠️ CONSIDER',
-      action: 'Consider Offer',
-      rationale: 'Offer is ' + Math.round(percent * 100) + '% of predicted range. You could counter higher, but time may be a factor.'
-    };
-  } else {
-    return {
-      color: '#DC2626',
-      label: '❌ COUNTER',
-      action: 'Counter at $' + Math.round((predictedRange.high + predictedRange.low) / 2 / 1000) + 'K',
-      rationale: 'Offer is only ' + Math.round(percent * 100) + '% of predicted range. Counter at $' + Math.round(((predictedRange.high + predictedRange.low) / 2) / 100000) * 100 + '000.'
-    };
-  }
-}
-
-function updateOfferStatus(offerId, status) {
-  const offer = SETTLEMENT_OFFERS.find(o => o.id === offerId);
-  if (offer) {
-    offer.status = status;
-    if (status === 'Accepted') offer.accepted = new Date().toISOString().split('T')[0];
-    if (status === 'Rejected') offer.rejected = new Date().toISOString().split('T')[0];
-    st({premiumTab: 'offers'});
-    alert('✓ Offer marked as ' + status);
-  }
-}
-
-function opposingCounselTabV() {
-  let h = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">';
-  
-  OPPOSING_COUNSEL.forEach(counsel => {
-    const casesWithCounsel = SETTLEMENT_OFFERS.filter(o => o.opposingCounsel === counsel.id).length;
-    h += '<div class="card" style="padding:20px;">';
-    h += '<div style="font-weight:700;color:var(--pri2);margin-bottom:10px;">'+counsel.name+'</div>';
-    h += '<div style="font-size:12px;color:var(--muted);margin-bottom:15px;">'+casesWithCounsel+' cases in database</div>';
-    
-    h += '<div style="padding:12px;background:var(--surf2);border-radius:6px;margin-bottom:12px;">';
-    h += '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Avg Settlement Discount</div>';
-    h += '<div style="font-size:18px;font-weight:700;">'+counsel.avgSettlementDiscount+'%</div>';
-    h += '</div>';
-    
-    h += '<div style="font-size:12px;margin-bottom:10px;">';
-    h += '<strong>Typical First Offer:</strong> '+counsel.typicalFirstOffer;
-    h += '</div>';
-    
-    h += '<div style="font-size:12px;color:var(--muted);line-height:1.6;">';
-    h += '<strong>Patterns:</strong> '+counsel.patterns;
-    h += '</div>';
-    h += '</div>';
-  });
-  
-  h += '</div>';
-  return h;
-}
-
-function judgeIntelligenceTabV() {
-  let h = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">';
-  
-  JUDGES.forEach(judge => {
-    const winRate = Math.round((judge.defenseWins / (judge.defenseWins + judge.plaintiffWins)) * 100);
-    h += '<div class="card" style="padding:20px;">';
-    h += '<div style="font-weight:700;color:var(--pri2);margin-bottom:5px;">'+judge.name+'</div>';
-    h += '<div style="font-size:12px;color:var(--muted);margin-bottom:15px;">'+judge.venue+'</div>';
-    
-    h += '<div style="padding:12px;background:var(--surf2);border-radius:6px;margin-bottom:12px;">';
-    h += '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Defense Win Rate</div>';
-    h += '<div style="font-size:20px;font-weight:700;color:'+( winRate > 50 ? '#059669' : '#DC2626')+';">'+winRate+'%</div>';
-    h += '</div>';
-    
-    h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">';
-    h += '<div style="padding:10px;background:#e0f2fe;border-radius:4px;text-align:center;">';
-    h += '<div style="font-size:11px;color:var(--muted);">Defense Wins</div>';
-    h += '<div style="font-size:16px;font-weight:700;color:#0369a1;">'+judge.defenseWins+'</div>';
-    h += '</div>';
-    h += '<div style="padding:10px;background:#fce7f3;border-radius:4px;text-align:center;">';
-    h += '<div style="font-size:11px;color:var(--muted);">Plaintiff Wins</div>';
-    h += '<div style="font-size:16px;font-weight:700;color:#be185d;">'+judge.plaintiffWins+'</div>';
-    h += '</div>';
-    h += '</div>';
-    
-    h += '<div style="padding:10px;background:var(--gold)+"22;border-radius:4px;">';
-    h += '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Avg Settlement %</div>';
-    h += '<div style="font-size:14px;font-weight:700;color:var(--gold);">'+judge.avgSettlementPercent+'% of case value</div>';
-    h += '</div>';
-    h += '</div>';
-  });
-  
-  h += '</div>';
-  return h;
-}
-
-function caseAnalysisTabV() {
-  let h = '<div>';
-  h += '<div style="margin-bottom:20px;">';
-  h += '<label style="display:block;font-weight:600;margin-bottom:10px;">Select Case for Analysis</label>';
-  h += '<select id="analyzeCase" onchange="updateCaseAnalysis()" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;">';
-  h += '<option>Select a case...</option>';
-  CASES.forEach(c => {
-    h += '<option value="'+c.id+'">'+c.matterNo+' - '+c.client+'</option>';
-  });
-  h += '</select>';
-  h += '</div>';
-  
-  if (S.selectedAnalysisCase) {
-    const caseObj = CASES.find(c => c.id === S.selectedAnalysisCase);
-    const range = calculateSettlementRange(caseObj);
-    const offersForCase = SETTLEMENT_OFFERS.filter(o => o.caseId === caseObj.id);
-    
-    h += '<div class="card" style="padding:20px;margin-bottom:20px;">';
-    h += '<div style="font-weight:700;color:var(--pri2);margin-bottom:15px;">'+caseObj.matterNo+' - '+caseObj.client+'</div>';
-    
-    h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:20px;">';
-    h += '<div style="padding:15px;background:var(--surf2);border-radius:6px;">';
-    h += '<div style="font-size:12px;color:var(--muted);margin-bottom:5px;">Case Value</div>';
-    h += '<div style="font-size:18px;font-weight:700;">'+fV(caseObj.value)+'</div>';
-    h += '</div>';
-    h += '<div style="padding:15px;background:var(--surf2);border-radius:6px;">';
-    h += '<div style="font-size:12px;color:var(--muted);margin-bottom:5px;">Predicted Settlement</div>';
-    h += '<div style="font-size:18px;font-weight:700;">'+fV((range.low + range.high) / 2)+'</div>';
-    h += '</div>';
-    h += '</div>';
-    
-    h += '<div style="padding:15px;background:#f0f7ff;border-radius:6px;margin-bottom:20px;">';
-    h += '<strong>Settlement Prediction:</strong> Based on '+CASES.filter(c => c.type === caseObj.type && c.status === 'Closed').length+' similar cases, this matter should settle in the $'+Math.round(range.low / 1000)+'K - $'+Math.round(range.high / 1000)+'K range.';
-    h += '</div>';
-    
-    if (offersForCase.length > 0) {
-      h += '<div style="font-weight:600;margin-bottom:10px;">Settlement Offer History</div>';
-      offersForCase.forEach(offer => {
-        h += '<div style="padding:12px;background:var(--surf3);border-radius:4px;margin-bottom:8px;">';
-        h += '<div style="display:flex;justify-content:space-between;">';
-        h += '<div><strong>'+offer.date+'</strong> from '+offer.offeror+'</div>';
-        h += '<div style="font-weight:700;color:var(--gold);">'+fV(offer.amount)+'</div>';
-        h += '</div>';
-        h += '<div style="font-size:12px;color:var(--muted);margin-top:4px;">Status: '+offer.status+'</div>';
-        h += '</div>';
-      });
-    }
-    h += '</div>';
-  }
-  
-  h += '</div>';
-  return h;
-}
-
-function updateCaseAnalysis() {
-  const caseId = document.getElementById('analyzeCase').value;
-  st({selectedAnalysisCase: caseId || null, premiumTab: 'analysis'});
-}
-
-function caseOutcomePredictorV() {
-  let h = '<div>';
-  h += '<div style="margin-bottom:20px;">';
-  h += '<label style="display:block;font-weight:600;margin-bottom:10px;">Select Case to Analyze</label>';
-  h += '<select id="predictCase" onchange="updateOutcomePrediction()" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;">';
-  h += '<option>Select a case...</option>';
-  CASES.forEach(c => {
-    h += '<option value="'+c.id+'">'+c.matterNo+' - '+c.client+' ('+c.type+')</option>';
-  });
-  h += '</select>';
-  h += '</div>';
-  
-  if (S.selectedPredictCase) {
-    const caseObj = CASES.find(c => c.id === S.selectedPredictCase);
-    const prediction = predictCaseOutcome(caseObj);
-    
-    h += '<div class="card" style="padding:20px;margin-bottom:20px;">';
-    h += '<div style="font-weight:700;color:var(--pri2);margin-bottom:20px;">'+caseObj.matterNo+' - '+caseObj.client+'</div>';
-    
-    // Win probability
-    h += '<div style="padding:20px;background:var(--surf2);border-radius:8px;margin-bottom:20px;">';
-    h += '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">WIN PROBABILITY</div>';
-    h += '<div style="display:flex;align-items:center;gap:15px;">';
-    h += '<div style="font-size:36px;font-weight:700;color:'+prediction.winColor+';">'+prediction.winPercent+'%</div>';
-    h += '<div style="flex:1;height:40px;background:var(--line);border-radius:20px;overflow:hidden;position:relative;">';
-    h += '<div style="position:absolute;left:0;top:0;height:100%;width:'+prediction.winPercent+'%;background:'+prediction.winColor+';border-radius:20px;"></div>';
-    h += '</div>';
-    h += '</div>';
-    h += '<div style="font-size:12px;color:var(--muted);margin-top:10px;">Based on '+prediction.similarCases+' similar cases in your portfolio</div>';
-    h += '</div>';
-    
-    // Strategy comparison
-    h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:20px;">';
-    
-    h += '<div style="padding:15px;background:#f0f7ff;border-radius:8px;border-left:4px solid #0369a1;">';
-    h += '<div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:700;text-transform:uppercase;">SETTLEMENT</div>';
-    h += '<div style="font-size:24px;font-weight:700;color:#0369a1;">'+fV(prediction.settlementValue)+'</div>';
-    h += '<div style="font-size:12px;color:var(--muted);margin-top:8px;">Likely settlement at '+prediction.settlementPercent+'% of case value</div>';
-    h += '</div>';
-    
-    h += '<div style="padding:15px;background:#fef2f2;border-radius:8px;border-left:4px solid #dc2626;">';
-    h += '<div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:700;text-transform:uppercase;">TRIAL VERDICT</div>';
-    h += '<div style="font-size:24px;font-weight:700;color:#dc2626;">'+fV(prediction.trialValue)+'</div>';
-    h += '<div style="font-size:12px;color:var(--muted);margin-top:8px;">Expected award if you win</div>';
-    h += '</div>';
-    
-    h += '</div>';
-    
-    // Recommendation
-    h += '<div style="padding:15px;background:'+prediction.recColor+'22;border-left:4px solid '+prediction.recColor+';border-radius:6px;margin-bottom:20px;">';
-    h += '<div style="font-weight:700;color:'+prediction.recColor+';margin-bottom:8px;">⚡ RECOMMENDATION</div>';
-    h += '<div style="color:var(--ink);line-height:1.6;">'+prediction.recommendation+'</div>';
-    h += '</div>';
-    
-    // Case factors
-    h += '<div style="font-weight:600;margin-bottom:10px;">Case Analysis Factors</div>';
-    h += '<div style="display:grid;gap:10px;">';
-    prediction.factors.forEach(f => {
-      h += '<div style="padding:10px;background:var(--surf3);border-radius:4px;display:flex;justify-content:space-between;">';
-      h += '<span>'+f.label+'</span>';
-      h += '<span style="font-weight:600;color:'+f.color+';">'+f.value+'</span>';
-      h += '</div>';
-    });
-    h += '</div>';
-    
-    h += '</div>';
-  }
-  
-  h += '</div>';
-  return h;
-}
-
-function predictCaseOutcome(caseObj) {
-  const similar = CASE_OUTCOMES.filter(o => o.type === caseObj.type);
-  const judge = JUDGES.find(j => j.name === caseObj.judge || j.id === caseObj.judgeId);
-  
-  const winRate = similar.length > 0 ? (similar.filter(o => o.verdict === 'Won').length / similar.length * 100) : 55;
-  const winPercent = Math.round(winRate);
-  
-  const avgVerdictPercent = similar.filter(o => o.verdict === 'Won').reduce((sum, o) => sum + (o.amount / o.claimedAmount), 0) / Math.max(similar.filter(o => o.verdict === 'Won').length, 1);
-  const trialValue = Math.round(caseObj.value * avgVerdictPercent);
-  
-  const settlementPercent = 72; // Judge average
-  const settlementValue = Math.round(caseObj.value * (settlementPercent / 100));
-  
-  const recommendTrial = trialValue > settlementValue * 1.15;
-  
-  return {
-    winPercent,
-    winColor: winPercent > 60 ? '#059669' : (winPercent > 50 ? '#D97706' : '#DC2626'),
-    settlementValue,
-    settlementPercent,
-    trialValue,
-    recColor: recommendTrial ? '#059669' : '#D97706',
-    recommendation: recommendTrial 
-      ? '🎯 TRIAL RECOMMENDED. You have '+winPercent+'% win probability with expected award of '+fV(trialValue)+'. This exceeds likely settlement of '+fV(settlementValue)+'. Recommend proceeding to trial.'
-      : '⚠️ SETTLE. Settlement likely achieves '+fV(settlementValue)+' vs trial upside of '+fV(trialValue)+'. Risk/reward favors settlement at this time.',
-    similarCases: similar.length,
-    factors: [
-      {label: 'Similar Cases Won', value: similar.filter(o => o.verdict === 'Won').length + '/' + similar.length, color: '#059669'},
-      {label: 'Your Judge Win Rate', value: judge ? judge.defenseWins + '%' : '—', color: '#0369a1'},
-      {label: 'Case Value', value: fV(caseObj.value), color: '#D97706'},
-      {label: 'Exposure', value: fV(caseObj.exposure.likelyExposure || caseObj.value), color: '#DC2626'},
-    ]
-  };
-}
-
-function updateOutcomePrediction() {
-  const caseId = document.getElementById('predictCase').value;
-  st({selectedPredictCase: caseId || null, premiumTab: 'outcome'});
-}
-
-function discoveryManagementV() {
-  let h = '<div>';
-  
-  // Stats
-  const totalRequests = DISCOVERY_REQUESTS.length;
-  const pendingRequests = DISCOVERY_REQUESTS.filter(r => r.status.includes('Pending')).length;
-  const overdueRequests = DISCOVERY_REQUESTS.filter(r => r.status.includes('OVERDUE')).length;
-  
-  h += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:15px;margin-bottom:20px;">';
-  
-  h += '<div class="card" style="padding:15px;text-align:center;">';
-  h += '<div style="font-size:28px;font-weight:700;color:var(--pri2);">'+totalRequests+'</div>';
-  h += '<div style="font-size:12px;color:var(--muted);margin-top:5px;">Total Requests</div>';
-  h += '</div>';
-  
-  h += '<div class="card" style="padding:15px;text-align:center;">';
-  h += '<div style="font-size:28px;font-weight:700;color:var(--gold);">'+pendingRequests+'</div>';
-  h += '<div style="font-size:12px;color:var(--muted);margin-top:5px;">Pending Responses</div>';
-  h += '</div>';
-  
-  h += '<div class="card" style="padding:15px;text-align:center;background:#fef2f2;border:2px solid #dc2626;">';
-  h += '<div style="font-size:28px;font-weight:700;color:#dc2626;">'+overdueRequests+'</div>';
-  h += '<div style="font-size:12px;color:#dc2626;margin-top:5px;">⚠️ OVERDUE!</div>';
-  h += '</div>';
-  
-  h += '</div>';
-  
-  // Discovery requests table
-  h += '<div style="overflow-x:auto;">';
-  h += '<table style="width:100%;border-collapse:collapse;">';
-  h += '<thead><tr style="border-bottom:2px solid var(--line);">';
-  h += '<th style="padding:12px;text-align:left;font-size:12px;font-weight:700;color:var(--muted);">Case</th>';
-  h += '<th style="padding:12px;text-align:left;font-size:12px;font-weight:700;color:var(--muted);">Type</th>';
-  h += '<th style="padding:12px;text-align:left;font-size:12px;font-weight:700;color:var(--muted);">Sent</th>';
-  h += '<th style="padding:12px;text-align:left;font-size:12px;font-weight:700;color:var(--muted);">Due</th>';
-  h += '<th style="padding:12px;text-align:left;font-size:12px;font-weight:700;color:var(--muted);">Status</th>';
-  h += '<th style="padding:12px;text-align:left;font-size:12px;font-weight:700;color:var(--muted);">Docs</th>';
-  h += '<th style="padding:12px;text-align:left;font-size:12px;font-weight:700;color:var(--muted);">Action</th>';
-  h += '</tr></thead><tbody>';
-  
-  DISCOVERY_REQUESTS.forEach(dr => {
-    const caseObj = CASES.find(c => c.id === dr.caseId);
-    const statusColor = dr.status.includes('OVERDUE') ? '#dc2626' : (dr.status.includes('Pending') ? '#d97706' : '#059669');
-    
-    h += '<tr style="border-bottom:1px solid var(--line);">';
-    h += '<td style="padding:12px;font-weight:600;">'+caseObj.matterNo+'</td>';
-    h += '<td style="padding:12px;font-size:12px;">'+dr.type+'</td>';
-    h += '<td style="padding:12px;font-size:12px;color:var(--muted);">'+dr.sent+'</td>';
-    h += '<td style="padding:12px;font-size:12px;color:var(--muted);">'+dr.dueDate+'</td>';
-    h += '<td style="padding:12px;"><span style="background:'+statusColor+'22;color:'+statusColor+';padding:4px 8px;border-radius:3px;font-size:11px;font-weight:600;">'+dr.status+'</span></td>';
-    h += '<td style="padding:12px;font-size:12px;">'+dr.docsProduced+'</td>';
-    h += '<td style="padding:12px;"><button onclick="st({showDiscoveryForm:\''+dr.id+'\'})" class="btn btn-pri" style="font-size:10px;padding:4px 8px;">Update</button></td>';
-    h += '</tr>';
-  });
-  
-  h += '</tbody></table>';
-  h += '</div>';
-  
-  h += '</div>';
-  return h;
-}
-
-function attorneyPerformanceV() {
-  let h = '<div>';
-  
-  // Build attorney stats
-  const attorneyStats = ATTY.map(attorney => {
-    const attorneyName = attorney;
-    const cases = CASES.filter(c => c.attorney === attorneyName);
-    const closedCases = cases.filter(c => c.status === 'Closed');
-    const wonCases = closedCases.filter(c => c.favorability > 3).length;
-    const avgSettlement = closedCases.length > 0 ? closedCases.reduce((sum, c) => sum + c.value, 0) / closedCases.length : 0;
-    const avgDays = closedCases.length > 0 ? closedCases.reduce((sum, c) => sum + (c.daysOpen || 365), 0) / closedCases.length : 0;
-    const profitability = cases.length > 0 ? Math.round((cases.filter(c => c.profitMargin > 0).length / cases.length) * 100) : 0;
-    
-    return {
-      name: attorneyName,
-      openCases: cases.filter(c => c.status !== 'Closed').length,
-      closedCases: closedCases.length,
-      winRate: closedCases.length > 0 ? Math.round((wonCases / closedCases.length) * 100) : 0,
-      avgSettlement,
-      avgDays: Math.round(avgDays),
-      profitability
-    };
-  }).filter(a => a.openCases > 0 || a.closedCases > 0).sort((a, b) => b.winRate - a.winRate);
-  
-  // Attorney cards
-  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:20px;">';
-  
-  attorneyStats.forEach(attorney => {
-    const winColor = attorney.winRate > 65 ? '#059669' : (attorney.winRate > 50 ? '#D97706' : '#DC2626');
-    
-    h += '<div class="card" style="padding:20px;">';
-    h += '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:15px;">';
-    h += '<div>';
-    h += '<div style="font-weight:700;color:var(--pri2);font-size:16px;">'+attorney.name+'</div>';
-    h += '<div style="font-size:12px;color:var(--muted);margin-top:4px;">'+attorney.openCases+' open / '+attorney.closedCases+' closed</div>';
-    h += '</div>';
-    h += '<span style="background:'+winColor+'22;color:'+winColor+';padding:6px 12px;border-radius:4px;font-weight:700;font-size:18px;">'+attorney.winRate+'%</span>';
-    h += '</div>';
-    
-    h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:15px;">';
-    
-    h += '<div style="padding:12px;background:var(--surf2);border-radius:6px;">';
-    h += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;font-weight:700;">Avg Settlement</div>';
-    h += '<div style="font-size:14px;font-weight:700;color:var(--gold);">'+fV(attorney.avgSettlement)+'</div>';
-    h += '</div>';
-    
-    h += '<div style="padding:12px;background:var(--surf2);border-radius:6px;">';
-    h += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;font-weight:700;">Avg Duration</div>';
-    h += '<div style="font-size:14px;font-weight:700;">'+attorney.avgDays+' days</div>';
-    h += '</div>';
-    
-    h += '</div>';
-    
-    h += '<div style="padding:12px;background:'+winColor+'22;border-left:3px solid '+winColor+';border-radius:4px;">';
-    h += '<div style="font-size:10px;color:'+winColor+';font-weight:700;margin-bottom:4px;">PROFITABILITY</div>';
-    h += '<div style="font-size:18px;font-weight:700;color:'+winColor+';">'+attorney.profitability+'%</div>';
-    h += '<div style="font-size:11px;color:'+winColor+';margin-top:4px;">Cases over margin target</div>';
-    h += '</div>';
-    
-    h += '</div>';
-  });
-  
-  h += '</div>';
-  h += '</div>';
-  return h;
-}
-
-function costBenefitAnalyzerV() {
-  let h = '<div>';
-  h += '<div style="margin-bottom:20px;">';
-  h += '<label style="display:block;font-weight:600;margin-bottom:10px;">Select Case to Analyze</label>';
-  h += '<select id="costBenefitCase" onchange="updateCostBenefit()" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;">';
-  h += '<option>Select a case...</option>';
-  CASES.forEach(c => {
-    h += '<option value="'+c.id+'">'+c.matterNo+' - '+c.client+' ('+c.type+')</option>';
-  });
-  h += '</select>';
-  h += '</div>';
-  
-  if (S.selectedCostBenefitCase) {
-    const caseObj = CASES.find(c => c.id === S.selectedCostBenefitCase);
-    const analysis = analyzeCostBenefit(caseObj);
-    
-    h += '<div class="card" style="padding:20px;margin-bottom:20px;">';
-    h += '<div style="font-weight:700;color:var(--pri2);margin-bottom:20px;">'+caseObj.matterNo+' - '+caseObj.client+'</div>';
-    
-    // ROI comparison
-    h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:20px;">';
-    
-    h += '<div style="padding:20px;background:#fef2f2;border-radius:8px;border-left:4px solid #dc2626;">';
-    h += '<div style="font-size:11px;color:var(--muted);margin-bottom:10px;font-weight:700;text-transform:uppercase;">LITIGATION PATH</div>';
-    h += '<div style="display:flex;gap:10px;margin-bottom:10px;">';
-    h += '<div>';
-    h += '<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Expected Cost</div>';
-    h += '<div style="font-size:18px;font-weight:700;color:#dc2626;">'+fV(analysis.litigationCost)+'</div>';
-    h += '</div>';
-    h += '<div style="border-left:1px solid var(--line);padding-left:10px;">';
-    h += '<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Expected Recovery</div>';
-    h += '<div style="font-size:18px;font-weight:700;color:#059669;">'+fV(analysis.trialValue)+'</div>';
-    h += '</div>';
-    h += '</div>';
-    h += '<div style="padding:12px;background:#fef2f2;border-radius:4px;border:1px solid #fecaca;">';
-    h += '<div style="font-size:12px;margin-bottom:4px;">NET ROI</div>';
-    h += '<div style="font-size:20px;font-weight:700;color:#dc2626;">'+analysis.litigationROI+':1</div>';
-    h += '</div>';
-    h += '</div>';
-    
-    h += '<div style="padding:20px;background:#f0f7ff;border-radius:8px;border-left:4px solid #0369a1;">';
-    h += '<div style="font-size:11px;color:var(--muted);margin-bottom:10px;font-weight:700;text-transform:uppercase;">SETTLEMENT PATH</div>';
-    h += '<div style="display:flex;gap:10px;margin-bottom:10px;">';
-    h += '<div>';
-    h += '<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Expected Cost</div>';
-    h += '<div style="font-size:18px;font-weight:700;color:#0369a1;">'+fV(analysis.settlementCost)+'</div>';
-    h += '</div>';
-    h += '<div style="border-left:1px solid var(--line);padding-left:10px;">';
-    h += '<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Expected Recovery</div>';
-    h += '<div style="font-size:18px;font-weight:700;color:#059669;">'+fV(analysis.settlementValue)+'</div>';
-    h += '</div>';
-    h += '</div>';
-    h += '<div style="padding:12px;background:#f0f7ff;border-radius:4px;border:1px solid #bfdbfe;">';
-    h += '<div style="font-size:12px;margin-bottom:4px;">NET ROI</div>';
-    h += '<div style="font-size:20px;font-weight:700;color:#0369a1;">'+analysis.settlementROI+':1</div>';
-    h += '</div>';
-    h += '</div>';
-    
-    h += '</div>';
-    
-    // Recommendation
-    h += '<div style="padding:20px;background:'+analysis.recColor+'22;border-left:4px solid '+analysis.recColor+';border-radius:8px;margin-bottom:20px;">';
-    h += '<div style="font-weight:700;color:'+analysis.recColor+';margin-bottom:10px;font-size:14px;">⚡ RECOMMENDATION</div>';
-    h += '<div style="color:var(--ink);line-height:1.7;margin-bottom:10px;">'+analysis.recommendation+'</div>';
-    h += '<div style="font-size:12px;color:'+analysis.recColor+';font-weight:600;">Expected value difference: '+fV(Math.abs(analysis.trialValue - analysis.settlementValue))+'</div>';
-    h += '</div>';
-    
-    // Key factors
-    h += '<div style="font-weight:600;margin-bottom:10px;">Cost-Benefit Breakdown</div>';
-    h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">';
-    
-    analysis.factors.forEach(f => {
-      h += '<div style="padding:12px;background:var(--surf2);border-radius:6px;">';
-      h += '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">'+f.label+'</div>';
-      h += '<div style="font-size:16px;font-weight:700;'+( f.type === 'cost' ? 'color:#dc2626' : 'color:#059669' )+';">'+fV(f.value)+'</div>';
-      h += '</div>';
-    });
-    
-    h += '</div>';
-    
-    h += '</div>';
-  }
-  
-  h += '</div>';
-  return h;
-}
-
-function analyzeCostBenefit(caseObj) {
-  const litigationCost = 180000; // Typical litigation cost
-  const settlementCost = 25000; // Settlement negotiation cost
-  const prediction = predictCaseOutcome(caseObj);
-  
-  const trialValue = prediction.trialValue;
-  const settlementValue = prediction.settlementValue;
-  
-  const litigationNet = trialValue - litigationCost;
-  const settlementNet = settlementValue - settlementCost;
-  
-  const shouldSettle = settlementNet > litigationNet;
-  
-  return {
-    litigationCost,
-    settlementCost,
-    trialValue,
-    settlementValue,
-    litigationROI: (litigationNet / litigationCost).toFixed(1),
-    settlementROI: (settlementNet / settlementCost).toFixed(1),
-    recColor: shouldSettle ? '#0369a1' : '#059669',
-    recommendation: shouldSettle
-      ? 'SETTLE. Settlement path yields '+fV(settlementNet)+' net profit vs '+fV(litigationNet)+' for litigation. Settlement is '+Math.round(((settlementNet - litigationNet) / litigationNet) * 100)+'% better.'
-      : 'LITIGATE. Trial path yields '+fV(litigationNet)+' net profit vs '+fV(settlementNet)+' for settlement. Trial is '+Math.round(((litigationNet - settlementNet) / settlementNet) * 100)+'% better.',
-    factors: [
-      {label: 'Litigation Costs', value: litigationCost, type: 'cost'},
-      {label: 'Settlement Costs', value: settlementCost, type: 'cost'},
-      {label: 'Trial Value', value: trialValue, type: 'benefit'},
-      {label: 'Settlement Value', value: settlementValue, type: 'benefit'},
-    ]
-  };
-}
-
-function updateCostBenefit() {
-  const caseId = document.getElementById('costBenefitCase').value;
-  st({selectedCostBenefitCase: caseId || null, premiumTab: 'costbenefit'});
-}
-
-function plaintiffDemandPredictorV() {
-  let h = '<div>';
-  h += '<div style="margin-bottom:20px;">';
-  h += '<label style="display:block;font-weight:600;margin-bottom:10px;">Select Case to Predict Demand</label>';
-  h += '<select id="demandCase" onchange="updateDemandPrediction()" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;">';
-  h += '<option>Select a case...</option>';
-  CASES.forEach(c => {
-    h += '<option value="'+c.id+'">'+c.matterNo+' - '+c.client+' ('+c.type+')</option>';
-  });
-  h += '</select>';
-  h += '</div>';
-  
-  if (S.selectedDemandCase) {
-    const caseObj = CASES.find(c => c.id === S.selectedDemandCase);
-    const demand = predictPlaintiffDemand(caseObj);
-    
-    h += '<div class="card" style="padding:20px;">';
-    h += '<div style="font-weight:700;color:var(--pri2);margin-bottom:20px;">'+caseObj.matterNo+' - '+caseObj.client+'</div>';
-    
-    h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:20px;">';
-    
-    h += '<div style="padding:20px;background:var(--surf2);border-radius:8px;">';
-    h += '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;font-weight:700;text-transform:uppercase;">PREDICTED DEMAND</div>';
-    h += '<div style="font-size:32px;font-weight:700;color:var(--pri2);">'+fV(demand.predictedDemand)+'</div>';
-    h += '<div style="font-size:12px;color:var(--muted);margin-top:10px;">Range: '+fV(demand.low)+' - '+fV(demand.high)+'</div>';
-    h += '</div>';
-    
-    h += '<div style="padding:20px;background:var(--surf2);border-radius:8px;">';
-    h += '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;font-weight:700;text-transform:uppercase;">RECOMMENDED COUNTER</div>';
-    h += '<div style="font-size:32px;font-weight:700;color:var(--gold);">'+fV(demand.recommendedCounter)+'</div>';
-    h += '<div style="font-size:12px;color:var(--muted);margin-top:10px;">'+Math.round((demand.recommendedCounter / demand.predictedDemand - 1) * 100)+'% below predicted</div>';
-    h += '</div>';
-    
-    h += '</div>';
-    
-    h += '<div style="padding:20px;background:#f0f7ff;border-radius:8px;margin-bottom:20px;">';
-    h += '<div style="font-weight:600;margin-bottom:10px;color:#0369a1;">📊 Analysis</div>';
-    h += '<div style="color:var(--ink);line-height:1.6;">'+demand.analysis+'</div>';
-    h += '</div>';
-    
-    h += '<div style="font-weight:600;margin-bottom:10px;">Historical Comparison</div>';
-    h += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">';
-    
-    h += '<div style="padding:12px;background:var(--surf2);border-radius:6px;text-align:center;">';
-    h += '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">AVG DEMAND</div>';
-    h += '<div style="font-size:16px;font-weight:700;">'+fV(demand.avgHistoricalDemand)+'</div>';
-    h += '</div>';
-    
-    h += '<div style="padding:12px;background:var(--surf2);border-radius:6px;text-align:center;">';
-    h += '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">SIMILAR CASES</div>';
-    h += '<div style="font-size:16px;font-weight:700;">'+demand.similarCases+'</div>';
-    h += '</div>';
-    
-    h += '<div style="padding:12px;background:var(--surf2);border-radius:6px;text-align:center;">';
-    h += '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">VARIANCE</div>';
-    h += '<div style="font-size:16px;font-weight:700;">±'+demand.variance+'%</div>';
-    h += '</div>';
-    
-    h += '</div>';
-    
-    h += '</div>';
-  }
-  
-  h += '</div>';
-  return h;
-}
-
-function predictPlaintiffDemand(caseObj) {
-  const similar = CASES.filter(c => c.type === caseObj.type && c.status !== 'Active').slice(0, 10);
-  
-  const baseValue = caseObj.value;
-  const avgDemandPercent = similar.length > 0 ? 1.35 : 1.35; // Plaintiffs typically demand 35% above case value
-  
-  const predictedDemand = Math.round(baseValue * avgDemandPercent);
-  const variance = 15;
-  const low = Math.round(predictedDemand * (1 - variance/100));
-  const high = Math.round(predictedDemand * (1 + variance/100));
-  
-  const recommendedCounter = Math.round(baseValue * 0.85); // Counter at 85% of case value
-  
-  return {
-    predictedDemand,
-    low,
-    high,
-    recommendedCounter,
-    avgHistoricalDemand: similar.length > 0 ? fV(similar.reduce((sum, c) => sum + c.value, 0) / similar.length) : fV(baseValue),
-    similarCases: similar.length,
-    variance,
-    analysis: 'Based on '+similar.length+' similar '+caseObj.type+' cases in your portfolio, plaintiffs in this category typically open with demands '+Math.round(avgDemandPercent * 100)+'% of claimed value ('+fV(predictedDemand)+'). Opening counter at '+fV(recommendedCounter)+' leaves negotiating room while staying reasonable.'
-  };
-}
-
-function updateDemandPrediction() {
-  const caseId = document.getElementById('demandCase').value;
-  st({selectedDemandCase: caseId || null, premiumTab: 'demand'});
-}
-
-
 function render(){
   try {
     if (S.showLandingPage !== false && !S.isAuthenticated && !S.role) {
@@ -3415,7 +2399,6 @@ function render(){
   else if (S.role === 'executive') html += execV();
   else if (S.role === 'scorecard') html += (S.scorecardDetail ? attorneyDetailV(S.scorecardDetail) : scorecardV());
   else if (S.role === 'reports') html += reportsHubV();
-  else if (S.role === 'premium') html += S_PREMIUM_AUTHENTICATED ? settlementIntelligenceV() : premiumLoginV();
   else if (S.role === 'attorney') html += myCasesV();
   else if (S.role === 'carrier') html += carrierPortalV();
   else if (S.role === 'activity') html += activityHubV();
@@ -3491,8 +2474,7 @@ function hdr(){
     { label:'Insights', items:[
       ['executive','Executive'],
       ['scorecard','Scorecards'],
-      ['reports','Reports Hub'],
-      ['premium','🔒 Settlement Intelligence']
+      ['reports','Reports Hub']
     ]},
     { label:'Admin', items:[
       ['tpa','Account Executive'],
@@ -3998,44 +2980,47 @@ function welcomeV(){
    ══════════════════════════════════════════════════════════════════════ */
 
 function getTop3Recommendations(caseObj) {
-  const scores = ATTY.map(a => {
+  // ATTY is a plain list of attorney NAMES (strings). An earlier version of
+  // this function read a.name / a.experience off each entry, which are
+  // undefined on a string — so every recommendation showed "undefined".
+  const scores = ATTY.map(name => {
     let score = 0;
-    
-    // 1. Case specialization (15 pts per similar case handled)
-    const attorneysCases = CASES.filter(c => c.attorney === a.name);
+    const attorneysCases = CASES.filter(c => c.attorney === name);
     const similarCases = attorneysCases.filter(c => c.type === caseObj.type);
-    score += Math.min(similarCases.length * 15, 30);
-    
-    // 2. Complexity match (5 pts if experience level matches)
-    if (a.experience === 'Senior' && caseObj.value > 500000) score += 5;
-    if (a.experience === 'Mid' && caseObj.value >= 250000 && caseObj.value <= 750000) score += 5;
-    if (a.experience === 'Associate' && caseObj.value < 300000) score += 3;
-    
-    // 3. Win rate (30 pts max, based on closed cases)
+    const openCases = attorneysCases.filter(c => c.status !== 'Closed');
+
+    // 1. Specialization — experience with this matter type (30 pts max)
+    score += Math.min(similarCases.length * 10, 30);
+
+    // 2. Track record on closed matters (30 pts max; neutral 15 when no history yet)
     const closedCases = attorneysCases.filter(c => c.status === 'Closed');
     if (closedCases.length > 0) {
-      const wins = closedCases.filter(c => (c.exposure?.settlementAmount || 0) < (c.value * 0.35)).length;
-      const winRate = wins / closedCases.length;
-      score += winRate * 30;
+      const wins = closedCases.filter(c => (c.exposure?.settlementAmount || 0) < ((c.value || 0) * 0.35)).length;
+      score += (wins / closedCases.length) * 30;
+    } else {
+      score += 15;
     }
-    
-    // 4. Workload availability (20 pts if available)
-    const openCases = attorneysCases.filter(c => c.status !== 'Closed').length;
-    if (openCases < 8) score += 20;
-    else if (openCases < 12) score += 10;
-    
-    // 5. Value alignment (10 pts if handles similar case values)
-    const avgCaseValue = attorneysCases.length > 0 
-      ? attorneysCases.reduce((s, c) => s + c.value, 0) / attorneysCases.length
+
+    // 3. Workload availability (30 pts max) — fewer open matters scores higher
+    if (openCases.length < 4) score += 30;
+    else if (openCases.length < 8) score += 20;
+    else if (openCases.length < 12) score += 10;
+
+    // 4. Value alignment — handles matters of similar size (10 pts max)
+    const avgCaseValue = attorneysCases.length > 0
+      ? attorneysCases.reduce((sum, c) => sum + (c.value || 0), 0) / attorneysCases.length
       : 0;
-    const valueDiff = Math.abs(caseObj.value - avgCaseValue);
-    if (valueDiff < 200000) score += 10;
-    else if (valueDiff < 500000) score += 5;
-    
-    return { name: a.name, experience: a.experience, score: Math.round(score) };
+    const valueDiff = Math.abs((caseObj.value || 0) - avgCaseValue);
+    if (attorneysCases.length > 0 && valueDiff < 500000) score += 10;
+    else if (attorneysCases.length > 0 && valueDiff < 1000000) score += 5;
+
+    return {
+      name,
+      experience: openCases.length + ' open · ' + similarCases.length + ' similar',
+      score: Math.min(100, Math.round(score))
+    };
   });
-  
-  return scores.sort((a, b) => b.score - a.score).slice(0, 3);
+  return scores.sort((x, y) => y.score - x.score).slice(0, 3);
 }
 
 function assignCasesV() {
@@ -4071,7 +3056,7 @@ function assignCasesV() {
     h += '<div class="card" style="padding:20px;border-left:4px solid var(--pri2);">';
     h += '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:15px;">';
     h += '<div>';
-    h += '<div style="font-weight:700;font-size:15px;color:var(--ink);">'+c.id+' — '+esc(c.client)+'</div>';
+    h += '<div style="font-weight:700;font-size:15px;color:var(--ink);">'+esc(c.matterNo||c.id)+' — '+esc(c.client)+'</div>';
     h += '<div style="font-size:12px;color:var(--muted);margin-top:4px;">'+c.type+' | Value: $'+f(c.value)+'</div>';
     h += '</div>';
     h += '</div>';
@@ -4103,6 +3088,7 @@ function assignAttorney(caseId, attorneyName, ranking) {
   if (!caseObj) return;
   
   caseObj.attorney = attorneyName;
+  sc(caseObj); // saves the assignment to the server
   const medal = ['🥇 Gold', '🥈 Silver', '🥉 Bronze'][ranking];
   alert('✓ Case '+caseObj.matterNo+' assigned to '+attorneyName+' ('+medal+' recommendation)');
   render();
@@ -7954,7 +6940,7 @@ function apiHubV(){
   h += ta('Closed case records (JSON array)', S._importJSON||'', 'window._importJSON=this.value;S._importJSON=this.value', '[\n  {\n    "client": "Meridian Freight Co",\n    "type": "Auto Liability",\n    "carrier": "Progressive",\n    "claimNo": "CLM-2022-4471",\n    "filed": "2022-03-04",\n    "deadline": "2023-11-18",\n    "value": 275000,\n    "settlementAmount": 210000,\n    "attorney": "Maria Santos"\n  }\n]');
 
   h += '<div style="display:flex;gap:8px;align-items:center;">';
-  h += '<button class="btn btn-pri" onclick="runImport()">Import Closed Cases</button>';
+  h += '<button class="btn btn-pri" onclick="runImport()" '+(S.importLoading?'disabled':'')+'>'+(S.importLoading?'Importing…':'Import Closed Cases')+'</button>';
   h += '<span id="importStatus" style="font-size:11.5px;font-weight:600;color:'+(S.importMsgType==='bad'?'var(--red)':S.importMsgType==='good'?'var(--green)':'var(--muted)')+';">'+esc(S.importMsg||'')+'</span>';
   h += '</div>';
   h += '</div>';
@@ -9287,22 +8273,25 @@ window.CaseAPI = {
     return created;
   },
   importClosedCases(records){
+    // Kept for the documented browser-console / scripted-automation
+    // use case (see the "In-App JS API" reference panel), where a
+    // synchronous return value matters more than a guaranteed server
+    // save. It updates local state immediately and best-effort syncs
+    // to the server in the background — if that background save
+    // fails, it's only logged to the console, not shown to whoever's
+    // driving the console. The customer-facing "Import Closed Case
+    // History" panel does NOT use this method anymore (see runImport
+    // above) — it calls POST /api/cases/import directly and waits for
+    // the real result, so what the customer sees always matches what
+    // actually got saved.
     if (!Array.isArray(records)) throw new Error('importClosedCases expects an array of records');
     const created = records.map(r => normalizeImportRecord(r));
     CASES.push(...created);
     render();
     if (API_BASE) {
-      // NOTE: this in-app "paste JSON and import for myself" path is
-      // authenticated by the logged-in user's session, but the
-      // deployed cases-import Edge Function expects an org API key
-      // instead (it's built for a customer's own external script, a
-      // different auth model). This call will fail harmlessly
-      // (caught below) until a session-authenticated bulk-import
-      // route is added to the `cases` function to match. The import
-      // still works locally in the browser either way.
       apiFetch('/api/cases/import', { method:'POST', body: JSON.stringify(records) })
         .then(res => console.log('Server-side import: ' + res.imported + ' saved, ' + res.failed + ' failed'))
-        .catch(e => console.error('Background import sync failed (expected until a session-authenticated import route exists):', e.message));
+        .catch(e => console.error('Background import sync failed:', e.message));
     }
     return created;
   },
@@ -9410,7 +8399,18 @@ function downloadClosedCasesJSON(){
   a.click();
 }
 
-function runImport(){
+// Calls the real backend (POST /api/cases/import) directly and waits
+// for its actual result before telling the customer anything
+// succeeded. Replaces an older version that pushed records straight
+// into the browser's local CASES array and reported that local push
+// as success, with the real save to the database happening as a
+// silent, fire-and-forget background call — any row that failed
+// server-side (bad data, etc.) would look imported in the moment,
+// then quietly vanish on the next page load with no explanation ever
+// shown to the customer. CaseAPI.importClosedCases (the documented
+// console/API method) is unchanged and still available for scripted
+// use; this UI button now talks to the server directly instead.
+async function runImport(){
   const raw = window._importJSON || S._importJSON || '';
   let records;
   try {
@@ -9419,16 +8419,24 @@ function runImport(){
     st({importMsg:'Invalid JSON: ' + e.message, importMsgType:'bad'});
     return;
   }
-  if (!Array.isArray(records)) {
-    st({importMsg:'Expected a JSON array of case records.', importMsgType:'bad'});
+  if (!Array.isArray(records) || records.length === 0) {
+    st({importMsg:'Expected a non-empty JSON array of case records.', importMsgType:'bad'});
     return;
   }
+  st({importMsg:'Importing…', importMsgType:'info', importLoading:true});
   try {
-    const created = CaseAPI.importClosedCases(records);
+    const data = await apiFetch('/api/cases/import', { method:'POST', body: JSON.stringify(records) });
+    if (data.imported > 0) await loadCasesFromApi();
     window._importJSON = '';
-    st({_importJSON:'', importMsg:'Imported ' + created.length + ' closed case(s).', importMsgType:'good'});
+    let msg = 'Imported ' + data.imported + ' closed case' + (data.imported===1?'':'s') + '.';
+    let msgType = 'good';
+    if (data.failed) {
+      msg += ' ' + data.failed + ' row' + (data.failed===1?'':'s') + ' skipped: ' + data.errors.map(e=>'#'+(e.index+1)+' ('+e.error+')').join(', ');
+      msgType = data.imported > 0 ? 'info' : 'bad';
+    }
+    st({_importJSON:'', importMsg:msg, importMsgType:msgType, importLoading:false});
   } catch (e) {
-    st({importMsg:'Import failed: ' + e.message, importMsgType:'bad'});
+    st({importMsg:'Import failed — nothing was saved: ' + e.message, importMsgType:'bad', importLoading:false});
   }
 }
 
@@ -10239,7 +9247,7 @@ function aiIntakeStep1V() {
   return '<div class="modal-bg" onclick="if(event.target===this)st({showAiIntake:false})">' +
     '<div class="modal" style="max-width:700px;">' +
       '<div class="modal-h">' +
-        '<div class="serif" style="font-size:18px;font-weight:700;">🤖 AI Claims Intake</div>' +
+        '<div class="serif" style="font-size:18px;font-weight:700;">🛡️ Sentinel Intake</div>' +
         '<button class="x" onclick="st({showAiIntake:false})">×</button>' +
       '</div>' +
       '<div class="modal-b">' +
@@ -10510,6 +9518,7 @@ function selectAttorney(tier) {
       tier: tier.toUpperCase(),
       reason: recommended.reasoning
     });
+    sc(createdCase); // saves the assignment to the server
   }
   
   // Close selector and refresh
@@ -10529,19 +9538,19 @@ async function aiProcessClaimIntake() {
   st({ aiProcessing: true, aiError: '' });
   
   try {
-    // Call the real backend (which calls Claude API with the server-side key)
-    // Same-origin call — Vercel serves this function directly.
-    const response = await fetch("/api/extract-claim", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    // Calls the real backend (POST /api/extract-claim), which calls
+    // Claude with the securely-stored API key. Replaces a raw,
+    // unauthenticated fetch() left over from the pre-real-backend
+    // prototype — it carried no login token, so it 401'd for every
+    // real signed-in customer. apiFetch() attaches the Bearer token
+    // like every other authenticated call in this app. Available on
+    // every plan, not gated behind an add-on — this is basic case
+    // intake, not a proprietary Sentinel analysis.
+    const extracted = await apiFetch('/api/extract-claim', {
+      method: 'POST',
       body: JSON.stringify({ claimText: claimText })
     });
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || 'API call failed');
-    }
-    const extracted = await response.json();
-    
+
     // Validate required fields
     if (!extracted.client) {
       throw new Error('Could not extract client name from claim details');
@@ -10628,8 +9637,9 @@ function submitAiExtractedCase() {
       });
     }
     
-    // Add to CASES
+    // Add to CASES (and save it to the server)
     CASES.push(newCase);
+    persistNewCase(newCase);
     
     console.log('✅ Case created from AI intake:', newCaseId, d.client);
     
@@ -10659,7 +9669,7 @@ function addModal() {
   h += '</div>';
   h += '<div style="padding:0 20px 14px 20px;border-bottom:1px solid var(--line);display:flex;gap:10px;">';
   h += '<button onclick="st({showAdd:true})" class="tab-btn on" style="flex:1;text-align:center;">📝 Manual Entry</button>';
-  h += '<button onclick="st({showAiIntake:true,showAdd:false})" class="tab-btn" style="flex:1;text-align:center;">🤖 AI Intake</button>';
+  h += '<button onclick="st({showAiIntake:true,showAdd:false})" class="tab-btn" style="flex:1;text-align:center;">🛡️ Sentinel Intake</button>';
   h += '</div>';
   h += '<div class="modal-b">';
   h += '<div class="grid-2">';
@@ -11111,8 +10121,9 @@ function submitCase(){
     newCase.catastrophe = caseCatastrophe;
     newCase.coverageType = caseCoverage;
     
-    // Add to CASES array
+    // Add to CASES array (and save it to the server)
     CASES.push(newCase);
+    persistNewCase(newCase);
     
     console.log('✓ Case created:', newCaseId, clientName, caseAttorney);
     console.log('Total cases now:', CASES.length);
@@ -11188,26 +10199,50 @@ async function runAI(prompt){
   }
 }
 
+// Calls the real backend (POST /api/ai/report-summary), which builds
+// the system prompt server-side and calls Claude with the securely
+// -stored API key. Replaces an older version that called callClaude()
+// — the direct-to-api.anthropic.com browser call that always failed
+// with "Failed to fetch" — same bug the AI Assistant had, fixed the
+// same way here.
 async function genRptAI(rptId){
+  if (S.myFeatures && !S.myFeatures.ai_assistant) { alert('AI Insights isn\'t included on your current plan. Contact your account team to add it.'); return; }
   let snap = S.viewingSavedId ? getSavedReport(S.viewingSavedId) : null;
   if (!snap) { snap = saveReportSnapshot(rptId); }
   if (!snap) return;
   st({showReportPreview:true, reportId:rptId, viewingSavedId:snap.id, aiLoad:true});
-  const sample = snap.rows.slice(0, 20).map(r => snap.cols.map((c,i) => c+': '+r[i]).join(', ')).join('\n');
-  const prompt = `REPORT: ${snap.name}\nROWS: ${snap.rowCount}\n\nSAMPLE DATA:\n${sample}\n\nProvide a concise executive summary of the patterns, risks, and recommended actions from this report. 3-4 paragraphs maximum.`;
-  const result = await callClaude(prompt, 'You are a senior insurance defense litigation strategist briefing a partner. Be specific and actionable.');
-  snap.aiSummary = result;
-  st({aiLoad:false, aiText:result});
+  try {
+    const sampleRows = snap.rows.slice(0, 20).map(r => snap.cols.map((c,i) => c+': '+r[i]).join(', '));
+    const data = await apiFetch('/api/ai/report-summary', {
+      method:'POST',
+      body: JSON.stringify({ reportName: snap.name, rowCount: snap.rowCount, sampleRows })
+    });
+    snap.aiSummary = data.analysis;
+    st({aiLoad:false, aiText:data.analysis});
+  } catch (e) {
+    st({aiLoad:false, aiText:'AI request failed: ' + e.message});
+  }
 }
 
+// Calls the real backend (POST /api/ai/portfolio-query), which pulls
+// the org's current cases fresh from the database server-side rather
+// than trusting this browser tab's local CASES array, then calls
+// Claude. Replaces an older version with the same direct-to-Anthropic
+// bug as genRptAI above.
 async function runCustomReport(){
+  if (S.myFeatures && !S.myFeatures.ai_assistant) { alert('The AI custom report builder isn\'t included on your current plan. Contact your account team to add it.'); return; }
   const q = (window._rptQ || '').trim();
   if (!q) { alert('Please describe the report'); return; }
   st({rptLoad:true});
-  const portfolio = CASES.map(c => `${c.matterNo||c.id}|${c.client}|${c.type}|${c.status}|${c.litigationStage}|${c.attorney}|${c.insurance.carrier}|reserve:${c.insurance.reserveAmount}|exposure:${c.exposure.likelyExposure||c.value}|billed:${c.billing.totalBilled}|aob:${c.aob}|cat:${c.catastrophe}|cci:${cci(c)}|fav:${c.favorability}`).join('\n');
-  const prompt = `PORTFOLIO (${CASES.length} matters, pipe-separated):\n${portfolio}\n\nREQUEST: ${q}\n\nAnalyze and provide a structured response addressing the request. Include specific matter numbers when relevant.`;
-  const result = await callClaude(prompt, 'You are a litigation portfolio analyst. Be specific, cite matter numbers, and provide actionable recommendations.');
-  st({rptLoad:false, rptResult:result});
+  try {
+    const data = await apiFetch('/api/ai/portfolio-query', {
+      method:'POST',
+      body: JSON.stringify({ query: q })
+    });
+    st({rptLoad:false, rptResult:data.analysis});
+  } catch (e) {
+    st({rptLoad:false, rptResult:'AI request failed: ' + e.message});
+  }
 }
 
 /* ── DEMO DATA RANDOMIZATION ───────────────────────────────
