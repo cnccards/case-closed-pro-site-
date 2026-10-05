@@ -2729,7 +2729,7 @@ function loginScreenV(){
 
 function completeLoginSession(data){
   authToken = data.token;
-  S.currentUser = { name: data.user.name, email: data.user.email, persona: data.user.persona, orgId: data.user.orgId, role: data.user.role, totpEnabled: !!data.user.totpEnabled, platformAdmin: !!data.user.platformAdmin, emailVerified: !!data.user.emailVerified };
+  S.currentUser = { id: data.user.id, name: data.user.name, email: data.user.email, persona: data.user.persona, orgId: data.user.orgId, role: data.user.role, totpEnabled: !!data.user.totpEnabled, platformAdmin: !!data.user.platformAdmin, emailVerified: !!data.user.emailVerified };
   S.isAuthenticated = true;
   S.loginLoading = false;
   S.showWelcome = true;
@@ -3071,7 +3071,7 @@ function assignCasesV() {
       h += '<div style="font-weight:700;font-size:13px;color:var(--ink);">'+esc(atty.name)+'</div>';
       h += '<div style="font-size:11px;color:var(--muted);margin-top:6px;">Score: '+atty.score+'/100</div>';
       h += '<div style="font-size:10px;color:var(--dim);margin-top:2px;">'+atty.experience+'</div>';
-      h += '<button onclick="assignAttorney(\''+c.id+'\', \''+esc(atty.name)+'\'); st({showAssignCases:true});" class="btn" style="background:'+bgColor+';color:white;margin-top:10px;width:100%;font-size:11px;padding:6px;cursor:pointer;border:none;border-radius:3px;font-weight:600;">Assign</button>';
+      h += '<button onclick="assignAttorney(\''+c.id+'\', \''+esc(atty.name)+'\', '+idx+'); st({showAssignCases:true});" class="btn" style="background:'+bgColor+';color:white;margin-top:10px;width:100%;font-size:11px;padding:6px;cursor:pointer;border:none;border-radius:3px;font-weight:600;">Assign</button>';
       h += '</div>';
     });
     
@@ -3083,14 +3083,13 @@ function assignCasesV() {
   return h;
 }
 
-function assignAttorney(caseId, attorneyName, ranking) {
+async function assignAttorney(caseId, attorneyName, ranking) {
   const caseObj = CASES.find(c => c.id === caseId);
   if (!caseObj) return;
-  
-  caseObj.attorney = attorneyName;
-  sc(caseObj); // saves the assignment to the server
+
   const medal = ['🥇 Gold', '🥈 Silver', '🥉 Bronze'][ranking];
-  alert('✓ Case '+caseObj.matterNo+' assigned to '+attorneyName+' ('+medal+' recommendation)');
+  const msg = await assignCaseToAttorney(caseObj, attorneyName, { reason: (medal ? medal + ' Sentinel Match recommendation' : null), source: 'sentinel_match' });
+  alert('✓ ' + (caseObj.matterNo || caseObj.id) + ': ' + msg);
   render();
 }
 
@@ -3297,6 +3296,26 @@ function litigationDashV(){
   const trialCandidates = open.filter(c => c.potentialTrialCandidate).length;
 
   let h = '<div style="padding:18px 22px;max-width:1500px;margin:0 auto;display:flex;flex-direction:column;">';
+
+  /* NEWLY ASSIGNED TO YOU — the attorney-side half of Sentinel Match. When
+     a matter is assigned to the signed-in user (in the last 14 days) it's
+     called out at the very top, with who assigned it and why. */
+  if (S.currentUser?.id) {
+    const cutoff = Date.now() - 14*864e5;
+    const mine = CASES.filter(c => c.assignedAttorneyUserId === S.currentUser.id && c.assignment && new Date(c.assignment.at).getTime() >= cutoff && c.status !== 'Closed')
+      .sort((a,b) => new Date(b.assignment.at) - new Date(a.assignment.at));
+    if (mine.length) {
+      h += '<div class="card" style="margin-bottom:14px;border-left:4px solid var(--gold);background:#FFFBEB;">';
+      h += '<div class="sh"><span>🆕 Newly assigned to you</span><span style="color:var(--dim);font-weight:500;">'+mine.length+' matter'+(mine.length!==1?'s':'')+' · last 14 days</span></div>';
+      mine.forEach(c => {
+        h += '<div class="row-link" onclick="stCase(\''+c.id+'\')" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--surf2);">';
+        h += '<div><div style="font-size:12.5px;font-weight:700;color:var(--pri2);">'+esc(c.matterNo||c.id)+' <span style="color:var(--ink);font-weight:600;">'+esc(c.client)+'</span></div>';
+        h += '<div style="font-size:11px;color:var(--muted);margin-top:2px;">'+esc(c.type||'')+' · assigned '+new Date(c.assignment.at).toLocaleDateString('en-US',{month:'short',day:'numeric'})+' by '+esc(c.assignment.byName||'your admin')+(c.assignment.reason?' — '+esc(c.assignment.reason):'')+'</div></div>';
+        h += '<span style="font-size:11px;font-weight:700;color:var(--pri2);white-space:nowrap;">Open →</span></div>';
+      });
+      h += '</div>';
+    }
+  }
 
   /* Hero header */
   h += '<div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px;flex-wrap:wrap;gap:12px;">';
@@ -9501,29 +9520,56 @@ async function aiAssignBestAttorney() {
   }
 }
 
+/* Assigns a matter to an attorney for real: saves it, links it to the
+   attorney's login (so it appears on THEIR dashboard), logs it on the
+   matter, and emails them. Returns a plain-English result line. Used by
+   both Sentinel Match flows (the Assign Cases screen and Sentinel Intake). */
+async function assignCaseToAttorney(caseObj, attorneyName, opts) {
+  opts = opts || {};
+  caseObj.attorney = attorneyName;
+  if (!API_BASE || !authToken) return 'Assigned to ' + attorneyName + '.';
+  try {
+    if (caseObj._persisting) await caseObj._persisting;   // brand-new matter: wait until it has a real id
+    const r = await apiFetch('/api/cases/' + caseObj.id + '/assign', {
+      method: 'POST',
+      body: JSON.stringify({ attorneyName, reason: opts.reason || null, source: opts.source || 'manual' })
+    });
+    // Bring the server's record of the assignment (activity entry, linked user) back locally.
+    caseObj.assignedAttorneyUserId = r.case.assignedAttorneyUserId;
+    caseObj.updates = r.case.updates || caseObj.updates;
+    caseObj.assignment = r.case.assignment;
+    if (r.notified) return 'Assigned to ' + attorneyName + ' — they\'ve been emailed and the matter is now on their dashboard.';
+    if (r.notifyNote === 'no_login') return 'Assigned to ' + attorneyName + ' and saved. They don\'t have a login in this account yet, so nobody was notified — invite them from Team so they can sign in and work it.';
+    if (r.notifyNote === 'email_not_configured') return 'Assigned to ' + attorneyName + ' and it\'s on their dashboard, but email isn\'t set up on this server yet, so no notification was sent.';
+    return 'Assigned to ' + attorneyName + ' and it\'s on their dashboard, but the notification email failed to send.';
+  } catch (e) {
+    return 'Could not save the assignment to the server: ' + e.message;
+  }
+}
+
 /* Select attorney from recommendations */
-function selectAttorney(tier) {
+async function selectAttorney(tier) {
   if (!S.attorneyRecommendations || !S.attorneyRecommendations[tier]) return;
-  
+
   const recommended = S.attorneyRecommendations[tier];
   S.aiExtracted.attorney = recommended.attorney;
   S.aiAssignReason = recommended.reasoning;
-  
+
   // Update the created case
   const createdCase = CASES[CASES.length - 1];
+  let msg = '';
   if (createdCase) {
-    createdCase.attorney = recommended.attorney;
-    logAuditTrail('case_attorney_assigned_ai', createdCase.id, null, { 
+    logAuditTrail('case_attorney_assigned_ai', createdCase.id, null, {
       attorney: recommended.attorney,
       tier: tier.toUpperCase(),
       reason: recommended.reasoning
     });
-    sc(createdCase); // saves the assignment to the server
+    msg = await assignCaseToAttorney(createdCase, recommended.attorney, { reason: recommended.reasoning, source: 'sentinel_match' });
   }
-  
+
   // Close selector and refresh
   st({ showAttorneySelector: false });
-  render();
+  if (msg) alert('✓ ' + msg);
 }
 
 /* Process claim text with Claude API */
