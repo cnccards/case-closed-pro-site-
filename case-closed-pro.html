@@ -213,7 +213,7 @@ label{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing
    cleanly instead of being clipped by the app's normal scroll areas. */
 @media print{
   body{background:#fff;}
-  nav, .role-tab, .btn, .exec-subnav, [class*="btn-"], .no-print{display:none !important;}
+  nav, .role-tab, .btn, .exec-subnav, [class*="btn-"], .no-print, .legal-footer{display:none !important;}
   .wrap{max-width:100%;padding:0;}
   .card, .kpi{break-inside:avoid;box-shadow:none;border:1px solid #ccc;}
   .hero{background:#fff !important;color:#000 !important;padding:10px 0;}
@@ -2414,6 +2414,7 @@ function render(){
   else if (S.role === 'api') html += apiHubV();
   else if (S.role === 'admin') html += adminPanelV();
   html += '</div>';
+  html += legalFooterV();
   if (S.caseId) html += ws();
   if (S.showAdd) html += addModal();
   if (S.showRpt) html += rptModal();
@@ -2526,11 +2527,17 @@ function hdr(){
       (S.role !== 'attorney' && S.role !== 'reports' ? '<button onclick="st({showRpt:true})" class="btn btn-out nav-side-btn">Report Builder</button>' : '')+
       '<button onclick="st({showAdd:true})" class="btn btn-pri nav-side-btn">+ New Matter</button>'+
     '</div>'+
-    '<div style="padding:8px 18px;border-top:1px solid var(--line);font-size:11px;color:var(--muted);display:flex;gap:20px;">'+
-      '<button onclick="st({showPrivacy:!S.showPrivacy})" style="background:none;border:none;color:var(--muted);cursor:pointer;text-decoration:underline;">Privacy Policy</button>'+
-      '<button onclick="st({showTerms:!S.showTerms})" style="background:none;border:none;color:var(--muted);cursor:pointer;text-decoration:underline;">Terms of Service</button>'+
-      '<a href="mailto:sales@cclosed.com" style="color:var(--muted);text-decoration:underline;">sales@cclosed.com</a>'+
-    '</div>'+
+  '</div>';
+}
+
+/* Legal links — Privacy Policy, Terms of Service, sales contact. Lives at
+   the very bottom of the page (rendered after the page content) rather
+   than in the header, so it doesn't push every screen and report down. */
+function legalFooterV(){
+  return '<div class="legal-footer" style="padding:16px 18px;margin-top:28px;border-top:1px solid var(--line);font-size:11px;color:var(--muted);display:flex;gap:20px;justify-content:center;flex-wrap:wrap;">'+
+    '<button onclick="st({showPrivacy:!S.showPrivacy})" style="background:none;border:none;color:var(--muted);cursor:pointer;text-decoration:underline;font-size:11px;">Privacy Policy</button>'+
+    '<button onclick="st({showTerms:!S.showTerms})" style="background:none;border:none;color:var(--muted);cursor:pointer;text-decoration:underline;font-size:11px;">Terms of Service</button>'+
+    '<a href="mailto:sales@cclosed.com" style="color:var(--muted);text-decoration:underline;">sales@cclosed.com</a>'+
   '</div>';
 }
 
