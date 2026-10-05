@@ -242,6 +242,8 @@ const SM = {
   Appeal:{b:'#F3E8FF',t:'#6D28D9'}
 };
 const PC = {High:'#DC2626', Medium:'#D97706', Low:'#059669'};
+/* f(n): thousands-separated number for dollar amounts. Several screens (Assign Cases, attorney portal) call it; it was never defined, which crashed them. */
+function f(n){ const v=Number(n); return isNaN(v)?'0':Math.round(v).toLocaleString('en-US'); }
 const ATTY = ['Sarah Chen','James Ortega','David Park','Maria Santos','Rachel Goldberg','Lisa Johnson','Rickey Henderson','Jennifer Martinez','Michael Tomassi','Amanda Foster','Sean Green'];
 
 /* ══════════════════════════════════════════════════════════════
@@ -2011,7 +2013,7 @@ function attorneyLoginV() {
   h += '<select class="inp" id="attorneySelect" style="padding:10px;border:1px solid var(--line);border-radius:6px;font-size:13px;">';
   h += '<option value="">Choose attorney...</option>';
   ATTY.forEach(a => {
-    h += '<option value="'+a.id+'">'+esc(a.name)+'</option>';
+    h += '<option value="'+esc(a)+'">'+esc(a)+'</option>';
   });
   h += '</select></div>';
   h += '<button onclick="attorneyLogin()" class="btn btn-pri" style="width:100%;margin-top:20px;">Sign In</button>';
@@ -2023,8 +2025,9 @@ function attorneyLoginV() {
 function attorneyLogin() {
   const attorneyId = document.getElementById('attorneySelect').value;
   if (!attorneyId) { alert('Please select an attorney'); return; }
-  const atty = ATTY.find(a => a.id === attorneyId);
-  st({role:'attorney', attorneyId:attorneyId, attorneyName:atty.name, isAuthenticated:true});
+  const atty = ATTY.find(a => a === attorneyId);
+  if (!atty) { alert('Please select an attorney'); return; }
+  st({role:'attorney', attorneyId:attorneyId, attorneyName:atty, isAuthenticated:true});
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -9753,8 +9756,7 @@ function submitAiExtractedCase() {
     const newCaseId = 'CC-' + String(CASES.length + 1).padStart(3, '0');
     
     // Get attorney object
-    const attorneyObj = ATTY.find(a => a.name === d.attorney);
-    const attorneyName = attorneyObj?.name || d.attorney;
+    const attorneyName = d.attorney;
     
     // Create case using mkC
     const newCase = mkC(
