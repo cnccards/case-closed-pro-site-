@@ -8413,6 +8413,33 @@ const HEALTH_CHECK_CSV_HEADERS = ['Client','Type','Status','Attorney','Carrier',
 const HEALTH_CHECK_CSV_TEMPLATE = HEALTH_CHECK_CSV_HEADERS.join(',') + '\n' +
   'Acme Manufacturing Co,Contract Dispute,Active,,Zurich,CLM-2025-1234,2025-03-01,2027-03-01,1200000,450000,1500000,300000,2025-09-15,18500\n';
 
+/* Upload a .csv instead of pasting it. Reads the file in the browser (nothing is sent anywhere until
+   you run the check or import) and drops its text into the box so it can still be reviewed and edited. */
+function loadCsvFile(source, stateKey){
+  const file = source && (source.files ? source.files[0] : source);
+  if (!file) return;
+  if (!/\.csv$|\.txt$/i.test(file.name) && file.type && !/csv|text\/plain/.test(file.type)) {
+    alert('Please choose a CSV file. In Excel use File > Save As > CSV (Comma delimited).'); return;
+  }
+  if (file.size > 5 * 1024 * 1024) { alert('That file is over 5 MB. Split it into smaller files and run them one at a time.'); return; }
+  const r = new FileReader();
+  r.onload = () => {
+    const text = String(r.result || '').replace(/^\uFEFF/, '');
+    st({[stateKey]: text, healthCheckError:'', openImportError:'', csvFileName: file.name});
+  };
+  r.onerror = () => alert('Could not read that file.');
+  r.readAsText(file);
+  if (source && source.value !== undefined) source.value = ''; // allow choosing the same file again
+}
+function csvDropHandler(ev, stateKey){
+  ev.preventDefault();
+  const f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+  if (f) loadCsvFile(f, stateKey);
+}
+function csvUploadButtonV(stateKey){
+  return '<label class="btn btn-out" style="cursor:pointer;margin:0 8px 10px 0;">⬆ Upload CSV file<input type="file" accept=".csv,.txt,text/csv" style="display:none" onchange="loadCsvFile(this,\''+stateKey+'\')"></label>'+
+    (S.csvFileName ? '<span style="font-size:11px;color:var(--dim);">Loaded: '+esc(S.csvFileName)+'</span>' : '');
+}
 function downloadHealthCheckTemplate(){
   const blob = new Blob([HEALTH_CHECK_CSV_TEMPLATE], {type:'text/csv'});
   const url = URL.createObjectURL(blob);
@@ -8495,7 +8522,7 @@ function parseHealthCheckCSV(text){
 }
 
 function openHealthCheckModal(){
-  st({showHealthCheckModal:true, healthCheckError:'', healthCheckResult:null, healthCheckCsvText:''});
+  st({showHealthCheckModal:true, healthCheckError:'', healthCheckResult:null, healthCheckCsvText:'', csvFileName:''});
 }
 function closeHealthCheckModal(){
   st({showHealthCheckModal:false});
@@ -8572,7 +8599,8 @@ function healthCheckModalV(){
     h += inpMoney('Price Paid For This Engagement ($)', window._hcPricePaid!==undefined ? window._hcPricePaid : '5000', 'window._hcPricePaid=this.value');
     h += '<div style="font-size:10.5px;color:var(--dim);margin:-8px 0 12px;">Fully credited toward their first invoice if they sign within 30 days of today. Leave blank if this one\'s free / not being charged for.</div>';
     h += '<div class="fld"><label class="lbl">Their Open Caseload (CSV)</label>';
-    h += '<textarea id="hcCsvInput" class="inp" style="min-height:160px;font-family:monospace;font-size:11.5px;" placeholder="Paste CSV here, or download the template below and fill it in.">'+esc(S.healthCheckCsvText||'')+'</textarea></div>';
+    h += '<textarea id="hcCsvInput" class="inp" style="min-height:160px;font-family:monospace;font-size:11.5px;" ondragover="event.preventDefault()" ondrop="csvDropHandler(event,\'healthCheckCsvText\')" placeholder="Upload a CSV file, drop one here, paste the rows, or download the template below and fill it in.">'+esc(S.healthCheckCsvText||'')+'</textarea></div>';
+    h += csvUploadButtonV('healthCheckCsvText');
     h += '<button class="btn btn-out" style="margin-bottom:10px;" onclick="downloadHealthCheckTemplate()">⬇ Download CSV Template</button>';
     if (S.healthCheckError) h += '<div class="alert-bad" style="margin-bottom:10px;">'+esc(S.healthCheckError)+'</div>';
     h += '<button class="btn btn-pri" style="width:100%;justify-content:center;" onclick="submitHealthCheck()" '+(S.healthCheckLoading?'disabled':'')+'>'+(S.healthCheckLoading?'Running Sentinel Health Check…':'Run Sentinel Health Check')+'</button>';
@@ -9146,7 +9174,8 @@ function openCaseImportCardV(){
     h += '<button class="btn btn-out" onclick="downloadHealthCheckTemplate()">⬇ Download CSV Template</button>';
     h += '</div>';
     h += '<div class="fld"><label class="lbl">Your Open Caseload (CSV)</label>';
-    h += '<textarea id="openImportCsv" class="inp" style="min-height:160px;font-family:monospace;font-size:11.5px;" placeholder="Paste CSV here, or download the template above and fill it in.">'+esc(S.openImportCsvText||'')+'</textarea></div>';
+    h += '<div style="margin-bottom:6px;">'+csvUploadButtonV('openImportCsvText')+'</div>';
+    h += '<textarea id="openImportCsv" class="inp" style="min-height:160px;font-family:monospace;font-size:11.5px;" ondragover="event.preventDefault()" ondrop="csvDropHandler(event,\'openImportCsvText\')" placeholder="Upload a CSV file, drop one here, paste the rows, or download the template above and fill it in.">'+esc(S.openImportCsvText||'')+'</textarea></div>';
     if (S.openImportError) h += '<div class="alert-bad" style="margin-bottom:10px;">'+esc(S.openImportError)+'</div>';
     h += '<button class="btn btn-pri" onclick="submitOpenCaseImport()" '+(S.openImportLoading?'disabled':'')+'>'+(S.openImportLoading?'Importing…':'Import Open Cases')+'</button>';
   }
