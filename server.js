@@ -3156,6 +3156,167 @@ setInterval(runWeeklyDigestCheck, 60 * 60 * 1000); // every hour
 runWeeklyDigestCheck(); // also check once on startup, in case the process just woke up on the right day
 
 // ---------------------------------------------------------------
+// Daily alert emails — ON by default for every active customer, no setup.
+// Each weekday morning (7am Eastern or the first check after it) owners and
+// admins get one email listing what needs attention across the whole
+// portfolio, and each attorney gets a short personal one about the matters
+// assigned to them. Nothing is sent on a day with nothing to report.
+//
+// The thresholds are deliberately set a little ahead of real trouble
+// (matching the dashboard alerts) so people hear about it while there is
+// still time to act. An admin can switch the emails off for their
+// organization (POST /api/org/alert-emails) and can send themselves a test
+// at any time. Stored in organizations.features so no schema change is needed:
+//   alert_emails_off (bool)  alert_emails_last_sent ('YYYY-MM-DD', Eastern)
+// Same hosting caveat as the weekly digest: a sleeping free-tier service
+// runs no code, so this is only reliable on an always-on plan.
+// ---------------------------------------------------------------
+const ALERT_T = { SOL_DAYS: 120, TRIAL_DAYS: 45, STALE_DAYS: 21, BURN_PCT: 0.60, RESERVE_PCT: 0.85, OVERLOAD_OPEN: 9 };
+function caseLastActivityMs(c) {
+  let best = c.filed ? new Date(c.filed).getTime() : 0;
+  (c.updates || []).forEach(u => { const t = new Date(u.date).getTime(); if (!isNaN(t) && t > best) best = t; });
+  return best;
+}
+function computeAlertItems(cases, opts = {}) {
+  const now = Date.now(), day = 864e5;
+  const money = n => '$' + Math.round(Number(n) || 0).toLocaleString('en-US');
+  const label = c => `${c.matterNo || c.id} ${c.client}`;
+  const open = cases.filter(c => c.status !== 'Closed');
+  const items = [];
+  const add = (key, sev, title, list, lineFn, extra = {}) => { if (list.length) items.push({ key, sev, title, count: list.length, lines: list.slice(0, 5).map(lineFn), more: Math.max(0, list.length - 5), ...extra }); };
+  const dleft = d => Math.ceil((new Date(d) - now) / day);
+  const dtxt = n => n < 0 ? `${Math.abs(n)} days PAST DUE` : n === 0 ? 'today' : `in ${n} days`;
+
+  if (!opts.personal) {
+    add('unassigned', 'red', 'Matters need an attorney', open.filter(c => !(c.attorney || '').trim() || c.attorney === 'Unassigned'),
+      c => `${label(c)} (${money(c.value)})`);
+  }
+  const sol = open.filter(c => c.keyDates?.sol && new Date(c.keyDates.sol).getTime() <= now + ALERT_T.SOL_DAYS * day).sort((a, b) => new Date(a.keyDates.sol) - new Date(b.keyDates.sol));
+  add('sol', 'red', `Statute of limitations within ${ALERT_T.SOL_DAYS} days`, sol, c => `${label(c)} — ${c.keyDates.sol} (${dtxt(dleft(c.keyDates.sol))})`);
+  const under = open.filter(c => (c.exposure?.likelyExposure || 0) > 0 && (c.insurance?.reserveAmount || 0) < c.exposure.likelyExposure * ALERT_T.RESERVE_PCT);
+  add('reserve', 'red', 'Reserves below likely exposure', under, c => `${label(c)} — reserve ${money(c.insurance?.reserveAmount)} vs likely exposure ${money(c.exposure.likelyExposure)}`);
+  const t0 = new Date().toISOString().slice(0, 10);
+  const overdue = open.filter(c => (c.tasks || []).some(t => !t.done && t.due && t.due < t0));
+  add('tasks', 'red', 'Overdue tasks', overdue, c => `${label(c)} — ${(c.tasks || []).filter(t => !t.done && t.due && t.due < t0).length} overdue`);
+  const trial = open.filter(c => c.keyDates?.trialDate && new Date(c.keyDates.trialDate).getTime() >= now - day && new Date(c.keyDates.trialDate).getTime() <= now + ALERT_T.TRIAL_DAYS * day).sort((a, b) => new Date(a.keyDates.trialDate) - new Date(b.keyDates.trialDate));
+  add('trial', 'amber', `Trial in the next ${ALERT_T.TRIAL_DAYS} days`, trial, c => `${label(c)} — ${c.keyDates.trialDate} (${dtxt(dleft(c.keyDates.trialDate))})`);
+  const burn = open.filter(c => (c.insurance?.reserveAmount || 0) > 0 && (c.billing?.totalBilled || 0) / c.insurance.reserveAmount > ALERT_T.BURN_PCT);
+  add('burn', 'amber', `Spend above ${Math.round(ALERT_T.BURN_PCT * 100)}% of reserve`, burn, c => `${label(c)} — billed ${money(c.billing.totalBilled)} of ${money(c.insurance.reserveAmount)}`);
+  const stale = open.filter(c => caseLastActivityMs(c) && now - caseLastActivityMs(c) > ALERT_T.STALE_DAYS * day).sort((a, b) => caseLastActivityMs(a) - caseLastActivityMs(b));
+  add('stale', 'amber', `No activity in ${ALERT_T.STALE_DAYS}+ days`, stale, c => `${label(c)} — quiet ${Math.floor((now - caseLastActivityMs(c)) / day)} days`);
+  add('nostep', 'amber', 'No next step recorded', open.filter(c => !c.nextStep), c => label(c));
+  if (!opts.personal) {
+    const byAtty = {};
+    open.forEach(c => { const a = (c.attorney || '').trim(); if (a && a !== 'Unassigned') byAtty[a] = (byAtty[a] || 0) + 1; });
+    const loaded = Object.entries(byAtty).filter(([, n]) => n >= ALERT_T.OVERLOAD_OPEN).sort((a, b) => b[1] - a[1]);
+    add('overload', 'amber', `Attorneys at ${ALERT_T.OVERLOAD_OPEN}+ open matters`, loaded, ([a, n]) => `${a} — ${n} open matters`);
+    if (opts.payablesWaiting) items.push({ key: 'payables', sev: 'amber', title: 'Payables awaiting approval', count: opts.payablesWaiting, lines: [`${opts.payablesWaiting} payable(s) totaling ${money(opts.payablesAmount)}`], more: 0 });
+  }
+  const rank = { red: 0, amber: 1 };
+  items.sort((a, b) => rank[a.sev] - rank[b.sev] || b.count - a.count);
+  return items;
+}
+function buildAlertEmail(orgName, recipientName, items, personal) {
+  const total = items.reduce((t, i) => t + i.count, 0);
+  const url = `${process.env.APP_URL || 'http://localhost:3000'}/case-closed-pro.html`;
+  let t = `Hi ${recipientName || 'there'},\n\n`;
+  t += personal ? `Here is what needs you today in ${orgName}:\n\n` : `Here is what needs attention across ${orgName}:\n\n`;
+  if (!items.length) t += 'All clear — nothing needs attention right now.\n';
+  items.forEach(i => {
+    t += `${i.sev === 'red' ? '[ACT NOW]' : '[WATCH]'} ${i.title} (${i.count})\n`;
+    i.lines.forEach(l => { t += `   - ${l}\n`; });
+    if (i.more) t += `   - ...and ${i.more} more\n`;
+    t += '\n';
+  });
+  t += `Open Case Closed Pro to see the full list:\n${url}\n\n`;
+  t += personal ? '' : 'You get this email because you are an owner or admin of this account. Any admin can turn these emails off from the dashboard.\n';
+  return { subject: items.length ? `Case Closed Pro: ${total} item${total !== 1 ? 's' : ''} need attention — ${orgName}` : `Case Closed Pro: all clear — ${orgName}`, text: t };
+}
+function easternNow() {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hour12: false, weekday: 'short' }).formatToParts(new Date()).map(p => [p.type, p.value]));
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, hour: parseInt(parts.hour, 10) % 24, weekday: parts.weekday };
+}
+async function sendAlertEmailsForOrg(client, org) {
+  const casesResult = await client.query('SELECT * FROM cases WHERE org_id = $1', [org.id]);
+  const cases = casesResult.rows.map(rowToCase);
+  const users = (await client.query('SELECT id, email, name, role FROM users WHERE org_id = $1 AND is_active = true', [org.id])).rows;
+  const pay = await client.query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(amount),0) AS amt FROM payables WHERE org_id = $1 AND status = 'Submitted'`, [org.id]);
+  const orgItems = computeAlertItems(cases, { payablesWaiting: pay.rows[0].n, payablesAmount: Number(pay.rows[0].amt) });
+  let sent = 0;
+  for (const u of users) {
+    const isMgr = u.role === 'owner' || u.role === 'admin';
+    const items = isMgr ? orgItems : computeAlertItems(cases.filter(c => c.assignedAttorneyUserId === u.id), { personal: true });
+    if (!items.length) continue; // never email an empty day
+    const mail = buildAlertEmail(org.name, u.name, items, !isMgr);
+    await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: u.email, subject: mail.subject, text: mail.text });
+    sent++;
+  }
+  return sent;
+}
+async function runDailyAlertCheck() {
+  if (!SMTP_CONFIGURED) return;
+  const et = easternNow();
+  if (et.weekday === 'Sat' || et.weekday === 'Sun' || et.hour < 7) return;
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    await client.query(`SET LOCAL app.is_platform_admin = 'true'`);
+    const due = await client.query(
+      `SELECT id, name FROM organizations
+       WHERE access_status = 'active' AND name NOT LIKE 'Health Check —%'
+         AND COALESCE(features->>'alert_emails_off', 'false') <> 'true'
+         AND COALESCE(features->>'alert_emails_last_sent', '') <> $1`, [et.date]);
+    for (const org of due.rows) {
+      try {
+        const n = await sendAlertEmailsForOrg(client, org);
+        await client.query(`UPDATE organizations SET features = jsonb_set(COALESCE(features, '{}'::jsonb), '{alert_emails_last_sent}', to_jsonb($1::text)) WHERE id = $2`, [et.date, org.id]);
+        if (n) console.log(`Daily alert emails: sent ${n} for org ${org.id}`);
+      } catch (e) {
+        console.error(`Daily alert emails failed for org ${org.id} (will retry next hour):`, e.message);
+      }
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    console.error('Daily alert check failed:', e.message);
+  } finally {
+    if (client) client.release();
+  }
+}
+setInterval(runDailyAlertCheck, 60 * 60 * 1000);
+setTimeout(runDailyAlertCheck, 30 * 1000); // shortly after startup, in case the service just woke up
+
+app.get('/api/org/alert-emails', async (req, res) => {
+  const r = await q('SELECT features FROM organizations WHERE id = $1', [req.orgId]);
+  const f = r.rows[0]?.features || {};
+  res.json({ enabled: f.alert_emails_off !== true, lastSent: f.alert_emails_last_sent || null, emailConfigured: SMTP_CONFIGURED });
+});
+app.post('/api/org/alert-emails', requireOrgRole('admin'), async (req, res) => {
+  const enabled = !!(req.body || {}).enabled;
+  await q(`UPDATE organizations SET features = jsonb_set(COALESCE(features, '{}'::jsonb), '{alert_emails_off}', to_jsonb($1::boolean)) WHERE id = $2`, [!enabled, req.orgId]);
+  await audit(req.orgId, req.user?.sub, 'org.alert_emails_' + (enabled ? 'on' : 'off'), 'organization', req.orgId, null, req.ip);
+  res.json({ enabled });
+});
+// Sends the requesting admin an alert email right now (even on a day with
+// nothing to report, so they can see what the email looks like).
+app.post('/api/org/alert-emails/test', requireOrgRole('admin'), async (req, res) => {
+  if (!SMTP_CONFIGURED) return res.status(503).json({ error: 'Email is not configured on this server. Set SMTP_HOST/PORT/USER/PASS and FROM_EMAIL.' });
+  if (!req.user?.email) return res.status(400).json({ error: 'A signed-in user is required' });
+  try {
+    const cases = (await req.db.query('SELECT * FROM cases WHERE org_id = $1', [req.orgId])).rows.map(rowToCase);
+    const pay = await req.db.query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(amount),0) AS amt FROM payables WHERE org_id = $1 AND status = 'Submitted'`, [req.orgId]);
+    const org = (await q('SELECT name FROM organizations WHERE id = $1', [req.orgId])).rows[0];
+    const items = computeAlertItems(cases, { payablesWaiting: pay.rows[0].n, payablesAmount: Number(pay.rows[0].amt) });
+    const mail = buildAlertEmail(org?.name || 'your organization', req.user.email.split('@')[0], items, false);
+    await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: req.user.email, subject: '[Test] ' + mail.subject, text: mail.text });
+    res.json({ sent: true, to: req.user.email, itemCount: items.length });
+  } catch (e) {
+    res.status(502).json({ error: 'Could not send the test email: ' + e.message });
+  }
+});
+
+// ---------------------------------------------------------------
 // Independent daily backup — separate from, and in addition to,
 // whatever automatic point-in-time recovery your database host
 // provides. That platform-level recovery is real and valuable, but
