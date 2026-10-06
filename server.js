@@ -466,6 +466,7 @@ function buildClosingSummaryText(c) {
 // App
 // ---------------------------------------------------------------
 const app = express();
+app.set('trust proxy', 1); // behind Render's proxy: use the real client address (rate limits, audit log)
 
 app.use(express.json({ limit: '5mb' }));
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || '*' }));
@@ -572,17 +573,49 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------
+// Sign-in throttle. Stops password guessing: after 8 wrong passwords (or wrong
+// 2FA codes) for the same account from the same address, sign-in is paused for
+// 15 minutes; any one address is also capped at 40 sign-in attempts per 15 min.
+// In-memory like the other limiters here (resets on restart; use Redis if you
+// ever run more than one instance).
+// ---------------------------------------------------------------
+const LOGIN_WINDOW_MS = 15 * 60 * 1000, LOGIN_MAX_FAILS = 8, LOGIN_MAX_PER_IP = 40;
+const loginFails = new Map(), loginIpHits = new Map();
+function throttleCheck(ip, key) {
+  const now = Date.now();
+  const ipRec = loginIpHits.get(ip) || { count: 0, resetAt: now + LOGIN_WINDOW_MS };
+  if (now > ipRec.resetAt) { ipRec.count = 0; ipRec.resetAt = now + LOGIN_WINDOW_MS; }
+  ipRec.count++; loginIpHits.set(ip, ipRec);
+  const rec = loginFails.get(key);
+  let wait = 0;
+  if (ipRec.count > LOGIN_MAX_PER_IP) wait = ipRec.resetAt - now;
+  if (rec && now <= rec.resetAt && rec.count >= LOGIN_MAX_FAILS) wait = Math.max(wait, rec.resetAt - now);
+  return wait ? Math.ceil(wait / 60000) : 0;
+}
+function throttleFail(key) {
+  const now = Date.now();
+  const rec = loginFails.get(key);
+  if (!rec || now > rec.resetAt) loginFails.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+  else rec.count++;
+}
+setInterval(() => { const n = Date.now(); for (const [k, v] of loginFails) if (n > v.resetAt) loginFails.delete(k); for (const [k, v] of loginIpHits) if (n > v.resetAt) loginIpHits.delete(k); }, 10 * 60 * 1000).unref?.();
+
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body || {};
   if (!isValidEmail(email) || !password) return res.status(400).json({ error: 'Email and password are required' });
   const normalizedEmail = email.trim().toLowerCase();
-  const invalid = () => res.status(401).json({ error: 'Invalid email or password' });
+  const throttleKey = req.ip + '|' + normalizedEmail;
+  const waitMin = throttleCheck(req.ip, throttleKey);
+  if (waitMin) return res.status(429).json({ error: `Too many sign-in attempts. Try again in ${waitMin} minute${waitMin !== 1 ? 's' : ''}.` });
+  const invalid = () => { throttleFail(throttleKey); return res.status(401).json({ error: 'Invalid email or password' }); };
   const result = await q('SELECT * FROM users WHERE email = $1 AND is_active = true', [normalizedEmail]);
   const user = result.rows[0];
   if (!user) return invalid();
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) return invalid();
 
+  loginFails.delete(throttleKey);
   if (user.totp_enabled) {
     // Password is correct, but the account requires a 2FA code next.
     // No session token yet — only a narrow pending token good for
@@ -609,6 +642,9 @@ app.post('/api/auth/2fa/login-verify', async (req, res) => {
   }
   if (!payload.pending2fa) return res.status(401).json({ error: 'Invalid pending token' });
 
+  const tKey = '2fa|' + payload.sub;
+  const waitMin = throttleCheck(req.ip, tKey);
+  if (waitMin) return res.status(429).json({ error: `Too many attempts. Try again in ${waitMin} minute${waitMin !== 1 ? 's' : ''}.` });
   const result = await q('SELECT * FROM users WHERE id = $1 AND is_active = true', [payload.sub]);
   const user = result.rows[0];
   if (!user || !user.totp_enabled) return res.status(401).json({ error: 'Invalid pending login' });
@@ -621,8 +657,9 @@ app.post('/api/auth/2fa/login-verify', async (req, res) => {
     for (let i = 0; i < codes.length; i++) {
       if (await bcrypt.compare(String(code).trim().toUpperCase(), codes[i])) { usedBackupCode = i; break; }
     }
-    if (usedBackupCode === null) return res.status(401).json({ error: 'Invalid or expired code' });
+    if (usedBackupCode === null) { throttleFail(tKey); return res.status(401).json({ error: 'Invalid or expired code' }); }
   }
+  loginFails.delete(tKey);
   if (usedBackupCode !== null) {
     const remaining = [...user.totp_backup_codes];
     remaining.splice(usedBackupCode, 1);
@@ -820,17 +857,31 @@ app.use('/api', async (req, res, next) => {
     // Platform admins bypass their own org's access_status entirely —
     // an admin account's "own" org is never what's actually in use,
     // and they need to be able to reach /api/admin/* regardless of it.
+    // Optional 2FA enforcement.
+    //  - Platform admins: when REQUIRE_PLATFORM_ADMIN_2FA=true, /api/admin/* needs 2FA turned on.
+    //  - Organizations: when an owner turns on "Require 2FA", everyone in that org must
+    //    have it on before using the app (they can still reach /api/auth/* to set it up).
+    // Support (impersonation) sessions are exempt from the org rule.
+    if (payload.platformAdmin && process.env.REQUIRE_PLATFORM_ADMIN_2FA === 'true' && req.path.startsWith('/admin') && payload.sub) {
+      const t = await q('SELECT totp_enabled FROM users WHERE id = $1', [payload.sub]);
+      if (!t.rows[0]?.totp_enabled) return res.status(403).json({ error: 'Turn on two-factor authentication to use the admin tools.', code: '2FA_REQUIRED' });
+    }
     if (!payload.platformAdmin) {
       // Use the user's CURRENT role and active flag from the database, not
       // whatever was baked into the token at sign-in: removing someone or
       // changing their role takes effect immediately instead of when the
       // 7-day token expires.
       if (payload.sub) {
-        const live = await q('SELECT is_active, role FROM users WHERE id = $1', [payload.sub]);
+        const live = await q(`SELECT u.is_active, u.role, u.totp_enabled, COALESCE(o.features->>'require_2fa','false') = 'true' AS require_2fa
+                              FROM users u LEFT JOIN organizations o ON o.id = u.org_id WHERE u.id = $1`, [payload.sub]);
         if (!live.rows[0] || live.rows[0].is_active === false) {
           return res.status(401).json({ error: 'Unauthorized — this account has been deactivated' });
         }
         req.user.role = live.rows[0].role;
+        if (live.rows[0].require_2fa && !live.rows[0].totp_enabled && !payload.impersonation
+            && !req.path.startsWith('/auth/') && req.path !== '/team/accept-invite') {
+          return res.status(403).json({ error: 'Your organization requires two-factor authentication. Turn it on to continue.', code: '2FA_REQUIRED' });
+        }
       }
       const orgCheck = await q('SELECT access_status FROM organizations WHERE id = $1', [payload.orgId]);
       if (orgCheck.rows[0]?.access_status === 'suspended') {
@@ -3434,6 +3485,23 @@ async function runDailyAlertCheck() {
 }
 setInterval(runDailyAlertCheck, 60 * 60 * 1000);
 setTimeout(runDailyAlertCheck, 30 * 1000); // shortly after startup, in case the service just woke up
+
+// Organization security setting: owners can require two-factor sign-in for everyone.
+app.get('/api/org/security', async (req, res) => {
+  const f = (await q('SELECT features FROM organizations WHERE id = $1', [req.orgId])).rows[0]?.features || {};
+  const m = await q('SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE totp_enabled)::int AS with2fa FROM users WHERE org_id = $1 AND is_active = true', [req.orgId]);
+  res.json({ require2fa: f.require_2fa === true, members: m.rows[0].total, membersWith2fa: m.rows[0].with2fa });
+});
+app.post('/api/org/security', requireOrgRole('owner'), async (req, res) => {
+  const on = !!(req.body || {}).require2fa;
+  if (on) {
+    const me = await q('SELECT totp_enabled FROM users WHERE id = $1', [req.user.sub]);
+    if (!me.rows[0]?.totp_enabled) return res.status(400).json({ error: 'Turn on two-factor authentication for your own account first, so you do not lock yourself out.' });
+  }
+  await q(`UPDATE organizations SET features = jsonb_set(COALESCE(features, '{}'::jsonb), '{require_2fa}', to_jsonb($1::boolean)) WHERE id = $2`, [on, req.orgId]);
+  await audit(req.orgId, req.user?.sub, 'org.require_2fa_' + (on ? 'on' : 'off'), 'organization', req.orgId, null, req.ip);
+  res.json({ require2fa: on });
+});
 
 app.get('/api/org/alert-emails', async (req, res) => {
   const r = await q('SELECT features FROM organizations WHERE id = $1', [req.orgId]);
