@@ -1,165 +1,51 @@
-# Privacy Policy
-
-**⚠️ ATTORNEY REVIEW REQUIRED BEFORE USE.** This draft has not been reviewed
-by a lawyer. Because the Service processes claimant PII and medical/injury
-information (via liens), you likely have obligations under state privacy
-laws (e.g., CCPA/CPRA if you have California users or claimants), and
-potentially HIPAA-adjacent obligations depending on how medical information
-flows through the platform — discuss this specifically with counsel, as it
-affects whether you need a Business Associate Agreement structure rather
-than (or in addition to) a standard DPA. Bracketed items need your specific
-information.
-
-_Last updated: [DATE]_
-
----
-
-## 1. Scope
-
-This Privacy Policy describes how [COMPANY LEGAL NAME] ("**we**," "**us**")
-collects, uses, and discloses information in connection with the Case
-Closed Pro platform (the "**Service**"). It covers two different kinds of
-information, treated differently below:
-
-- **Account & Usage Information** — information about the Users who access
-  the Service (carrier/TPA staff, defense counsel).
-- **Customer Data** — the case, claimant, and matter information our
-  customers (carriers, TPAs, and defense firms) submit to the Service in
-  the course of using it. We process Customer Data on our customers'
-  behalf and instructions; our customers, not us, determine what Customer
-  Data is collected and why. If you are a claimant or other individual
-  whose information appears in Customer Data, please direct privacy
-  requests to the carrier or firm handling your matter, not to us directly
-  — see Section 6.
-
-## 2. Account & Usage Information We Collect
-
-- **Registration information**: name, work email, organization name,
-  persona (carrier or defense counsel), and password (stored as a bcrypt
-  hash — we never store or have access to your plain-text password).
-- **Usage information**: log-in timestamps, IP address, pages/features
-  accessed, and similar diagnostic information.
-- **Communications**: if you contact us for support, we retain that
-  correspondence.
-- **Billing information**: for carrier Organizations, payment is processed
-  by Stripe, Inc.; we retain limited billing metadata (plan tier,
-  subscription status) but do not store full payment card numbers
-  ourselves.
-
-## 3. How We Use Account & Usage Information
-
-- To provide, maintain, and secure the Service.
-- To authenticate Users and enforce access controls between Organizations.
-- To communicate with you about the Service, including security notices.
-- To monitor for abuse, fraud, and violations of our Terms of Service.
-- To improve the Service, including aggregated/de-identified analysis of
-  usage patterns.
-
-We do not sell Account & Usage Information, and we do not use it to serve
-third-party advertising.
-
-## 4. Customer Data
-
-**4.1 Our role.** With respect to Customer Data, we act as a data
-processor/service provider on behalf of our customers (the carrier, TPA, or
-firm Organization), not as the party that decides what data to collect or
-why. Our processing of Customer Data is governed by our agreement with that
-customer, including any Data Processing Agreement in place — see
-`data-processing-agreement.md`.
-
-**4.2 What Customer Data may include.** Depending on how a customer uses
-the Service, Customer Data may include claimant names and contact
-information, case and claim details, medical/injury information relevant to
-liens and settlements, financial information (reserves, settlement amounts,
-billing), and documents uploaded to the platform.
-
-**4.3 AI features.** Where a customer uses AI-generated report insights or
-closing summaries, the underlying case data necessary to generate that
-output is sent to our AI provider (Anthropic) for processing. [Confirm and
-disclose Anthropic's data retention/training policy for API usage — as of
-this draft, Anthropic's standard API terms do not train on customer data
-sent via the API, but this should be verified against current terms before
-publishing.] We do not use Customer Data to train our own models.
-
-**4.4 Sub-processors.** We use the following categories of sub-processors
-to provide the Service: cloud hosting/database infrastructure, email
-delivery (for report-sharing and notifications), payment processing
-(Stripe), and AI processing (Anthropic). [Maintain a current, specific list
-at a stable URL and reference it here, since customers with DPAs will
-expect to be notified of sub-processor changes.]
-
-## 5. How We Share Information
-
-We do not sell personal information. We share information only:
-
-- **Within an Organization**, per the access model described in our Terms
-  (carrier Users see their Organization's matters; defense-firm Users see
-  only matters explicitly shared with their firm).
-- **With service providers** (sub-processors, above) who process
-  information on our behalf under contractual confidentiality and security
-  obligations.
-- **For legal reasons**, if required by law, subpoena, or other legal
-  process, or to protect the rights, property, or safety of our users or
-  the public.
-- **In a business transfer**, if we are involved in a merger, acquisition,
-  or asset sale — we will provide notice before information is transferred
-  and becomes subject to a different privacy policy.
-
-## 6. Individuals Who Are Not Our Direct Users (Claimants)
-
-If your name or information appears in Customer Data because you are a
-party to, or otherwise connected with, a litigated insurance claim, we are
-processing that information on behalf of the carrier, TPA, or law firm
-handling your matter — not on our own behalf. Please direct any privacy
-questions or requests (access, correction, deletion) to that organization
-directly. We will support our customers in responding to such requests as
-required by our agreement with them and applicable law.
-
-## 7. Your Rights
-
-Depending on your location, you may have rights to access, correct, delete,
-or restrict processing of your personal information, and to receive a copy
-of it in a portable format. Account Users (not claimants — see Section 6)
-can exercise these rights for their own Account & Usage Information by
-contacting [privacy email]. We will respond within the time required by
-applicable law.
-
-_[This section needs jurisdiction-specific detail — e.g., explicit CCPA/CPRA
-language and a "Do Not Sell or Share" mechanism if you have California
-users, GDPR language if you have EU/UK users or process EU/UK claimant
-data, etc. Have counsel confirm which regimes apply to your actual customer
-base.]_
-
-## 8. Data Retention
-
-We retain Account & Usage Information for as long as an account is active
-and for a reasonable period afterward for legal, security, and backup
-purposes. We retain Customer Data per the retention terms in our agreement
-with the applicable customer Organization, and generally delete or
-anonymize it within [30/60/90] days of a customer's account termination,
-except where longer retention is required by law or agreed in writing.
-
-## 9. Security
-
-We use industry-standard safeguards, including encryption in transit
-(TLS) [and at rest — confirm this is actually implemented before stating
-it], role-based access controls, and audit logging, to protect information
-processed by the Service. No system is completely secure, and we cannot
-guarantee absolute security.
-
-## 10. Children's Privacy
-
-The Service is intended for business use by adults working in insurance
-claims and legal defense. It is not directed to individuals under 18, and
-we do not knowingly collect Account & Usage Information from children.
-
-## 11. Changes to This Policy
-
-We may update this Privacy Policy from time to time. Material changes will
-be communicated by [email notice / in-app notice] prior to taking effect.
-
-## 12. Contact Us
-
-[COMPANY LEGAL NAME]
-[ADDRESS]
-Privacy inquiries: [privacy email]
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Privacy Policy — Case Closed Pro</title>
+<style>
+body{margin:0;background:#F3F5FA;color:#0F172A;font:16px/1.65 -apple-system,"Inter Tight",system-ui,sans-serif;}
+header{background:#001C41;padding:18px 24px;}
+header a{color:#fff;text-decoration:none;font-weight:700;font-size:18px;}
+header span{color:#F5B700;}
+main{max-width:780px;margin:0 auto;padding:36px 24px 60px;background:#fff;min-height:80vh;}
+h1{font-size:32px;margin:0 0 4px;color:#001C41;}
+.upd{color:#5B6B85;font-size:14px;margin-bottom:24px;}
+h2{font-size:19px;margin:30px 0 8px;color:#001C41;}
+ul{padding-left:22px;}li{margin-bottom:6px;}
+.note{background:#FFF6D6;border-left:4px solid #F5B700;padding:10px 14px;}
+footer{text-align:center;color:#5B6B85;font-size:13px;padding:20px;}
+footer a{color:#5B6B85;}
+</style></head><body>
+<header><a href="../index.html">Case Closed <span>Pro</span></a></header>
+<main><h1>Privacy Policy</h1><div class="upd">Last updated: October 5, 2026</div>
+<p>This Privacy Policy explains how Case Closed Pro ("we," "us") collects, uses and shares information when you visit our website, use the demo, contact us, or use the Case Closed Pro application (the "Service").</p>
+      <p class="note">When a customer (such as a TPA, carrier or law firm) uses the Service, the customer decides what case data goes in. For that data we act as the customer's service provider and handle it under our agreement with them. If you have a question about your claim or case information, contact the organization that handles it.</p>
+      <h2>1. Information we collect</h2>
+      <p>Information from you:</p>
+      <ul><li>Contact and sales inquiries: name, work email, company, phone and message when you use a contact form or email us.</li><li>Account information: name, work email, role, organization, and a hashed (not readable) password. If you turn on two-factor sign-in, we store the data needed to verify your authenticator code.</li></ul>
+      <p>Customer Data: case and claim information that customers enter or import, such as client and claimant names, matter numbers, carriers, claim numbers, dates, reserves, billing, notes and documents. This may include personal information about people involved in claims.</p>
+      <p>Information collected automatically: technical and usage data such as IP address, browser type, features used, and security and audit logs (who did what, and when), and error reports that help us fix problems. The app keeps your sign-in token in your browser's memory for the session. We do not use advertising or analytics cookies. Our website loads fonts from Google Fonts, which may receive your IP address.</p>
+      <h2>2. How we use information</h2>
+      <ul><li>To provide, secure, support and improve the Service.</li><li>To send account, security and service messages, including invitations, password resets and notices of case assignments.</li><li>To respond to inquiries and provide quotes.</li><li>To detect fraud, abuse and security incidents, and to meet legal obligations.</li><li>To produce de-identified, aggregated statistics that do not identify individuals or customers.</li></ul>
+      <p>We do not sell personal information. We do not use Customer Data for advertising, and we do not use it to train AI models.</p>
+      <h2>3. AI features</h2>
+      <p>Sentinel features send the content you submit (for example, claim text or case details) to our AI provider, Anthropic, to generate results. Results are suggestions and should be reviewed by a person.</p>
+      <h2>4. Who we share information with</h2>
+      <p>We share information only with:</p>
+      <ul><li>Service providers that help us run the Service, under contracts that limit their use of it. They currently include Render (application and database hosting), Anthropic (AI processing), an email delivery provider (service emails), and Vercel (website and demo hosting). A current list is available to customers on request.</li><li>Your organization. Administrators in your organization can see activity and data in your organization's account.</li><li>Other parties in a matter, as your organization directs. For example, if a customer shares a case with a carrier or defense counsel through the Service, the shared information is visible to them. Entries marked as internal to an organization are hidden from other organizations by access controls. This is not a legal privilege protection.</li><li>Authorities, when required by law, subpoena or court order, or to protect rights, safety and security.</li><li>A successor, if we are involved in a merger, acquisition or sale, under the same protections.</li></ul>
+      <h2>5. Security</h2>
+      <p>We use measures that include encrypted connections (TLS), hashed passwords, role-based access, separation of each customer's data from other customers' data, optional two-factor sign-in, and activity logging. No system is perfectly secure. If a breach affects your information we will notify the affected customer and, where we are the responsible party, you, as the law requires.</p>
+      <h2>6. Retention</h2>
+      <p>We keep Customer Data while the customer has an active account. After termination the customer may export data for 30 days; we then delete it from active systems, and it is removed from backups on a rolling schedule, typically within 90 days, unless the law requires us to keep it. We keep contact and sales inquiries for as long as needed to respond and for reasonable business records.</p>
+      <h2>7. Your choices and rights</h2>
+      <p>Depending on where you live, you may have rights to access, correct, delete or export your personal information, and to object to or limit certain uses. To exercise a right, email legal@cclosed.com. If your information is in a customer's case data, we will direct your request to that customer, who controls it, and help them respond. We will not discriminate against you for exercising your rights. You may contact your state attorney general or data protection authority if you are not satisfied. You can opt out of marketing emails using the link in them. We do not "sell" or "share" personal information as those terms are defined under California law.</p>
+      <h2>8. Children</h2>
+      <p>The Service is for businesses and is not directed to anyone under 18. We do not knowingly collect information from children.</p>
+      <h2>9. Where information is processed</h2>
+      <p>We process and store information in the United States. If you access the Service from outside the United States, you understand your information will be transferred to the United States.</p>
+      <h2>10. Changes</h2>
+      <p>We may update this policy. We will post the new version with a new date and, for material changes, tell customers by email or in the app.</p>
+      <h2>11. Contact us</h2>
+      <p>Questions or requests: legal@cclosed.com.</p>
+</main>
+<footer><a href="terms-of-service.html">Terms of Service</a> &nbsp;·&nbsp; <a href="privacy-policy.html">Privacy Policy</a> &nbsp;·&nbsp; legal@cclosed.com</footer>
+</body></html>
