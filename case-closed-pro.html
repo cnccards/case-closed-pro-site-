@@ -304,7 +304,21 @@ function createPayable(payeeId, amount, description, dueDate, relatedCaseId){
   PAYABLES.unshift(entry);
   return entry;
 }
-function updatePayableStatus(id, newStatus){
+/* Real accounts keep payees and payables in the database; the demo keeps them in the page. */
+async function loadPayablesFromApi(){
+  if (DEMO_MODE || !authToken) return;
+  try {
+    const [a, b] = await Promise.all([apiFetch('/api/payees'), apiFetch('/api/payables')]);
+    PAYEES.length = 0; (a.payees||[]).forEach(x => PAYEES.push(x));
+    PAYABLES.length = 0; (b.payables||[]).forEach(x => PAYABLES.push(x));
+  } catch (e) { console.error('Failed to load payables:', e.message); PAYEES.length = 0; PAYABLES.length = 0; }
+}
+async function updatePayableStatus(id, newStatus){
+  if (authToken && !DEMO_MODE) {
+    try { await apiFetch('/api/payables/'+encodeURIComponent(id)+'/status', {method:'PATCH', body: JSON.stringify({status:newStatus})}); await loadPayablesFromApi(); render(); }
+    catch (e) { alert('Could not update the payable: ' + e.message); }
+    return;
+  }
   const p = PAYABLES.find(x => x.id === id);
   if (!p) return;
   if (newStatus === 'Approved') p.approvedBy = (S.currentUser && S.currentUser.name) || 'You';
@@ -467,7 +481,7 @@ function attorneyScorecard(a){
   const risks = [];
   const trendDelta = trend[11] - Math.round(trend.slice(0,3).reduce((s,v)=>s+v,0)/3);
   if (trendDelta <= -6) risks.push({ level:'warn', label:'Performance declining', detail: trendDelta+' LES points over the last quarter' });
-  const firmAvgOpen = ATTY.reduce((s,x)=>s+CASES.filter(c=>c.attorney===x && c.status!=='Closed').length,0) / ATTY.length;
+  const firmAvgOpen = ATTY.reduce((s,x)=>s+CASES.filter(c=>c.attorney===x && c.status!=='Closed').length,0) / Math.max(1, ATTY.length);
   if (aOpen.length > firmAvgOpen * 1.4) risks.push({ level:'warn', label:'Heavy workload', detail: aOpen.length+' active matters vs. '+Math.round(firmAvgOpen)+' firm average' });
   if (adjusterSat < 3.8) risks.push({ level:'bad', label:'Low adjuster satisfaction', detail: adjusterSat+'/5 average rating' });
 
@@ -1443,7 +1457,11 @@ async function apiFetch(path, opts = {}) {
   if (authToken) headers.Authorization = 'Bearer ' + authToken;
   const r = await fetch(API_BASE + path, Object.assign({}, opts, { headers }));
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.error || ('Request failed: ' + r.status));
+  if (!r.ok) {
+    // The account (or its organization) requires two-factor sign-in: take them straight to setup.
+    if (r.status === 403 && data.code === '2FA_REQUIRED') { try { st({showSecurityModal:true, securityError:data.error}); } catch (e) {} }
+    throw new Error(data.error || ('Request failed: ' + r.status));
+  }
   return data;
 }
 
@@ -1490,6 +1508,27 @@ async function loadCasesFromApi() {
   } catch (e) {
     console.error('Failed to load cases from API, keeping local data:', e.message);
   }
+  await loadOrgRoster();
+  await loadPayablesFromApi();
+  if (!DEMO_MODE && authToken) { S.scoreSel = ATTY[0] || ''; if (S.addForm) S.addForm.attorney = 'Unassigned'; }
+}
+
+/* Each customer sees their OWN attorneys, never the demo firm's names.
+   Roster = active people in this account + any attorney already named on a matter
+   (e.g. imported cases). Rebuilt in place because ATTY is shared by every screen. */
+const ROSTER_COLORS = ['#1F4E8C','#1A5C2A','#5C1A1A','#3A1A5C','#6B4226','#2A4C7C','#7C2A4C','#4C7C2A','#7C6B2A','#0F766E','#9A3412','#4338CA'];
+async function loadOrgRoster() {
+  if (DEMO_MODE || !authToken) return;
+  const names = [];
+  const add = n => { n = (n||'').trim(); if (n && n !== 'Unassigned' && !names.includes(n)) names.push(n); };
+  try {
+    const data = await apiFetch('/api/team/members');
+    (data.members||[]).filter(m => m.isActive !== false).forEach(m => add(m.name));
+  } catch (e) { /* fall back to names on matters */ }
+  CASES.forEach(c => add(c.attorney));
+  ATTY.length = 0; ATTY.push(...names);
+  Object.keys(ATTY_COLOR).forEach(k => delete ATTY_COLOR[k]);
+  names.forEach((n,i) => { ATTY_COLOR[n] = ROSTER_COLORS[i % ROSTER_COLORS.length]; });
 }
 
 // Loads this org's actual plan entitlements (GET /api/org/features)
@@ -1506,6 +1545,7 @@ async function loadMyFeatures() {
     // Daily alert-email status (owners/admins can switch it off or send a test)
     if (!(S.currentUser && S.currentUser.role === 'member' && !S.currentUser.platformAdmin)) {
       try { S.alertEmails = await apiFetch('/api/org/alert-emails'); } catch (e2) { S.alertEmails = null; }
+      try { S.orgSecurity = await apiFetch('/api/org/security'); } catch (e2) { S.orgSecurity = null; }
       try {
         const cfg = await apiFetch('/api/reports/schedule-weekly-digest');
         S.weeklyDigestRecipients = (cfg.recipients||[]).join(', '); S.weeklyDigestDay = cfg.day || 'Monday'; S.weeklyDigestEnabled = !!cfg.enabled; S.weeklyDigestFreq = cfg.frequency || 'weekly';
@@ -5208,7 +5248,7 @@ function execFinancialV(){
   const totalBilled = CASES.reduce((s,c)=>s+(c.billing.totalBilled||0),0);
   const totalPaid = CASES.reduce((s,c)=>s+(c.billing.totalPaid||0),0);
   const realization = totalBilled>0 ? Math.round(totalPaid/totalBilled*100) : 0;
-  const avgMargin = Math.round(ATTY.reduce((s,a)=>s+attorneyScorecard(a).profitMargin,0)/ATTY.length);
+  const avgMargin = Math.round(ATTY.reduce((s,a)=>s+attorneyScorecard(a).profitMargin,0)/Math.max(1, ATTY.length));
 
   let h = '<div class="kpi-grid">';
   h += '<div class="kpi"><div class="kpi-l">Total Billed</div><div class="kpi-v">'+fV(totalBilled)+'</div></div>';
@@ -5760,7 +5800,7 @@ function scorecardV(){
     const tiers = {'A+ (90+)':allScores.filter(s=>s.les>=90).length,'A (85-89)':allScores.filter(s=>s.les>=85&&s.les<90).length,'B+ (75-84)':allScores.filter(s=>s.les>=75&&s.les<85).length,'B/C (<75)':allScores.filter(s=>s.les<75).length};
     const tierColors = {'A+ (90+)':'var(--green)','A (85-89)':'var(--pri2)','B+ (75-84)':'var(--gold)','B/C (<75)':'var(--red)'};
     Object.entries(tiers).forEach(([tier,count]) => {
-      const pct = Math.round(count/ATTY.length*100);
+      const pct = Math.round(count/Math.max(1, ATTY.length)*100);
       h += '<div style="margin-bottom:11px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;"><span style="font-weight:600;">'+tier+'</span><span style="font-weight:700;color:'+tierColors[tier]+';">'+count+'</span></div>';
       h += '<div style="background:var(--surf3);height:7px;border-radius:4px;overflow:hidden;"><div style="width:'+pct+'%;height:100%;background:'+tierColors[tier]+';"></div></div></div>';
     });
@@ -6446,6 +6486,12 @@ function securityModalV(){
     h += '<div style="font-size:12.5px;color:var(--muted);margin-bottom:14px;">To disable it, confirm your password:</div>';
     h += inp('Password', '', 'window._2faDisablePw=this.value', 'password');
     if (S.securityError) h += '<div class="alert-bad" style="margin-top:10px;">'+esc(S.securityError)+'</div>';
+    if (S.currentUser?.role === 'owner' && S.orgSecurity) {
+      const os = S.orgSecurity;
+      h += '<div style="border-top:1px solid var(--line);margin:18px 0 14px;padding-top:14px;"><div style="font-weight:700;font-size:13px;margin-bottom:4px;">Require two-factor for your whole organization</div>';
+      h += '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">'+os.membersWith2fa+' of '+os.members+' people have it on. When this is on, anyone without it is asked to set it up before they can continue.</div>';
+      h += '<button class="btn '+(os.require2fa?'btn-pri':'btn-out')+'" onclick="toggleRequire2FA()">'+(os.require2fa?'✓ Required — click to turn off':'Require 2FA for everyone')+'</button></div>';
+    }
     h += '<button class="btn btn-out" style="width:100%;justify-content:center;margin-top:14px;color:var(--red);border-color:var(--red);" onclick="disable2FA()" '+(S.securityLoading?'disabled':'')+'>'+(S.securityLoading?'Disabling…':'Disable 2FA')+'</button>';
   } else {
     h += '<div style="font-size:12.5px;color:var(--muted);margin-bottom:16px;">Two-factor authentication is currently <strong>off</strong>. Turning it on requires a code from an authenticator app every time you sign in, in addition to your password.</div>';
@@ -6457,6 +6503,13 @@ function securityModalV(){
   return h;
 }
 
+async function toggleRequire2FA(){
+  const on = !(S.orgSecurity && S.orgSecurity.require2fa);
+  try {
+    await apiFetch('/api/org/security', {method:'POST', body: JSON.stringify({require2fa:on})});
+    st({orgSecurity: Object.assign({}, S.orgSecurity, {require2fa:on}), securityError:''});
+  } catch (e) { st({securityError:e.message}); }
+}
 async function start2FASetup(){
   st({securityLoading:true, securityError:''});
   try {
@@ -7249,14 +7302,21 @@ function newPayableModalV(){
   h += '</div></div></div>';
   return h;
 }
-function submitNewPayable(){
+async function submitNewPayable(){
   const rawPayee = window._pyPayeeId || '';
   const payeeId = rawPayee.includes('||') ? rawPayee.split('||')[1] : rawPayee;
   const rawCase = window._pyCaseId || '';
   const caseId = (rawCase.includes('||')) ? rawCase.split('||')[1] : null;
   if (!payeeId) { alert('Select a payee.'); return; }
   if (!window._pyAmount || window._pyAmount <= 0) { alert('Enter an amount.'); return; }
-  createPayable(payeeId, window._pyAmount, window._pyDesc, window._pyDue, caseId);
+  if (authToken && !DEMO_MODE) {
+    try {
+      await apiFetch('/api/payables', {method:'POST', body: JSON.stringify({payeeId, amount:Number(window._pyAmount), description:window._pyDesc||'', dueDate:window._pyDue||null, relatedCaseId:caseId})});
+      await loadPayablesFromApi();
+    } catch (e) { alert('Could not save the payable: ' + e.message); return; }
+  } else {
+    createPayable(payeeId, window._pyAmount, window._pyDesc, window._pyDue, caseId);
+  }
   window._pyPayeeId = ''; window._pyAmount = 0; window._pyDesc = ''; window._pyDue = ''; window._pyCaseId = '';
   st({showNewPayableModal:false});
 }
@@ -7282,12 +7342,17 @@ function payeesModalV(){
   h += '</div></div></div></div>';
   return h;
 }
-function addPayee(){
+async function addPayee(){
   const name = (window._newPayeeName||'').trim();
   const type = window._newPayeeType || 'Other';
   const email = (window._newPayeeEmail||'').trim();
   if (!name) { alert('Enter a name.'); return; }
-  PAYEES.push({id:'py'+(PAYEES.length+1), name, type, email, defaultRate:0});
+  if (authToken && !DEMO_MODE) {
+    try { await apiFetch('/api/payees', {method:'POST', body: JSON.stringify({name, type, email})}); await loadPayablesFromApi(); }
+    catch (e) { alert('Could not add the payee: ' + e.message); return; }
+  } else {
+    PAYEES.push({id:'py'+(PAYEES.length+1), name, type, email, defaultRate:0});
+  }
   window._newPayeeName=''; window._newPayeeEmail='';
   render();
 }
@@ -9924,7 +9989,7 @@ async function aiAssignBestAttorney() {
     }
 
     // Validate attorneys exist
-    const validateAtty = (name) => ATTY.includes(name) ? name : 'Sarah Chen';
+    const validateAtty = (name) => ATTY.includes(name) ? name : (ATTY[0] || 'Unassigned');
 
     S.attorneyRecommendations = {
       gold: { attorney: validateAtty(recommendations.gold.attorney), reasoning: recommendations.gold.reasoning },
