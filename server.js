@@ -2561,14 +2561,15 @@ const ADDON_CATALOG = [
 // TEMPORARY: sentinel_match is on for every tier (incl. starter) so it can be
 // demoed to any customer. Revisit when add-on pricing is finalized — set the
 // starter value back to false to make it a paid add-on again.
+// TEMPORARY: sentinel_digest (the weekly AI briefing) is on for every tier while pricing is decided. It is deliberately NOT in ADDON_CATALOG yet.
 const TIER_FEATURES = {
-  starter:    { sentinel_match: true,  sentinel_settle: false, sentinel_strategy: false, sentinel_horizon: false, sentinel_watch: false, trends: false, ai_assistant: false },
-  growth:     { sentinel_match: true,  sentinel_settle: true,  sentinel_strategy: false, sentinel_horizon: false, sentinel_watch: false, trends: true,  ai_assistant: true  },
-  enterprise: { sentinel_match: true,  sentinel_settle: true,  sentinel_strategy: true,  sentinel_horizon: true,  sentinel_watch: true,  trends: true,  ai_assistant: true  }
+  starter:    { sentinel_match: true, sentinel_digest: true,  sentinel_settle: false, sentinel_strategy: false, sentinel_horizon: false, sentinel_watch: false, trends: false, ai_assistant: false },
+  growth:     { sentinel_match: true, sentinel_digest: true,  sentinel_settle: true,  sentinel_strategy: false, sentinel_horizon: false, sentinel_watch: false, trends: true,  ai_assistant: true  },
+  enterprise: { sentinel_match: true, sentinel_digest: true,  sentinel_settle: true,  sentinel_strategy: true,  sentinel_horizon: true,  sentinel_watch: true,  trends: true,  ai_assistant: true  }
 };
 const FEATURE_LABELS = {
   sentinel_match: 'Sentinel Match', sentinel_settle: 'Sentinel Settle', sentinel_strategy: 'Sentinel Strategy',
-  sentinel_horizon: 'Sentinel Horizon', sentinel_watch: 'Sentinel Watch', trends: 'Executive Trends dashboard',
+  sentinel_horizon: 'Sentinel Horizon', sentinel_watch: 'Sentinel Watch', sentinel_digest: 'Sentinel Digest', trends: 'Executive Trends dashboard',
   ai_assistant: 'AI Case Assistant'
 };
 // Baseline bundle for the org's tier, overlaid with whatever's in its
@@ -3051,15 +3052,21 @@ app.post('/api/reports/email', async (req, res) => {
 // "Weekly Executive Email" card. Actual sending is the scheduler
 // function below, not this endpoint — this just persists the config.
 // ---------------------------------------------------------------
+const REPORT_FREQS = ['daily', 'weekly', 'monthly'];
 app.get('/api/reports/schedule-weekly-digest', async (req, res) => {
   const result = await req.db.query('SELECT * FROM weekly_digest_config WHERE org_id = $1', [req.orgId]);
   const row = result.rows[0];
+  const of = (await q('SELECT features FROM organizations WHERE id = $1', [req.orgId])).rows[0]?.features || {};
+  const frequency = REPORT_FREQS.includes(of.digest_freq) ? of.digest_freq : 'weekly';
   res.json(row
-    ? { recipients: row.recipients, day: row.day_of_week, enabled: row.enabled }
-    : { recipients: [], day: 'Monday', enabled: false });
+    ? { recipients: row.recipients, day: row.day_of_week, enabled: row.enabled, frequency }
+    : { recipients: [], day: 'Monday', enabled: false, frequency });
 });
 app.post('/api/reports/schedule-weekly-digest', requireOrgRole('admin'), async (req, res) => {
-  const { recipients, day, enabled } = req.body || {};
+  const { recipients, day, enabled, frequency } = req.body || {};
+  if (frequency !== undefined && REPORT_FREQS.includes(frequency)) {
+    await q(`UPDATE organizations SET features = jsonb_set(COALESCE(features, '{}'::jsonb), '{digest_freq}', to_jsonb($1::text)) WHERE id = $2`, [frequency, req.orgId]);
+  }
   const dayVal = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].includes(day) ? day : 'Monday';
   await req.db.query(
     `INSERT INTO weekly_digest_config (org_id, recipients, day_of_week, enabled)
@@ -3067,8 +3074,42 @@ app.post('/api/reports/schedule-weekly-digest', requireOrgRole('admin'), async (
      ON CONFLICT (org_id) DO UPDATE SET recipients = $2, day_of_week = $3, enabled = $4`,
     [req.orgId, Array.isArray(recipients) ? recipients : String(recipients||'').split(',').map(s=>s.trim()).filter(Boolean), dayVal, !!enabled]
   );
-  await audit(req.orgId, req.user?.sub, 'digest.schedule_updated', 'organization', req.orgId, { day: dayVal, enabled }, req.ip);
+  await audit(req.orgId, req.user?.sub, 'digest.schedule_updated', 'organization', req.orgId, { day: dayVal, enabled, frequency }, req.ip);
   res.json({ saved: true });
+});
+
+// Sentinel Digest: preview this week's briefing, optionally emailing it.
+//   send: 'none' (default) | 'me' (the signed-in admin) | 'recipients' (the saved list)
+app.post('/api/reports/sentinel-digest/preview', requireOrgRole('admin'), requireFeature('sentinel_digest'), async (req, res) => {
+  try {
+    const send = (req.body || {}).send || 'none';
+    const d = await buildSentinelDigest(req.orgId, req.db);
+    let sentTo = [];
+    if (send === 'me' || send === 'recipients') {
+      if (!SMTP_CONFIGURED) return res.status(503).json({ error: 'Email is not configured on this server. Set SMTP_HOST/PORT/USER/PASS and FROM_EMAIL.' });
+      if (send === 'me') {
+        if (!req.user?.email) return res.status(400).json({ error: 'A signed-in user is required' });
+        sentTo = [req.user.email];
+      } else {
+        const cfg = await req.db.query('SELECT recipients FROM weekly_digest_config WHERE org_id = $1', [req.orgId]);
+        sentTo = cfg.rows[0]?.recipients || [];
+        if (!sentTo.length) return res.status(400).json({ error: 'Add at least one recipient and save the schedule first.' });
+      }
+      await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: sentTo.join(','), subject: (send === 'me' ? '[Preview] ' : '') + d.subject, text: d.text });
+      if (send === 'recipients') {
+        await saveSentinelDigest(req.db, req.orgId, d);
+        await req.db.query('UPDATE weekly_digest_config SET last_sent_week = $1 WHERE org_id = $2', [isoWeekKey(new Date()), req.orgId]);
+      }
+      await audit(req.orgId, req.user?.sub, 'digest.sent', 'organization', req.orgId, { to: send, count: sentTo.length }, req.ip);
+    }
+    res.json({ subject: d.subject, text: d.text, usedAI: d.usedAI, sentTo });
+  } catch (e) {
+    res.status(e.statusCode || 500).json({ error: 'Could not build the digest: ' + e.message });
+  }
+});
+app.get('/api/reports/sentinel-digest/history', requireOrgRole('admin'), async (req, res) => {
+  const r = await req.db.query(`SELECT id, name, ai_summary, created_at FROM saved_reports WHERE org_id = $1 AND report_id = 'sentinel-digest' ORDER BY created_at DESC LIMIT 12`, [req.orgId]);
+  res.json({ digests: r.rows.map(x => ({ id: x.id, name: x.name, text: x.ai_summary, createdAt: x.created_at })) });
 });
 
 // Builds the same kind of summary the frontend's own digest builder
@@ -3098,6 +3139,74 @@ async function buildWeeklyDigestText(orgId, dbClient){
   return s;
 }
 
+// ---------------------------------------------------------------
+// SENTINEL DIGEST — a weekly executive briefing written by AI.
+// Sets up from the Executive dashboard (recipients + day), then arrives by
+// email each week on the chosen day (checked hourly by runWeeklyDigestCheck
+// below). Built only from the account's own data: this week's activity,
+// the standing alerts, money, deadlines and workload. Private (organization-
+// only) notes are never fed to the AI or included, since a digest may go to
+// executives outside the case team. If AI is unavailable the email still
+// goes out as a plain-numbers summary rather than not at all.
+// ---------------------------------------------------------------
+async function buildSentinelDigest(orgId, db) {
+  const org = (await db.query('SELECT name, plan_tier, features FROM organizations WHERE id = $1', [orgId])).rows[0] || {};
+  const orgName = org.name || 'Your organization';
+  const cases = (await db.query('SELECT * FROM cases WHERE org_id = $1', [orgId])).rows.map(rowToCase);
+  const pay = await db.query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(amount),0) AS amt FROM payables WHERE org_id = $1 AND status = 'Submitted'`, [orgId]);
+  const now = Date.now(), wk = 7 * 864e5;
+  const today = new Date().toISOString().slice(0, 10);
+  const since = new Date(now - wk).toISOString().slice(0, 10);
+  const money = n => '$' + Math.round(Number(n) || 0).toLocaleString('en-US');
+  const exposureOf = c => (c.exposure?.likelyExposure || c.value || 0);
+  const open = cases.filter(c => c.status !== 'Closed');
+
+  const activity = [];
+  open.forEach(c => (c.updates || []).forEach(u => {
+    if (u.visibility === 'private') return; // never leak organization-only notes into an emailed briefing
+    if (u.date && u.date >= since) activity.push({ date: u.date, matter: c.matterNo || c.id, client: c.client, type: u.type || 'Update', text: String(u.text || '').slice(0, 160) });
+  }));
+  activity.sort((a, b) => (a.date < b.date ? 1 : -1));
+  const byAtty = {};
+  open.forEach(c => { const a = (c.attorney || '').trim() || 'Unassigned'; byAtty[a] = (byAtty[a] || 0) + 1; });
+  const alerts = computeAlertItems(cases, { payablesWaiting: pay.rows[0].n, payablesAmount: Number(pay.rows[0].amt) });
+  const pack = {
+    organization: orgName, asOf: today, periodStart: since,
+    portfolio: {
+      openMatters: open.length, closedMatters: cases.length - open.length,
+      totalReserves: money(cases.reduce((t, c) => t + (c.insurance?.reserveAmount || 0), 0)),
+      totalLikelyExposure: money(open.reduce((t, c) => t + exposureOf(c), 0)),
+      totalDefenseSpend: money(cases.reduce((t, c) => t + (c.billing?.totalBilled || 0), 0))
+    },
+    newMattersThisWeek: cases.filter(c => c._createdAt && now - new Date(c._createdAt).getTime() <= wk).slice(0, 10).map(c => ({ matter: c.matterNo || c.id, client: c.client, type: c.type, value: money(c.value), attorney: c.attorney || 'Unassigned' })),
+    closedThisWeek: cases.filter(c => c.status === 'Closed' && c._updatedAt && now - new Date(c._updatedAt).getTime() <= wk).slice(0, 10).map(c => ({ matter: c.matterNo || c.id, client: c.client, disposition: c.closing?.dispositionType || '' })),
+    activityThisWeek: { count: activity.length, recent: activity.slice(0, 12) },
+    alerts: alerts.map(a => ({ title: a.title, severity: a.sev === 'red' ? 'act now' : 'watch', count: a.count, examples: a.lines })),
+    largestOpenExposures: [...open].sort((a, b) => exposureOf(b) - exposureOf(a)).slice(0, 5).map(c => ({ matter: c.matterNo || c.id, client: c.client, exposure: money(exposureOf(c)), reserve: money(c.insurance?.reserveAmount), stage: c.litigationStage || c.status, attorney: c.attorney || 'Unassigned' })),
+    attorneyWorkload: Object.entries(byAtty).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, n]) => ({ attorney: name, openMatters: n }))
+  };
+
+  const subject = `Sentinel Digest — ${orgName} — week of ${today}`;
+  const footer = `\n\n---\nPrepared by Sentinel from your Case Closed Pro data as of ${today}. AI-written summaries can contain errors; please verify before acting. This is not legal advice.\n`;
+  let body, usedAI = false;
+  try {
+    const system = 'You are Sentinel, the analyst inside a litigation-management platform for insurance carriers and TPAs. Write a weekly executive briefing for a busy claims or legal executive who will read it on their phone in two minutes. Use ONLY the data provided; never invent facts, names, dates or numbers, and quote figures exactly as given. Plain text only: no markdown symbols, no asterisks or pound signs. Use these ALL-CAPS section headings, skipping any section that has nothing to say: HEADLINE (2 sentences: the single most important thing this week), WHAT CHANGED THIS WEEK, NEEDS A DECISION, DEADLINES AND RISK, MONEY, WORKLOAD, RECOMMENDED ACTIONS (3 to 5 specific, numbered actions that name the matters and people involved). Use short hyphen bullets. Aim for 300 to 450 words. Be direct and calm; flag what is urgent without alarm. Do not give legal advice and do not predict case outcomes.';
+    body = (await callClaude(system, 'Account data for this week (JSON):\n' + JSON.stringify(pack), 1500)).trim();
+    usedAI = true;
+  } catch (e) {
+    console.error('Sentinel Digest AI unavailable, using plain summary:', e.message);
+    body = `HEADLINE\n${pack.portfolio.openMatters} open matters, ${pack.portfolio.totalReserves} in reserves, ${pack.portfolio.totalLikelyExposure} likely exposure. ${alerts.length ? alerts.length + ' alert' + (alerts.length !== 1 ? 's' : '') + ' need attention.' : 'Nothing needs attention right now.'}\n\n`;
+    alerts.forEach(a => { body += `${a.sev === 'red' ? 'ACT NOW' : 'WATCH'}: ${a.title} (${a.count})\n` + a.lines.map(l => `  - ${l}`).join('\n') + '\n\n'; });
+    body += `(This week's AI commentary was unavailable, so this is the numbers-only version.)`;
+  }
+  const text = `SENTINEL DIGEST — ${orgName}\nWeek of ${today}\n${'='.repeat(46)}\n\n${body}${footer}`;
+  return { subject, text, usedAI, pack };
+}
+async function saveSentinelDigest(db, orgId, digest) {
+  await db.query(`INSERT INTO saved_reports (org_id, report_id, name, category, row_count, cols, rows, ai_summary) VALUES ($1,'sentinel-digest',$2,'Sentinel',0,'[]','[]',$3)`,
+    [orgId, digest.subject, digest.text]);
+}
+
 // Checked once an hour. Sends any org's digest whose configured day
 // matches today and hasn't already gone out this ISO week.
 //
@@ -3117,9 +3226,30 @@ function isoWeekKey(d){
   const weekNo = Math.ceil((((date - yearStart) / 864e5) + 1)/7);
   return date.getUTCFullYear()+'-W'+weekNo;
 }
+const LONG_DAY = { Mon:'Monday', Tue:'Tuesday', Wed:'Wednesday', Thu:'Thursday', Fri:'Friday', Sat:'Saturday', Sun:'Sunday' };
+// Is a recurring email due today? lastSent is 'YYYY-MM-DD' (Eastern) or ''.
+//   daily   — every weekday
+//   weekly  — once per ISO week, on the chosen weekday (alerts: Monday)
+//   monthly — once per calendar month, on the first chosen weekday of the month
+//             (alerts: the first weekday of the month)
+function freqDue(freq, lastSent, et, dayLong) {
+  if (lastSent === et.date) return false;
+  const weekend = et.weekday === 'Sat' || et.weekday === 'Sun';
+  const dom = parseInt(et.date.slice(8), 10);
+  if (freq === 'daily') return !weekend;
+  if (freq === 'monthly') {
+    if (lastSent && lastSent.slice(0, 7) === et.date.slice(0, 7)) return false;
+    return dayLong ? (LONG_DAY[et.weekday] === dayLong && dom <= 7) : !weekend;
+  }
+  // weekly
+  if (dayLong) return LONG_DAY[et.weekday] === dayLong;
+  const wk = d => { const [y, m, dd] = d.split('-').map(Number); return isoWeekKey(new Date(y, m - 1, dd)); };
+  return !weekend && (!lastSent || wk(lastSent) !== wk(et.date));
+}
 async function runWeeklyDigestCheck(){
   if (!SMTP_CONFIGURED) return;
-  const todayName = new Date().toLocaleDateString('en-US',{weekday:'long', timeZone:'UTC'});
+  const et = easternNow();
+  if (et.hour < 7) return;
   const thisWeek = isoWeekKey(new Date());
   // This is a background job with no single tenant — it legitimately
   // needs to read across every org, same as the admin panel's org
@@ -3128,26 +3258,43 @@ async function runWeeklyDigestCheck(){
   try {
     await client.query('BEGIN');
     await client.query(`SET LOCAL app.is_platform_admin = 'true'`);
-    const due = await client.query(
-      `SELECT * FROM weekly_digest_config WHERE enabled = true AND day_of_week = $1 AND (last_sent_week IS NULL OR last_sent_week != $2)`,
-      [todayName, thisWeek]
+    const all = await client.query(
+      `SELECT w.*, o.plan_tier, o.features FROM weekly_digest_config w JOIN organizations o ON o.id = w.org_id
+       WHERE w.enabled = true AND o.access_status = 'active'`
     );
+    const due = { rows: all.rows.filter(r => {
+      const f = r.features || {};
+      const freq = REPORT_FREQS.includes(f.digest_freq) ? f.digest_freq : 'weekly';
+      return freqDue(freq, f.digest_last_sent || '', et, r.day_of_week);
+    }) };
     for (const row of due.rows) {
       if (!row.recipients || row.recipients.length === 0) continue;
-      const text = await buildWeeklyDigestText(row.org_id, client);
+      const orgRow = { plan_tier: row.plan_tier, features: row.features };
+      let subject, text;
+      if (orgFeatures(orgRow).sentinel_digest) {
+        const d = await buildSentinelDigest(row.org_id, client);
+        subject = d.subject; text = d.text;
+        // history: tag the connection to this org so the RLS-protected insert is allowed
+        await client.query(`SELECT set_config('app.current_org_id', $1, true)`, [row.org_id]);
+        await saveSentinelDigest(client, row.org_id, d);
+      } else {
+        subject = `Weekly Executive Summary — ${new Date().toISOString().slice(0,10)}`;
+        text = await buildWeeklyDigestText(row.org_id, client);
+      }
       await mailer.sendMail({
         from: process.env.FROM_EMAIL || process.env.SMTP_USER,
         to: row.recipients.join(','),
-        subject: `Weekly Executive Summary — ${new Date().toISOString().slice(0,10)}`,
+        subject,
         text
       });
       await client.query('UPDATE weekly_digest_config SET last_sent_week = $1 WHERE org_id = $2', [thisWeek, row.org_id]);
-      console.log(`Weekly digest sent for org ${row.org_id}`);
+      await client.query(`UPDATE organizations SET features = jsonb_set(COALESCE(features, '{}'::jsonb), '{digest_last_sent}', to_jsonb($1::text)) WHERE id = $2`, [et.date, row.org_id]);
+      console.log(`Digest sent for org ${row.org_id}`);
     }
     await client.query('COMMIT');
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
-    console.error('Weekly digest check failed:', e.message);
+    console.error('Digest check failed:', e.message);
   } finally {
     client.release();
   }
@@ -3156,18 +3303,18 @@ setInterval(runWeeklyDigestCheck, 60 * 60 * 1000); // every hour
 runWeeklyDigestCheck(); // also check once on startup, in case the process just woke up on the right day
 
 // ---------------------------------------------------------------
-// Daily alert emails — ON by default for every active customer, no setup.
-// Each weekday morning (7am Eastern or the first check after it) owners and
+// Daily alert emails — OPTIONAL (off until an owner/admin turns them on).
+// When on, each weekday morning (7am Eastern or the first check after it) owners and
 // admins get one email listing what needs attention across the whole
 // portfolio, and each attorney gets a short personal one about the matters
 // assigned to them. Nothing is sent on a day with nothing to report.
 //
 // The thresholds are deliberately set a little ahead of real trouble
 // (matching the dashboard alerts) so people hear about it while there is
-// still time to act. An admin can switch the emails off for their
-// organization (POST /api/org/alert-emails) and can send themselves a test
-// at any time. Stored in organizations.features so no schema change is needed:
-//   alert_emails_off (bool)  alert_emails_last_sent ('YYYY-MM-DD', Eastern)
+// still time to act. An admin turns them on or off for their organization
+// (POST /api/org/alert-emails) and can send themselves a test at any time.
+// Stored in organizations.features so no schema change is needed:
+//   alert_emails_on (bool)  alert_emails_last_sent ('YYYY-MM-DD', Eastern)
 // Same hosting caveat as the weekly digest: a sleeping free-tier service
 // runs no code, so this is only reliable on an always-on plan.
 // ---------------------------------------------------------------
@@ -3263,10 +3410,11 @@ async function runDailyAlertCheck() {
     await client.query('BEGIN');
     await client.query(`SET LOCAL app.is_platform_admin = 'true'`);
     const due = await client.query(
-      `SELECT id, name FROM organizations
+      `SELECT id, name, features FROM organizations
        WHERE access_status = 'active' AND name NOT LIKE 'Health Check —%'
-         AND COALESCE(features->>'alert_emails_off', 'false') <> 'true'
+         AND COALESCE(features->>'alert_emails_on', 'false') = 'true'
          AND COALESCE(features->>'alert_emails_last_sent', '') <> $1`, [et.date]);
+    due.rows = due.rows.filter(o => freqDue(REPORT_FREQS.includes(o.features?.alert_emails_freq) ? o.features.alert_emails_freq : 'daily', o.features?.alert_emails_last_sent || '', et, null));
     for (const org of due.rows) {
       try {
         const n = await sendAlertEmailsForOrg(client, org);
@@ -3290,13 +3438,15 @@ setTimeout(runDailyAlertCheck, 30 * 1000); // shortly after startup, in case the
 app.get('/api/org/alert-emails', async (req, res) => {
   const r = await q('SELECT features FROM organizations WHERE id = $1', [req.orgId]);
   const f = r.rows[0]?.features || {};
-  res.json({ enabled: f.alert_emails_off !== true, lastSent: f.alert_emails_last_sent || null, emailConfigured: SMTP_CONFIGURED });
+  res.json({ enabled: f.alert_emails_on === true, frequency: REPORT_FREQS.includes(f.alert_emails_freq) ? f.alert_emails_freq : 'daily', lastSent: f.alert_emails_last_sent || null, emailConfigured: SMTP_CONFIGURED });
 });
 app.post('/api/org/alert-emails', requireOrgRole('admin'), async (req, res) => {
   const enabled = !!(req.body || {}).enabled;
-  await q(`UPDATE organizations SET features = jsonb_set(COALESCE(features, '{}'::jsonb), '{alert_emails_off}', to_jsonb($1::boolean)) WHERE id = $2`, [!enabled, req.orgId]);
+  const fq = (req.body || {}).frequency;
+  await q(`UPDATE organizations SET features = jsonb_set(COALESCE(features, '{}'::jsonb), '{alert_emails_on}', to_jsonb($1::boolean)) WHERE id = $2`, [enabled, req.orgId]);
+  if (REPORT_FREQS.includes(fq)) await q(`UPDATE organizations SET features = jsonb_set(COALESCE(features, '{}'::jsonb), '{alert_emails_freq}', to_jsonb($1::text)) WHERE id = $2`, [fq, req.orgId]);
   await audit(req.orgId, req.user?.sub, 'org.alert_emails_' + (enabled ? 'on' : 'off'), 'organization', req.orgId, null, req.ip);
-  res.json({ enabled });
+  res.json({ enabled, frequency: REPORT_FREQS.includes(fq) ? fq : undefined });
 });
 // Sends the requesting admin an alert email right now (even on a day with
 // nothing to report, so they can see what the email looks like).
