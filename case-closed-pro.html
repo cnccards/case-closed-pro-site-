@@ -7522,6 +7522,166 @@ async function resetSandbox(){
   }
 }
 
+/* ── NEW CUSTOMER TAB (Admin) ───────────────────────────────
+   Step-by-step onboarding checklist per customer, a contract and
+   billing record, trials, invoice reminders and a customer health
+   view. Backed by /api/admin/onboarding* in server.js. Nothing here
+   charges anyone — invoices are still sent by hand; this tab just
+   remembers what is owed and when. */
+async function fetchOnboarding(){
+  if (!API_BASE || !authToken) return;
+  st({onbLoading:true, onbError:''});
+  try {
+    const data = await apiFetch('/api/admin/onboarding');
+    st({onb:data, onbTemplates:data.templates, onbLoading:false});
+  } catch (e) { st({onbError:e.message, onbLoading:false}); }
+}
+function onbPatchCustomer(c){
+  if (!c || !S.onb) return;
+  const list = S.onb.customers.map(x => x.id === c.id ? c : x);
+  st({onb: Object.assign({}, S.onb, {customers:list}), onbError:''});
+  fetchOnboarding(); // refresh invoice reminders too
+}
+async function onbStep(orgId, key, done){
+  try {
+    const r = await apiFetch('/api/admin/organizations/'+orgId+'/onboarding/step', {method:'POST', body: JSON.stringify({key, done})});
+    onbPatchCustomer(r.customer);
+  } catch (e) { st({onbError:e.message}); }
+}
+async function onbSaveContract(orgId, extra){
+  const g = id => { const el = document.getElementById(id); return el ? el.value : undefined; };
+  // Quick actions (mark invoice sent) send only that action, never the form fields of whichever customer is open.
+  const body = extra ? extra : {
+    signedDate: g('onb_signed'), renewalDate: g('onb_renewal'), termMonths: g('onb_term'),
+    setupFee: moneyVal(g('onb_setupfee')), monthlyAmount: moneyVal(g('onb_monthly')), invoiceDay: g('onb_invday'),
+    setupPaidDate: g('onb_paid'), billingNotes: g('onb_notes')
+  };
+  try {
+    const r = await apiFetch('/api/admin/organizations/'+orgId+'/contract', {method:'POST', body: JSON.stringify(body)});
+    onbPatchCustomer(r.customer);
+    st({onbSaved:'Saved'}); setTimeout(()=>{ if (S.onbSaved) st({onbSaved:''}); }, 2500);
+  } catch (e) { st({onbError:e.message}); }
+}
+async function onbWelcome(orgId){
+  try {
+    const r = await apiFetch('/api/admin/organizations/'+orgId+'/welcome-email', {method:'POST'});
+    st({onbSaved:'Welcome email sent to '+r.to, onbError:''});
+  } catch (e) { st({onbError:e.message}); }
+}
+function onbCopyWelcome(orgId){
+  const c = (S.onb.customers||[]).find(x => x.id === orgId); if (!c) return;
+  const url = location.origin + '/case-closed-pro.html';
+  const t = 'Hi '+(c.ownerName||'there')+',\n\nWelcome to Case Closed Pro. Your account for '+c.name+' is ready.\n\nSign in here: '+url+'\nYour login is this email address. We will give you your temporary password separately (by phone or text) — please change it after you sign in.\n\nThree things to do first:\n  1. Turn on two-factor sign-in (your name in the top corner, then Security).\n  2. Invite your attorneys and staff (Team tab).\n  3. Import your open cases, or add a few by hand.\n\nOnce your cases are in, we will walk through the dashboards and Sentinel with you.\n\n— The Case Closed Pro team';
+  if (navigator.clipboard) navigator.clipboard.writeText(t).then(()=>st({onbSaved:'Welcome text copied'})).catch(()=>prompt('Copy this text:', t));
+  else prompt('Copy this text:', t);
+}
+const ONB_TONE = {green:['#ECFDF5','#047857'], amber:['#FFFBEB','#B45309'], red:['#FEF2F2','#B91C1C'], blue:['#EFF6FF','#1D4ED8']};
+function onbBadge(h){ const t = ONB_TONE[h.tone] || ONB_TONE.blue; return '<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:'+t[0]+';color:'+t[1]+';">'+esc(h.label)+'</span>'; }
+function onbDateLabel(d){ return d ? esc(String(d).slice(0,10)) : '—'; }
+function onbAgo(days){ return days === null || days === undefined ? 'never' : days === 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago'; }
+
+function onboardTabV(){
+  let h = '';
+  if (!API_BASE || !authToken) {
+    return '<div class="alert-warn">The New Customer tab needs a connected backend and a platform-admin sign-in.</div>';
+  }
+  const d = S.onb;
+  h += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">';
+  h += '<div style="font-size:13px;color:var(--muted);max-width:640px;line-height:1.5;">Every customer gets a checklist. Each step unlocks when the one before it is finished, so nothing gets skipped. Nothing here charges anyone — invoices are still sent by hand, and this tab reminds you when.</div>';
+  h += '<button class="btn btn-pri" onclick="openCreateOrgModal()">+ Start a new customer</button></div>';
+  if (S.onbError) h += '<div class="alert-bad" style="margin-bottom:12px;">'+esc(S.onbError)+'</div>';
+  if (S.onbSaved) h += '<div class="alert-good" style="margin-bottom:12px;">'+esc(S.onbSaved)+'</div>';
+  if (!d) { h += '<div class="card" style="padding:30px;text-align:center;color:var(--muted);">'+(S.onbLoading?'Loading customers…':'No data yet.')+'</div>'; return h; }
+
+  // Invoices due
+  if (d.invoicesDue && d.invoicesDue.length) {
+    h += '<div class="card" style="margin-bottom:14px;border-left:3px solid #B45309;"><div class="sh"><span>🧾 Invoices to send</span><span style="color:var(--dim);font-weight:500;">next 7 days</span></div>';
+    d.invoicesDue.forEach(i => {
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--surf2);font-size:12.5px;">';
+      h += '<span style="font-weight:700;cursor:pointer;" onclick="st({onbSel:\''+i.id+'\'})">'+esc(i.name)+'</span>';
+      h += '<span style="color:'+(i.inDays<0?'var(--red)':'var(--muted)')+';">'+(i.inDays<0?Math.abs(i.inDays)+' days overdue':i.inDays===0?'due today':'due in '+i.inDays+' days')+' · '+fM(i.amount)+'</span>';
+      h += '<button class="btn btn-out" style="font-size:11px;padding:3px 9px;" onclick="onbSaveContract(\''+i.id+'\',{markMonthlyInvoiced:true})">Mark invoice sent</button></div>';
+    });
+    h += '</div>';
+  }
+
+  // Filter + health table
+  const filt = S.onbFilter || 'all';
+  const all = d.customers || [];
+  const attention = c => ['Stalled','At risk','Quiet','Suspended'].includes(c.health.label);
+  const shown = all.filter(c => filt==='all' ? true : filt==='onboarding' ? c.stage==='onboarding' : filt==='live' ? c.stage==='live' : attention(c));
+  h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">';
+  [['all','All ('+all.length+')'],['onboarding','Onboarding'],['live','Live'],['attention','Needs attention ('+all.filter(attention).length+')']].forEach(f => {
+    h += '<button class="btn '+(filt===f[0]?'btn-pri':'btn-out')+'" style="font-size:11.5px;padding:4px 11px;" onclick="st({onbFilter:\''+f[0]+'\'})">'+f[1]+'</button>';
+  });
+  h += '</div>';
+  h += '<div class="card" style="padding:0;overflow-x:auto;"><table class="tbl" style="width:100%;min-width:760px;"><thead><tr><th>Customer</th><th>Stage</th><th>Progress</th><th>Last sign-in</th><th>People</th><th>Matters</th><th>Activity (30d)</th><th>Health</th></tr></thead><tbody>';
+  if (!shown.length) h += '<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--dim);">No customers in this view.</td></tr>';
+  shown.forEach(c => {
+    const sel = S.onbSel === c.id;
+    h += '<tr style="cursor:pointer;'+(sel?'background:var(--surf2);':'')+'" onclick="st({onbSel:\''+c.id+'\'})">';
+    h += '<td style="font-weight:700;">'+esc(c.name)+'<div style="font-size:10.5px;color:var(--dim);font-weight:500;">'+esc(c.persona==='defense'?'Defense firm':'TPA / carrier')+' · '+esc(c.planTier)+'</div></td>';
+    h += '<td>'+esc(c.stage==='live'?'Live':'Onboarding')+'</td>';
+    h += '<td style="min-width:130px;">'+(c.stage==='live'?'<span style="color:var(--green);font-weight:700;">Complete</span>':'<div style="background:var(--surf2);border-radius:99px;height:7px;overflow:hidden;"><div style="width:'+c.progress+'%;height:100%;background:var(--pri2);"></div></div><div style="font-size:10.5px;color:var(--dim);margin-top:2px;">'+c.progress+'%'+(c.currentStep?' · next: '+esc((c.steps.find(s=>s.key===c.currentStep)||{}).label||''):'')+'</div>')+'</td>';
+    h += '<td>'+esc(onbAgo(c.usage.lastLoginDays))+'</td><td>'+c.usage.users+'</td><td>'+c.usage.cases+''+'</td><td>'+c.usage.activity30+'</td>';
+    h += '<td>'+onbBadge(c.health)+'</td></tr>';
+  });
+  h += '</tbody></table></div>';
+
+  const c = all.find(x => x.id === S.onbSel);
+  if (!c) { h += '<div style="font-size:12px;color:var(--dim);margin-top:10px;">Click a customer to see its checklist and contract record.</div>'; return h; }
+  h += onbDetailV(c);
+  return h;
+}
+
+function onbDetailV(c){
+  let h = '<div style="margin-top:18px;display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:14px;align-items:start;">';
+  // LEFT: checklist or trial
+  h += '<div class="card"><div class="sh"><span>'+esc(c.name)+'</span><span>'+onbBadge(c.health)+'</span></div>';
+  h += '<div style="font-size:11.5px;color:var(--dim);margin-bottom:10px;">Owner: '+esc(c.ownerName||'—')+' · '+esc(c.ownerEmail||'no owner')+' · Template: '+esc(c.template==='custom'?'none':(S.onb.templates[c.template]||{}).label||c.template)+'</div>';
+  {
+    if (c.legacy) h += '<div class="alert-info" style="margin-bottom:12px;">This customer was set up before the checklist existed, so it is treated as live. You can still record its contract on the right.</div>';
+    c.steps.forEach((s, i) => {
+      const isCurrent = c.stage !== 'live' && c.currentStep === s.key;
+      const locked = !s.done && !s.available;
+      const col = s.done ? 'var(--green)' : isCurrent ? 'var(--pri2)' : 'var(--dim)';
+      h += '<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--surf2);'+(locked?'opacity:.55;':'')+'">';
+      h += '<div style="flex:0 0 26px;height:26px;border-radius:50%;border:2px solid '+col+';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:'+(s.done?'#fff':col)+';background:'+(s.done?'var(--green)':'transparent')+';">'+(s.done?'&#10003;':(locked?'&#128274;':(i+1)))+'</div>';
+      h += '<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:13px;">'+esc(s.label)+(s.done&&s.doneBy?'<span style="font-weight:500;color:var(--dim);font-size:10.5px;"> · marked by '+esc(s.doneBy)+'</span>':'')+(s.done&&s.auto?'<span style="font-weight:500;color:var(--dim);font-size:10.5px;"> · detected automatically</span>':'')+'</div>';
+      if (!s.done) h += '<div style="font-size:11.5px;color:var(--muted);margin-top:2px;line-height:1.45;">'+(locked?'Finish the step above first.':esc(s.hint))+'</div>';
+      if (isCurrent) {
+        h += '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px;">';
+        if (s.key === 'welcome') {
+          h += '<button class="btn btn-out" style="font-size:11.5px;" onclick="onbWelcome(\''+c.id+'\')">Email welcome (no password)</button>';
+          h += '<button class="btn btn-out" style="font-size:11.5px;" onclick="onbCopyWelcome(\''+c.id+'\')">Copy welcome text</button>';
+        }
+        if (s.key === 'contract') h += '<span style="font-size:11.5px;color:var(--dim);">Use the Contract and billing card on the right. This step completes itself when the three dates are filled in.</span>';
+        else h += '<button class="btn btn-pri" style="font-size:11.5px;" onclick="onbStep(\''+c.id+'\',\''+s.key+'\',true)">'+(s.kind==='manual'?(s.key==='live'?'Go live':'Mark done'):'Mark done anyway')+'</button>';
+        h += '</div>';
+      }
+      if (s.done && !s.auto && s.key !== 'account' && s.key !== 'contract') h += '<div style="margin-top:4px;"><span class="muted-link" style="cursor:pointer;font-size:11px;" onclick="onbStep(\''+c.id+'\',\''+s.key+'\',false)">Undo</span></div>';
+      h += '</div></div>';
+    });
+  }
+  h += '</div>';
+
+  // RIGHT: contract and billing
+  const k = c.contract;
+  const field = (lbl, id, val, type, extra) => '<div class="fld"><label class="lbl">'+lbl+'</label><input id="'+id+'" type="'+(type||'text')+'" value="'+esc(val==null?'':val)+'" class="inp" '+(extra||'')+'></div>';
+  h += '<div class="card"><div class="sh"><span>Contract and billing</span><span style="color:var(--dim);font-weight:500;">manual invoicing</span></div>';
+  h += '<div class="grid-2">'+field('Contract signed','onb_signed',k.signedDate,'date')+field('Renewal date','onb_renewal',k.renewalDate,'date')+'</div>';
+  h += '<div class="grid-2">'+field('Term (months)','onb_term',k.termMonths,'number','min="0"')+field('Invoice day of month','onb_invday',k.invoiceDay,'number','min="1" max="28"')+'</div>';
+  h += '<div class="grid-2">'+field('Setup fee ($)','onb_setupfee',k.setupFee?Number(k.setupFee).toLocaleString():'')+field('Monthly amount ($)','onb_monthly',k.monthlyAmount?Number(k.monthlyAmount).toLocaleString():'')+'</div>';
+  h += field('Setup fee paid on','onb_paid',k.setupPaidDate,'date');
+  h += '<div class="fld"><label class="lbl">Billing notes</label><textarea id="onb_notes" class="inp" placeholder="PO number, who receives invoices, payment terms">'+esc(k.billingNotes||'')+'</textarea></div>';
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;"><button class="btn btn-pri" onclick="onbSaveContract(\''+c.id+'\')">Save</button>';
+  h += '<button class="btn btn-out" onclick="onbSaveContract(\''+c.id+'\',{markSetupInvoiced:true})">'+(k.setupInvoicedDate?'Setup invoice sent '+onbDateLabel(k.setupInvoicedDate)+' (reset to today)':'Setup invoice sent today')+'</button></div>';
+  if (c.nextInvoice) h += '<div style="margin-top:10px;font-size:12px;color:var(--muted);">Next monthly invoice: <strong>'+onbDateLabel(c.nextInvoice.date)+'</strong> ('+fM(c.nextInvoice.amount)+') <span class="muted-link" style="cursor:pointer;" onclick="onbSaveContract(\''+c.id+'\',{markMonthlyInvoiced:true})">Mark this month sent</span></div>';
+  h += '<div style="font-size:10.5px;color:var(--dim);margin-top:10px;line-height:1.5;">Nothing is charged from here. Amounts are copied from the setup form and only drive reminders. Saving the renewal date also updates the Retention tab.</div>';
+  h += '</div></div>';
+  return h;
+}
+
 function goToAdmin(){
   st({role:'admin', caseId:null, showUserMenu:false, showWelcome:false, adminTab: S.adminTab || 'orgs'});
   if (API_BASE && authToken) fetchAdminOrgs();
@@ -7538,6 +7698,7 @@ async function fetchAdminOrgs(){
 
 function goToAdminTab(tab){
   st({adminTab:tab});
+  if (tab === 'onboard') fetchOnboarding();
   if (tab === 'audit' && !S.auditLogEntries) fetchAuditLog();
   if (tab === 'usage' && !S.usageData) fetchUsage();
   if (tab === 'errors' && !S.errorLogEntries) fetchErrors();
@@ -7898,6 +8059,7 @@ function adminPanelV(){
   const adminTab = S.adminTab || 'orgs';
   h += '<div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--surf2);">';
   h += '<button onclick="goToAdminTab(\'orgs\')" style="padding:10px 4px;margin-right:16px;background:none;border:none;border-bottom:2px solid '+(adminTab==='orgs'?'#B45309':'transparent')+';color:'+(adminTab==='orgs'?'var(--ink)':'var(--dim)')+';font-weight:700;font-size:13px;cursor:pointer;">Organizations</button>';
+  h += '<button onclick="goToAdminTab(\'onboard\')" style="padding:10px 4px;margin-right:16px;background:none;border:none;border-bottom:2px solid '+(adminTab==='onboard'?'#B45309':'transparent')+';color:'+(adminTab==='onboard'?'var(--ink)':'var(--dim)')+';font-weight:700;font-size:13px;cursor:pointer;">+ New Customer</button>';
   h += '<button onclick="goToAdminTab(\'audit\')" style="padding:10px 4px;margin-right:16px;background:none;border:none;border-bottom:2px solid '+(adminTab==='audit'?'#B45309':'transparent')+';color:'+(adminTab==='audit'?'var(--ink)':'var(--dim)')+';font-weight:700;font-size:13px;cursor:pointer;">Audit Log</button>';
   h += '<button onclick="goToAdminTab(\'usage\')" style="padding:10px 4px;margin-right:16px;background:none;border:none;border-bottom:2px solid '+(adminTab==='usage'?'#B45309':'transparent')+';color:'+(adminTab==='usage'?'var(--ink)':'var(--dim)')+';font-weight:700;font-size:13px;cursor:pointer;">Usage</button>';
   h += '<button onclick="goToAdminTab(\'errors\')" style="padding:10px 4px;margin-right:16px;background:none;border:none;border-bottom:2px solid '+(adminTab==='errors'?'#B45309':'transparent')+';color:'+(adminTab==='errors'?'var(--ink)':'var(--dim)')+';font-weight:700;font-size:13px;cursor:pointer;">Errors</button>';
@@ -7905,6 +8067,11 @@ function adminPanelV(){
   h += '<button onclick="goToAdminTab(\'backups\')" style="padding:10px 4px;margin-right:16px;background:none;border:none;border-bottom:2px solid '+(adminTab==='backups'?'#B45309':'transparent')+';color:'+(adminTab==='backups'?'var(--ink)':'var(--dim)')+';font-weight:700;font-size:13px;cursor:pointer;">Backups</button>';
   h += '</div>';
 
+  if (adminTab === 'onboard') {
+    h += onboardTabV();
+    h += '</div>';
+    return h;
+  }
   if (adminTab === 'audit') {
     h += auditLogV();
     h += '</div>';
@@ -8069,10 +8236,20 @@ function openCreateOrgModal(){
   st({showCreateOrgModal:true, createOrgError:'', createOrgResult:null});
   window._coAddOns = []; window._coImplFeeTouched = false;
   if (!S.pricingCatalog) fetchPricingCatalog();
+  if (!S.onbTemplates) { apiFetch('/api/admin/onboarding').then(d => st({onbTemplates:d.templates, onb:d})).catch(()=>{}); }
+  window._coTemplate = '';
 }
 function closeCreateOrgModal(){
+  const made = S.createOrgResult && S.createOrgResult.organization;
   st({showCreateOrgModal:false, createOrgResult:null});
   fetchAdminOrgs();
+  if (made) { st({adminTab:'onboard', onbSel:made.id}); fetchOnboarding(); }
+}
+function coApplyTemplate(key){
+  window._coTemplate = key || '';
+  const t = key && S.onbTemplates ? S.onbTemplates[key] : null;
+  if (t) { window._coPersona = t.persona; window._coTier = t.suggestedTier; window._coImplFeeTouched = false; }
+  st({});
 }
 async function fetchPricingCatalog(){
   try {
@@ -8121,6 +8298,7 @@ function createOrgModalV(){
         : '<div class="alert-bad" style="margin-top:12px;">Email wasn\'t sent ('+esc(r.invoiceEmail.error || 'SMTP not configured')+') — copy the purchase summary above manually for now.</div>';
     }
 
+    h += '<div class="alert-info" style="margin-top:12px;"><strong>Next:</strong> "Done" opens this customer\'s checklist in the New Customer tab. Give the owner the temporary password by phone or text, and use the checklist for the welcome email.</div>';
     h += '<div style="font-size:10.5px;color:var(--dim);margin-top:10px;">Nothing above has actually been billed — this app never charges customers automatically. Billed by your accounting team through your usual process.</div>';
     h += '<button class="btn btn-pri" style="width:100%;justify-content:center;margin-top:16px;" onclick="closeCreateOrgModal()">Done</button>';
   } else if (!S.pricingCatalog) {
@@ -8135,6 +8313,9 @@ function createOrgModalV(){
     const seats = Math.max(0, parseInt(window._coSeats || '0', 10) || 0);
     const selectedAddOns = window._coAddOns || [];
 
+    const tpls = S.onbTemplates || {};
+    h += '<div class="fld"><label class="lbl">Starter template</label><select class="inp" onchange="coApplyTemplate(this.value)"><option value="">None (set everything by hand)</option>'+Object.keys(tpls).map(k=>'<option value="'+k+'"'+(window._coTemplate===k?' selected':'')+'>'+esc(tpls[k].label)+'</option>').join('')+'</select></div>';
+    if (window._coTemplate && tpls[window._coTemplate]) h += '<div style="font-size:11px;color:var(--dim);margin:-6px 0 12px;">'+esc(tpls[window._coTemplate].note)+' Fills in customer type and suggested plan; email alerts and briefings still stay off until the customer opts in.</div>';
     h += '<div class="grid-2">';
     h += '<div>'+sel('Customer Type', 'window._coPersona=this.value;coRecalc()', ['carrier','defense'], window._coPersona||'carrier')+'</div>';
     h += '<div>'+sel('Plan Tier', 'window._coTier=this.value;coRecalc()', tierKeys, tierKey)+'</div>';
@@ -8158,6 +8339,11 @@ function createOrgModalV(){
     h += '<div>'+inp('Extra User Seats', String(seats), 'window._coSeats=this.value;coRecalc()', 'number', 'min="0" placeholder="0"')+'</div>';
     h += '<div>'+inpMoney('Implementation Fee ($)', window._coImplFee, 'window._coImplFee=moneyVal(this.value);window._coImplFeeTouched=true;coRecalc()')+'</div>';
     h += '</div>';
+    {
+      h += '<div class="lbl" style="margin-top:10px;">Contract (you can fill this in later)</div>';
+      h += '<div class="grid-2">'+inp('Contract signed', window._coSigned||'', 'window._coSigned=this.value', 'date')+inp('Renewal date', window._coRenewal||'', 'window._coRenewal=this.value', 'date')+'</div>';
+      h += '<div class="grid-2">'+inp('Term (months)', window._coTerm||'12', 'window._coTerm=this.value', 'number', 'min="1"')+inp('Invoice day of month', window._coInvDay||'1', 'window._coInvDay=this.value', 'number', 'min="1" max="28"')+'</div>';
+    }
     h += ta('Notes (internal only)', window._coNotes||'', 'window._coNotes=this.value', 'Anything your team should remember about this deal');
 
     let monthlyTotal = tierInfo.monthly;
@@ -8198,7 +8384,9 @@ async function submitCreateOrg(){
   try {
     const data = await apiFetch('/api/admin/onboard-customer', {
       method:'POST',
-      body: JSON.stringify({ orgName, ownerName, ownerEmail, persona, planTier, addOns, extraSeats, implementationFee, notes })
+      body: JSON.stringify({ orgName, ownerName, ownerEmail, persona, planTier, addOns, extraSeats, implementationFee, notes,
+        template: window._coTemplate || undefined,
+        contract: { signedDate: window._coSigned||'', renewalDate: window._coRenewal||'', termMonths: window._coTerm||12, invoiceDay: window._coInvDay||1 } })
     });
     st({createOrgLoading:false, createOrgResult:data});
   } catch (e) {
