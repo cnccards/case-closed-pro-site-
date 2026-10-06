@@ -3148,6 +3148,197 @@ function computePortfolioStats(cases) {
 }
 
 // ---------------------------------------------------------------
+// Health Check report analytics — everything here is plain arithmetic
+// on the imported caseload (no AI), so the report is complete and
+// repeatable even when the AI brief is unavailable. Every number can
+// be traced back to rows in their own CSV.
+// ---------------------------------------------------------------
+function hcMedian(arr) {
+  if (!arr.length) return 0;
+  const s = [...arr].sort((a, b) => a - b), m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+function hcDays(d, now) {
+  if (!d) return null;
+  const t = new Date(d).getTime();
+  return Number.isFinite(t) ? Math.floor((t - now) / 864e5) : null;
+}
+function hcTopN(map, n) {
+  return Object.entries(map).sort((a, b) => b[1].value - a[1].value).slice(0, n)
+    .map(([name, v]) => ({ name, count: v.count, value: v.value }));
+}
+function computeHealthReport(cases) {
+  const now = Date.now();
+  const n = cases.length;
+  const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+  const rows = cases.map(c => {
+    const value = c.value || 0;
+    const reserve = c.insurance?.reserveAmount || 0;
+    const lastUpd = (c.updates || []).slice(-1)[0];
+    const sinceAct = lastUpd ? -hcDays(lastUpd.date, now) : null;
+    const solDays = hcDays(c.keyDates?.sol || c.deadline, now);
+    const ageDays = c.filed ? -hcDays(c.filed, now) : null;
+    return {
+      matterNo: c.matterNo, client: c.client, type: c.type || 'Other',
+      carrier: (c.insurance?.carrier || '').trim(), claimNo: (c.insurance?.claimNo || '').trim(),
+      attorney: (c.attorney || '').trim(), value, reserve,
+      demand: c.exposure?.demandAmount || 0,
+      billed: c.billing?.totalBilled || 0,
+      sinceAct: Number.isFinite(sinceAct) ? sinceAct : null,
+      solDays, ageDays: Number.isFinite(ageDays) ? ageDays : null
+    };
+  });
+
+  // 1. Dollar headline
+  const stale = rows.filter(r => r.sinceAct !== null && r.sinceAct >= 30);
+  const nearSol = rows.filter(r => r.solDays !== null && r.solDays < 90);
+  const pastSol = rows.filter(r => r.solDays !== null && r.solDays < 0);
+  const unassigned = rows.filter(r => !r.attorney);
+  const headline = {
+    staleCount: stale.length, staleReserves: stale.reduce((s, r) => s + r.reserve, 0), staleValue: stale.reduce((s, r) => s + r.value, 0),
+    nearSolCount: nearSol.length, nearSolValue: nearSol.reduce((s, r) => s + r.value, 0),
+    pastSolCount: pastSol.length, pastSolValue: pastSol.reduce((s, r) => s + r.value, 0),
+    unassignedCount: unassigned.length, unassignedValue: unassigned.reduce((s, r) => s + r.value, 0)
+  };
+
+  // 2. Attorney workload
+  const byAtty = {};
+  rows.filter(r => r.attorney).forEach(r => {
+    const a = byAtty[r.attorney] || (byAtty[r.attorney] = { open: 0, value: 0, reserve: 0, stale: 0 });
+    a.open++; a.value += r.value; a.reserve += r.reserve; if (r.sinceAct !== null && r.sinceAct >= 30) a.stale++;
+  });
+  const opens = Object.values(byAtty).map(a => a.open);
+  const medianOpen = hcMedian(opens);
+  const attorneys = Object.entries(byAtty).map(([name, a]) => ({
+    name, ...a, overloaded: opens.length >= 3 && a.open >= Math.max(medianOpen * 1.5, medianOpen + 3)
+  })).sort((a, b) => b.open - a.open);
+  const workload = { attorneys, medianOpen, overloadedCount: attorneys.filter(a => a.overloaded).length, unassigned: { count: unassigned.length, value: headline.unassignedValue } };
+
+  // 3. Aging and inactivity
+  const bucket = (arr, edges, labels, key) => labels.map((label, i) => {
+    const lo = i === 0 ? -Infinity : edges[i - 1], hi = i < edges.length ? edges[i] : Infinity;
+    const m = arr.filter(r => r[key] !== null && r[key] >= lo && r[key] < hi);
+    return { label, count: m.length, reserves: m.reduce((s, r) => s + r.reserve, 0) };
+  });
+  const aging = {
+    byFileAge: bucket(rows, [183, 365, 730], ['0-6 months', '6-12 months', '1-2 years', '2+ years'], 'ageDays'),
+    bySilence: bucket(rows, [15, 31, 61, 91], ['0-14 days', '15-30 days', '31-60 days', '61-90 days', '90+ days'], 'sinceAct'),
+    noActivityDate: rows.filter(r => r.sinceAct === null).length,
+    oldAndSilent: rows.filter(r => r.ageDays !== null && r.ageDays > 365 && r.sinceAct !== null && r.sinceAct >= 60).length
+  };
+
+  // 4. Reserve adequacy against their own book (peer ratio by matter type)
+  const ratio = r => (r.value > 0 && r.reserve > 0) ? r.reserve / r.value : null;
+  const allRatios = rows.map(ratio).filter(x => x !== null);
+  const overallMed = hcMedian(allRatios);
+  const typeRatios = {};
+  rows.forEach(r => { const x = ratio(r); if (x !== null) (typeRatios[r.type] = typeRatios[r.type] || []).push(x); });
+  const peer = t => (typeRatios[t] && typeRatios[t].length >= 3) ? hcMedian(typeRatios[t]) : overallMed;
+  const noReserve = rows.filter(r => r.reserve === 0 && r.value > 0);
+  let underGap = 0, overGap = 0; const underList = [], overList = [];
+  rows.forEach(r => {
+    const x = ratio(r); if (x === null) return;
+    const p = peer(r.type); if (!p) return;
+    if (x < p * 0.6) { const gap = p * r.value - r.reserve; underGap += gap; underList.push({ matterNo: r.matterNo, client: r.client, reserve: r.reserve, expected: Math.round(p * r.value), gap: Math.round(gap) }); }
+    else if (x > p * 1.6) { const gap = r.reserve - p * r.value; overGap += gap; overList.push({ matterNo: r.matterNo, client: r.client, reserve: r.reserve, expected: Math.round(p * r.value), gap: Math.round(gap) }); }
+  });
+  const belowDemand = rows.filter(r => r.demand > 0 && r.reserve > 0 && r.reserve < r.demand * 0.25);
+  const reserveAdequacy = {
+    overallRatioPct: Math.round(overallMed * 100),
+    noReserveCount: noReserve.length, noReserveValue: noReserve.reduce((s, r) => s + r.value, 0),
+    underCount: underList.length, underGap: Math.round(underGap), under: underList.sort((a, b) => b.gap - a.gap).slice(0, 8),
+    overCount: overList.length, overGap: Math.round(overGap), over: overList.sort((a, b) => b.gap - a.gap).slice(0, 8),
+    belowDemandCount: belowDemand.length,
+    byType: Object.entries(typeRatios).filter(([, v]) => v.length >= 3).map(([type, v]) => ({ type, count: v.length, medianPct: Math.round(hcMedian(v) * 100) })).sort((a, b) => b.count - a.count).slice(0, 8)
+  };
+
+  // 5. Data completeness
+  const fields = [
+    ['Attorney assigned', r => !!r.attorney], ['Reserve set', r => r.reserve > 0], ['Deadline / SOL', r => r.solDays !== null],
+    ['Carrier', r => !!r.carrier], ['Claim number', r => !!r.claimNo], ['Last activity date', r => r.sinceAct !== null], ['Value / exposure', r => r.value > 0]
+  ];
+  const fieldStats = fields.map(([label, f]) => ({ label, missing: rows.filter(r => !f(r)).length, pct: pct(rows.filter(f).length, n) }));
+  const completenessPct = Math.round(fieldStats.reduce((s, f) => s + f.pct, 0) / fieldStats.length);
+  const worstFiles = rows.map(r => ({ matterNo: r.matterNo, client: r.client, missing: fields.filter(([, f]) => !f(r)).map(([l]) => l) }))
+    .filter(x => x.missing.length >= 2).sort((a, b) => b.missing.length - a.missing.length).slice(0, 8);
+  const completeness = { scorePct: completenessPct, fields: fieldStats, worstFiles };
+
+  // 6. Concentration
+  const agg = key => { const m = {}; rows.forEach(r => { const k = r[key] || (key === 'attorney' ? 'Unassigned' : 'Unspecified'); const o = m[k] || (m[k] = { count: 0, value: 0 }); o.count++; o.value += r.value; }); return m; };
+  const totalValue = rows.reduce((s, r) => s + r.value, 0);
+  const withPct = list => list.map(x => ({ ...x, pct: pct(x.value, totalValue) }));
+  const concentration = {
+    carriers: withPct(hcTopN(agg('carrier'), 5)), types: withPct(hcTopN(agg('type'), 5)), attorneys: withPct(hcTopN(agg('attorney'), 5)),
+    largest: [...rows].sort((a, b) => b.value - a.value).slice(0, 10).map(r => ({ matterNo: r.matterNo, client: r.client, type: r.type, carrier: r.carrier || 'Unspecified', attorney: r.attorney || 'Unassigned', value: r.value, pct: pct(r.value, totalValue) })),
+    top10Pct: pct([...rows].sort((a, b) => b.value - a.value).slice(0, 10).reduce((s, r) => s + r.value, 0), totalValue)
+  };
+
+  // 7. Ranked "look at these first" list, each with the reasons it is there
+  const ranked = rows.map(r => {
+    let score = 0; const why = []; let action = 'Review the file';
+    if (r.solDays !== null && r.solDays < 0) { score += 100; why.push(Math.abs(r.solDays) + ' days past SOL'); action = 'Confirm SOL status today'; }
+    else if (r.solDays !== null && r.solDays < 30) { score += 90; why.push('SOL in ' + r.solDays + ' days'); action = 'Confirm the filing or tolling plan'; }
+    else if (r.solDays !== null && r.solDays < 90) { score += 60; why.push('SOL in ' + r.solDays + ' days'); action = 'Calendar the SOL and confirm strategy'; }
+    if (r.sinceAct !== null && r.sinceAct >= 90) { score += 40; why.push('no activity in ' + r.sinceAct + ' days'); if (score < 60) action = 'Get a status update from counsel'; }
+    else if (r.sinceAct !== null && r.sinceAct >= 30) { score += 25; why.push('quiet for ' + r.sinceAct + ' days'); if (score < 60) action = 'Request a status update'; }
+    if (r.reserve > 0 && r.billed / r.reserve > 1) { score += 50; why.push('billing is ' + Math.round(r.billed / r.reserve * 100) + '% of reserve'); action = 'Review reserve and budget'; }
+    else if (r.reserve > 0 && r.billed / r.reserve > 0.7) { score += 25; why.push('reserve ' + Math.round(r.billed / r.reserve * 100) + '% spent'); if (score < 60) action = 'Review reserve and budget'; }
+    if (!r.attorney) { score += 20; why.push('no attorney assigned'); if (score < 60) action = 'Assign counsel'; }
+    if (r.reserve === 0 && r.value > 0) { score += 20; why.push('no reserve set'); }
+    if (!why.length) return null;
+    score += Math.min(25, Math.log10(Math.max(r.value, 1)) * 3);
+    return { matterNo: r.matterNo, client: r.client, attorney: r.attorney || 'Unassigned', value: r.value, why, action, score: Math.round(score) };
+  }).filter(Boolean).sort((a, b) => b.score - a.score).slice(0, 10);
+
+  // 8. Plain-English "what Case Closed Pro does about this" counts. The
+  // routing simulation hands unassigned matters, one at a time, to whoever
+  // currently carries the fewest open files.
+  const sim = {}; Object.entries(byAtty).forEach(([k, a]) => { sim[k] = a.open; });
+  const routed = {};
+  if (Object.keys(sim).length) {
+    [...unassigned].sort((a, b) => b.value - a.value).forEach(() => {
+      const low = Object.entries(sim).sort((a, b) => a[1] - b[1])[0][0];
+      sim[low]++; routed[low] = (routed[low] || 0) + 1;
+    });
+  }
+  const afterOpens = Object.values(sim);
+  const withProduct = {
+    deadlineAlerts: nearSol.length,
+    staleNudges: stale.length,
+    routing: { count: unassigned.length, plan: Object.entries(routed).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count), maxOpenBefore: opens.length ? Math.max(...opens) : 0, maxOpenAfter: afterOpens.length ? Math.max(...afterOpens) : 0 },
+    dataGapsFlagged: worstFiles.length,
+    reserveReviews: reserveAdequacy.underCount + reserveAdequacy.noReserveCount
+  };
+
+  // 9. Overall score, with every deduction shown so the number is defensible
+  const cap = x => Math.max(0, Math.min(1, x));
+  const comps = [
+    { label: 'Deadline safety', max: 25, lost: 25 * cap(((pastSol.length * 2 + (nearSol.length - pastSol.length)) / Math.max(n, 1)) / 0.10), note: nearSol.length + ' matter(s) within 90 days of SOL or past it' },
+    { label: 'File activity', max: 20, lost: 20 * cap((stale.length / Math.max(n, 1)) / 0.40), note: stale.length + ' matter(s) quiet for 30+ days' },
+    { label: 'Assignment and workload', max: 15, lost: 15 * cap(((unassigned.length / Math.max(n, 1)) / 0.20) + (workload.overloadedCount ? 0.25 : 0)), note: unassigned.length + ' unassigned; ' + workload.overloadedCount + ' overloaded attorney(s)' },
+    { label: 'Reserve adequacy', max: 20, lost: 20 * cap(((reserveAdequacy.underCount + reserveAdequacy.noReserveCount + reserveAdequacy.overCount) / Math.max(n, 1)) / 0.30), note: (reserveAdequacy.underCount + reserveAdequacy.noReserveCount) + ' under or missing, ' + reserveAdequacy.overCount + ' over' },
+    { label: 'Data completeness', max: 10, lost: 10 * cap((100 - completenessPct) / 50), note: completenessPct + '% of key fields filled in' },
+    { label: 'Concentration', max: 10, lost: 10 * cap(((concentration.carriers[0]?.pct || 0) - 40) / 30), note: concentration.carriers[0] ? concentration.carriers[0].pct + '% of value with ' + concentration.carriers[0].name : 'n/a' }
+  ].map(c => ({ ...c, lost: Math.round(c.lost * 10) / 10, earned: Math.round((c.max - c.lost) * 10) / 10 }));
+  const score = Math.max(0, Math.round(100 - comps.reduce((s, c) => s + c.lost, 0)));
+  const grade = score >= 85 ? 'A' : score >= 75 ? 'B' : score >= 65 ? 'C' : score >= 50 ? 'D' : 'F';
+
+  // Three headline findings, picked by dollars at stake
+  const money = v => v >= 1e6 ? '$' + (v / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : '$' + Math.round(v / 1e3) + 'K';
+  const cand = [];
+  if (headline.pastSolCount) cand.push({ w: headline.pastSolValue * 2, text: headline.pastSolCount + ' open matter(s) are already past their SOL date, with ' + money(headline.pastSolValue) + ' of exposure. Confirm each one today.' });
+  if (headline.nearSolCount - headline.pastSolCount > 0) cand.push({ w: headline.nearSolValue, text: money(headline.nearSolValue - headline.pastSolValue) + ' of exposure across ' + (headline.nearSolCount - headline.pastSolCount) + ' matter(s) reaches its SOL within 90 days.' });
+  if (headline.staleCount) cand.push({ w: headline.staleReserves, text: money(headline.staleReserves) + ' in reserves sits on ' + headline.staleCount + ' file(s) with no activity in 30+ days.' });
+  if (headline.unassignedCount) cand.push({ w: headline.unassignedValue, text: headline.unassignedCount + ' open matter(s) carrying ' + money(headline.unassignedValue) + ' have no attorney assigned.' });
+  if (reserveAdequacy.underGap > 0) cand.push({ w: reserveAdequacy.underGap, text: 'About ' + money(reserveAdequacy.underGap) + ' of reserve is missing on ' + reserveAdequacy.underCount + ' file(s) compared with how your own book reserves similar matters.' });
+  if (workload.overloadedCount) cand.push({ w: 1e5 * workload.overloadedCount, text: workload.overloadedCount + ' attorney(s) carry 1.5x or more of the median caseload (' + attorneys.filter(a => a.overloaded).map(a => a.name + ' ' + a.open).join(', ') + ').' });
+  if (completenessPct < 90) cand.push({ w: 5e4, text: 'Only ' + completenessPct + '% of key fields are filled in across the book, which limits what any system can protect you from.' });
+  const findings = cand.sort((a, b) => b.w - a.w).slice(0, 3).map(c => c.text);
+
+  return { score, grade, components: comps, findings, headline, workload, aging, reserveAdequacy, completeness, concentration, topFiles: ranked, withProduct, matterCount: n, generatedAt: new Date().toISOString().slice(0, 10) };
+}
+
+// ---------------------------------------------------------------
 // SENTINEL HEALTH CHECK — a paid, pre-sales diagnostic your team
 // runs FOR a prospect, on their real, currently OPEN caseload.
 //
@@ -3210,7 +3401,7 @@ app.post('/api/admin/sentinel-health-check', requirePlatformAdmin, async (req, r
 
     let imported = 0;
     const importErrors = [];
-    const { signals, stats } = await withOrgScopedTransaction(org.id, async (client) => {
+    const { signals, stats, report } = await withOrgScopedTransaction(org.id, async (client) => {
       for (let i = 0; i < inputCases.length; i++) {
         const b = inputCases[i];
         try {
@@ -3230,7 +3421,9 @@ app.post('/api/admin/sentinel-health-check', requirePlatformAdmin, async (req, r
       }
       const casesResult = await client.query(`SELECT * FROM cases WHERE org_id = $1 AND status != 'Closed'`, [org.id]);
       const openCases = casesResult.rows.map(rowToCase);
-      return { signals: computeRiskSignals(openCases), stats: computePortfolioStats(openCases) };
+      let report = null;
+      try { report = computeHealthReport(openCases); } catch (rErr) { console.error('Health report analytics failed:', rErr); }
+      return { signals: computeRiskSignals(openCases), stats: computePortfolioStats(openCases), report };
     });
 
     // If the AI is unavailable (no key, quota, outage) the check still delivers the numbers
@@ -3255,7 +3448,7 @@ app.post('/api/admin/sentinel-health-check', requirePlatformAdmin, async (req, r
     res.status(201).json({
       organization: { id: org.id, name: org.name },
       imported, failed: importErrors.length, importErrors,
-      stats,
+      stats, report,
       billing: { pricePaid: price, creditExpiresAt },
       sentinelWatch: { analysis, flaggedCount, aiUnavailable }
     });
