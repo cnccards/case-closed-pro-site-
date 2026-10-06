@@ -280,7 +280,7 @@ const SM = {
 const PC = {High:'#DC2626', Medium:'#D97706', Low:'#059669'};
 /* f(n): thousands-separated number for dollar amounts. Several screens (Assign Cases, attorney portal) call it; it was never defined, which crashed them. */
 function f(n){ const v=Number(n); return isNaN(v)?'0':Math.round(v).toLocaleString('en-US'); }
-const ATTY = ['Sarah Chen','James Ortega','David Park','Maria Santos','Rachel Goldberg','Lisa Johnson','Rickey Henderson','Jennifer Martinez','Michael Tomassi','Amanda Foster','Sean Green'];
+const ATTY = ['Sarah Chen','James Ortega','David Park','Maria Santos','Rachel Goldberg','Chase Meidroth','Lisa Johnson','Rickey Henderson','Jennifer Martinez','Michael Tomassi','Amanda Foster','Sean Green'];
 
 /* ══════════════════════════════════════════════════════════════
    PAYABLES — the org paying ITS OWN people (outside counsel,
@@ -344,7 +344,7 @@ async function updatePayableStatus(id, newStatus){
   render();
 }
 
-const ATTY_COLOR = {'Sarah Chen':'#1F4E8C','James Ortega':'#1A5C2A','David Park':'#5C1A1A','Maria Santos':'#3A1A5C','Rachel Goldberg':'#6B4226','Rickey Henderson':'#2A4C7C','Jennifer Martinez':'#7C2A4C','Michael Tomassi':'#4C7C2A','Amanda Foster':'#7C6B2A','Sean Green':'#2A4C7C'};
+const ATTY_COLOR = {'Sarah Chen':'#1F4E8C','James Ortega':'#1A5C2A','David Park':'#5C1A1A','Maria Santos':'#3A1A5C','Rachel Goldberg':'#6B4226','Chase Meidroth':'#0F766E','Rickey Henderson':'#2A4C7C','Jennifer Martinez':'#7C2A4C','Michael Tomassi':'#4C7C2A','Amanda Foster':'#7C6B2A','Sean Green':'#2A4C7C'};
 
 
 /* ── SCORECARD ENGINE (LES — Litigation Effectiveness Score) ──
@@ -995,7 +995,7 @@ let CASES = [
   mkC('CC-007','Torres Construction','Personal Injury','Closed','Low','David Park','2023-11-02','2025-12-01',320000,100,'CLM-2023-5514','Travelers',150000,'Bob Simmons'),
   mkC('CC-008','Kline Brothers Realty','Real Estate','Closing','Medium','David Park','2024-10-03','2026-04-30',950000,85,'CLM-2024-8812','Hartford',400000,'Steve Reeves'),
   mkC('CC-009','Summit Energy Partners','Contract Dispute','Review','High','Maria Santos','2025-01-07','2026-10-01',6400000,15,'CLM-2025-0011','Chubb',2000000,'Alex Rodriguez'),
-  mkC('CC-010','Okafor Tech Inc','Employment Law','Discovery','Medium','James Ortega','2024-11-20','2026-08-15',275000,20,'CLM-2024-9981','Hartford',125000,'Linda Ross'),
+  mkC('CC-010','Okafor Tech Inc','Employment Law','Discovery','Medium','Chase Meidroth','2024-11-20','2026-08-15',275000,20,'CLM-2024-9981','Hartford',125000,'Linda Ross'),
   mkC('CC-011','Beacon Property LLC','Property Damage','Pleadings','Medium','Rachel Goldberg','2025-03-15','2026-12-01',680000,15,'CLM-2025-0142','Travelers',280000,'Maria Diaz'),
   mkC('CC-012','Diaz Auto Group','Auto Liability','Discovery','High','Maria Santos','2024-10-22','2026-09-10',1850000,40,'CLM-2024-9112','Progressive',900000,'James Wong'),
   mkC('CC-013','Coastal Restoration','Insurance Defense','Active','Medium','Rachel Goldberg','2025-02-10','2026-11-01',420000,25,'AOB-2025-0044','State Farm',180000,'Patty Singh'),
@@ -1005,7 +1005,7 @@ let CASES = [
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
   /* DEMO: AI INTAKE EXTRACTED CASE (Shows how extraction works) */
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-  mkC('CC-100','Springfield Manufacturing Co.','Property Damage','Active','High','David Park','2025-01-15','2026-12-31',275000,0,'CLM-2025-1000','Chubb',137500,'Tom Reynolds'),
+  mkC('CC-100','Springfield Manufacturing Co.','Property Damage','Active','High','Chase Meidroth','2025-01-15','2026-12-31',275000,0,'CLM-2025-1000','Chubb',137500,'Tom Reynolds'),
   
   /* FRESH UNASSIGNED TEST CASES FOR DEMO */
   mkC('NEW-001','VentureTech Corp','Patent Dispute','Pleadings','High','','2025-02-01','2026-12-01',5500000,2,'CLM-2025-8001','Zurich',2200000,'Sarah King'),
@@ -9417,6 +9417,7 @@ function ws(){
     { label:'Financials', tabs:[['exposure','Exposure'],['billing','Billing']] },
     { label:'Evidence', tabs:[['evidence','Evidence'],['experts','Experts']] },
     { label:'Resolution', tabs:[['settlement','Settlement'],['closing','Closing & Handoff']] },
+    { label:'Premium', tabs:[['sentinel','Sentinel Suite']] },
     { label:'Records', tabs:[['tasks','Tasks'],['documents','Documents'],['audit','Audit Trail'],['ai','AI Assistant']] }
   ];
   const idx = cci(c);
@@ -9461,6 +9462,7 @@ function ws(){
   else if (S.tab === 'tasks') h += tabTasks(c);
   else if (S.tab === 'documents') h += tabDocuments(c);
   else if (S.tab === 'audit') h += tabAudit(c);
+  else if (S.tab === 'sentinel') h += tabSentinel(c);
   else if (S.tab === 'ai') h += tabAI(c);
   h += '</div></div></div>';
   return h;
@@ -10062,6 +10064,86 @@ function tabAudit(c){
 }
 
 /* ── TAB: AI ───────────────────────────────────────────── */
+
+/* ── SENTINEL SUITE (premium AI modules, per matter) ───────────────
+   Settle / Strategy / Horizon run against the open matter's real data
+   through the server (the API key never touches the browser). Watch
+   is the portfolio-wide scan. Each module is gated by the org's plan
+   (S.myFeatures); a locked module shows what it does and who to call.
+   The public sample demo has no login, so it shows clearly-labelled
+   sample output instead of calling the AI. */
+const SENTINEL_MODS = [
+  { key:'settle',   feat:'sentinel_settle',   name:'Sentinel Settle',   icon:'⚖', color:'#0F766E', scope:'matter',
+    what:'Recommends a settlement range from the real numbers on this file: exposure, reserve, demand, offer, stage and venue.',
+    sample:'Recommended range: $420,000 to $510,000, opening near $420K.\n\nWhy: the $2.4M demand sits well above likely exposure given disputed liability and the plaintiff\'s pre-existing condition. The current $600K offer is already above the top of that range, so there is little reason to move before mediation. Hold at $420K at the next exchange and keep $510K as authority for the mediator.\n\nWatch: reserve is $900K, so a settlement in this range would release roughly $400K to $480K.' },
+  { key:'strategy', feat:'sentinel_strategy', name:'Sentinel Strategy', icon:'♟', color:'#7C3AED', scope:'matter',
+    what:'Reads the file\'s posture and recent activity to predict opposing counsel\'s next move and suggests a counter.',
+    sample:'Likely next move: a motion to compel the driver logs and maintenance records, followed by a request to extend discovery.\n\nCounter: produce the logs voluntarily now, with a protective order covering driver personnel files, so the motion never gets filed. Then depose the plaintiff\'s treating physician before they depose ours; the prior-injury records are your strongest point.\n\nTiming: opposing counsel has been quiet for 19 days, which usually means a new filing is being drafted.' },
+  { key:'horizon',  feat:'sentinel_horizon',  name:'Sentinel Horizon',  icon:'◔', color:'#B45309', scope:'matter',
+    what:'Forecasts when this matter will realistically close and what it will cost to get there.',
+    sample:'Most likely close: 9 to 12 months, probably by settlement at mediation in the second quarter.\n\nProjected remaining defense cost: $95,000 to $140,000, of which about $60,000 falls before mediation. Billing to date is $742,000 against a $900,000 reserve, so this file will finish inside reserve unless it goes to trial.\n\nIf it does go to trial, add roughly 8 months and $150,000.' },
+  { key:'watch',    feat:'sentinel_watch',    name:'Sentinel Watch',    icon:'◉', color:'#B91C1C', scope:'portfolio',
+    what:'Scans the whole open book for reserve burn, quiet files and approaching deadlines, and ranks what needs attention.',
+    sample:'Priority 1: Brightwater Logistics. SOL in 21 days, quiet for 80 days, 95% of reserve billed.\nPriority 2: Ironbridge Steel. SOL in 82 days with a $4.2M exposure and no activity in 69 days.\nPriority 3: Harborview Senior Living. No attorney assigned and SOL in 59 days.\n\n9 matters are flagged in total; the first three account for about $7M of exposure.' }
+];
+const PREMIUM_DEMO_PASSWORD = 'premium2025';
+function premiumUnlocked(){
+  if (S.premiumUnlocked === undefined) { let v = false; try { v = sessionStorage.getItem('ccpPremiumPreview') === '1'; } catch (e) {} S.premiumUnlocked = v; }
+  return !!S.premiumUnlocked;
+}
+function submitPremiumPassword(){
+  const v = (window._premPw || '').trim();
+  if (v === PREMIUM_DEMO_PASSWORD) { try { sessionStorage.setItem('ccpPremiumPreview','1'); } catch (e) {} st({premiumUnlocked:true, premiumPwError:''}); }
+  else st({premiumPwError:'That password is not correct.'});
+}
+function relockPremium(){ try { sessionStorage.removeItem('ccpPremiumPreview'); } catch (e) {} window._premPw=''; st({premiumUnlocked:false, premiumPwError:''}); }
+function sentOutKey(m, c){ return m.scope === 'portfolio' ? 'watch' : (c.id + '|' + m.key); }
+async function runSentinel(modKey){
+  const c = gc(); const m = SENTINEL_MODS.find(x => x.key === modKey); if (!c || !m) return;
+  const k = sentOutKey(m, c);
+  const set = (o) => { S.sentOut = Object.assign({}, S.sentOut || {}, { [k]: o }); render(); };
+  set({ loading:true });
+  const locked = !!(S.myFeatures && S.myFeatures[m.feat] === false);
+  if (!authToken || (locked && premiumUnlocked())) { setTimeout(() => set({ text:m.sample, sample:true }), 700); return; }
+  try {
+    const path = m.scope === 'portfolio' ? '/api/ai/sentinel-watch' : '/api/ai/sentinel-' + m.key + '/' + encodeURIComponent(c.id);
+    const d = await apiFetch(path, { method:'POST', body: JSON.stringify({}) });
+    set({ text: d.analysis || '(No analysis returned.)' });
+  } catch (e) { set({ error: e.message }); }
+}
+function tabSentinel(c){
+  let h = '<div class="section-band">Sentinel Suite · Premium</div>';
+  h += '<div style="font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:14px;max-width:720px;">AI modules that work from this matter\'s own numbers and activity. Each one returns a specific recommendation in seconds, with its reasoning. Included in higher plans or as individual add-ons.'+(!authToken?' <strong>Sample output shown below; live analysis runs on your real cases once signed in.</strong>':'')+'</div>';
+  const anyLocked = !!(S.myFeatures && SENTINEL_MODS.some(m => S.myFeatures[m.feat] === false));
+  if (anyLocked && authToken) {
+    if (premiumUnlocked()) {
+      h += '<div style="display:flex;align-items:center;gap:10px;background:#ECFDF5;border:1px solid #A7F3D0;border-radius:8px;padding:9px 12px;margin-bottom:14px;font-size:12px;color:#065F46;"><span style="flex:1;"><strong>Premium preview unlocked.</strong> Modules your plan does not include show sample output, clearly labelled. Live analysis still needs the module on the plan.</span><button class="btn btn-out" onclick="relockPremium()">Lock again</button></div>';
+    } else {
+      h += '<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:11px 13px;margin-bottom:14px;"><div style="font-size:12px;font-weight:700;color:#92400E;margin-bottom:6px;">Some modules are not on this plan. Enter the preview password to see them.</div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><input class="inp" type="password" autocomplete="off" placeholder="Preview password" style="max-width:220px;" value="'+esc(window._premPw||'')+'" oninput="window._premPw=this.value" onkeydown="if(event.key===\'Enter\')submitPremiumPassword()"><button class="btn btn-pri" onclick="submitPremiumPassword()">Unlock preview</button>'+(S.premiumPwError?'<span style="font-size:12px;color:#B91C1C;">'+esc(S.premiumPwError)+'</span>':'')+'</div></div>';
+    }
+  }
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;">';
+  SENTINEL_MODS.forEach(m => {
+    const lockedByPlan = !!(S.myFeatures && S.myFeatures[m.feat] === false);
+    const locked = lockedByPlan && !premiumUnlocked();
+    const o = (S.sentOut || {})[sentOutKey(m, c)] || null;
+    h += '<div class="card" style="padding:16px 18px;border-top:3px solid '+m.color+';display:flex;flex-direction:column;gap:8px;">';
+    h += '<div style="display:flex;align-items:center;gap:9px;"><span style="font-size:20px;color:'+m.color+';">'+m.icon+'</span><div style="flex:1;"><div style="font-weight:700;font-size:14px;">'+m.name+'</div><div style="font-size:10.5px;color:var(--dim);">'+(m.scope==='portfolio'?'Whole open caseload':'This matter')+'</div></div>'+(locked?'<span class="tag tag-warn">Not on your plan</span>':(lockedByPlan?'<span class="tag tag-info">Preview</span>':''))+'</div>';
+    h += '<div style="font-size:12px;color:var(--muted);line-height:1.55;">'+m.what+'</div>';
+    if (locked) {
+      h += '<div style="font-size:11.5px;color:#92400E;background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:9px 11px;">Not included on your current plan. Contact sales@cclosed.com to add '+m.name+'.</div>';
+    } else {
+      h += '<div><button class="btn btn-pri" style="background:'+m.color+';" onclick="runSentinel(\''+m.key+'\')" '+(o&&o.loading?'disabled':'')+'>'+(o&&o.loading?'Analyzing…':(o&&o.text?'Run again':(lockedByPlan?'Preview '+m.name:'Run '+m.name)))+'</button></div>';
+      if (o && o.error) h += '<div class="alert-bad" style="font-size:12px;">'+esc(o.error)+'</div>';
+      if (o && o.text) h += '<div style="background:var(--surf);border-left:3px solid '+m.color+';border-radius:6px;padding:12px 14px;font-size:12.5px;line-height:1.65;white-space:pre-wrap;">'+(o.sample?'<div style="font-size:10px;font-weight:700;color:var(--dim);margin-bottom:6px;">SAMPLE OUTPUT</div>':'')+esc(o.text)+'</div>';
+    }
+    h += '</div>';
+  });
+  h += '</div>';
+  h += '<div style="font-size:11px;color:var(--dim);margin-top:14px;">AI-generated analysis to support, not replace, an adjuster\'s or attorney\'s judgment. Every run is recorded in the audit trail.</div>';
+  return h;
+}
+
 function tabAI(c){
   let h = '<div class="section-band">AI Case Assistant — Powered by Claude</div>';
   // Gated the same way as the Sentinel modules, and for the same
