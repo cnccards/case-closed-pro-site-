@@ -821,6 +821,17 @@ app.use('/api', async (req, res, next) => {
     // an admin account's "own" org is never what's actually in use,
     // and they need to be able to reach /api/admin/* regardless of it.
     if (!payload.platformAdmin) {
+      // Use the user's CURRENT role and active flag from the database, not
+      // whatever was baked into the token at sign-in: removing someone or
+      // changing their role takes effect immediately instead of when the
+      // 7-day token expires.
+      if (payload.sub) {
+        const live = await q('SELECT is_active, role FROM users WHERE id = $1', [payload.sub]);
+        if (!live.rows[0] || live.rows[0].is_active === false) {
+          return res.status(401).json({ error: 'Unauthorized — this account has been deactivated' });
+        }
+        req.user.role = live.rows[0].role;
+      }
       const orgCheck = await q('SELECT access_status FROM organizations WHERE id = $1', [payload.orgId]);
       if (orgCheck.rows[0]?.access_status === 'suspended') {
         return res.status(403).json({ error: 'Access to this organization has been suspended. Contact your account administrator or sales@cclosed.com.' });
@@ -2184,14 +2195,14 @@ app.post('/api/cases', async (req, res) => {
     `INSERT INTO cases (org_id, matter_no, client, type, status, litigation_stage, attorney, assigned_attorney_user_id, carrier, claim_no, reserve_amount, filed_date, deadline_date, value, data)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
     [req.orgId, matterNo, b.client, b.type || 'Other', b.status || 'Active', b.litigationStage || 'Pre-Suit',
-     b.attorney || null, b.assignedAttorneyUserId || null, b.carrier || null, b.claimNo || null, b.reserveAmount || 0, b.filed || null, b.deadline || null, b.value || 0, JSON.stringify(data)]
+     b.attorney || null, (req.user?.role === 'member' && !req.user?.platformAdmin) ? req.user.sub : (b.assignedAttorneyUserId || null), b.carrier || null, b.claimNo || null, b.reserveAmount || 0, b.filed || null, b.deadline || null, b.value || 0, JSON.stringify(data)]
   );
   await audit(req.orgId, req.user?.sub, 'case.create', 'case', result.rows[0].id, { client: b.client }, req.ip);
   res.status(201).json(rowToCase(result.rows[0]));
 });
 
 // Bulk import closed case history — every record forced to status Closed.
-app.post('/api/cases/import', async (req, res) => {
+app.post('/api/cases/import', requireOrgRole('admin'), async (req, res) => {
   const records = req.body;
   if (!Array.isArray(records) || records.length === 0) return res.status(400).json({ error: 'Body must be a non-empty JSON array' });
   if (records.length > 5000) return res.status(413).json({ error: 'Batch too large — split into batches of 5000 or fewer' });
@@ -2352,6 +2363,10 @@ app.patch('/api/cases/:id', async (req, res) => {
   const existing = await req.db.query('SELECT * FROM cases WHERE id = $1 AND org_id = $2', [req.params.id, req.orgId]);
   if (!existing.rows[0]) return res.status(404).json({ error: 'Case not found' });
   const current = existing.rows[0];
+  // Members can only edit matters assigned to them (they can't even see others).
+  if (req.user?.role === 'member' && !req.user?.platformAdmin && current.assigned_attorney_user_id !== req.user.sub) {
+    return res.status(404).json({ error: 'Case not found' });
+  }
   const b = req.body || {};
   const mergedData = { ...current.data, ...(b.data || {}) };
 
@@ -2382,7 +2397,7 @@ app.patch('/api/cases/:id', async (req, res) => {
   res.json(rowToCase(result.rows[0]));
 });
 
-app.delete('/api/cases/:id', async (req, res) => {
+app.delete('/api/cases/:id', requireOrgRole('admin'), async (req, res) => {
   const result = await req.db.query('DELETE FROM cases WHERE id = $1 AND org_id = $2 RETURNING id', [req.params.id, req.orgId]);
   if (!result.rows[0]) return res.status(404).json({ error: 'Case not found' });
   await audit(req.orgId, req.user?.sub, 'case.delete', 'case', req.params.id, null, req.ip);
@@ -2401,7 +2416,7 @@ app.get('/api/payees', async (req, res) => {
   const result = await req.db.query('SELECT * FROM payees WHERE org_id = $1 ORDER BY name ASC', [req.orgId]);
   res.json({ payees: result.rows.map(p => ({ id:p.id, name:p.name, type:p.type, email:p.email, defaultRate: p.default_rate != null ? Number(p.default_rate) : 0 })) });
 });
-app.post('/api/payees', async (req, res) => {
+app.post('/api/payees', requireOrgRole('admin'), async (req, res) => {
   const { name, type, email, defaultRate } = req.body || {};
   if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
   const result = await req.db.query(
@@ -2435,7 +2450,7 @@ app.get('/api/payables', async (req, res) => {
   );
   res.json({ count: result.rows.length, payables: result.rows.map(rowToPayable) });
 });
-app.post('/api/payables', async (req, res) => {
+app.post('/api/payables', requireOrgRole('admin'), async (req, res) => {
   const { payeeId, relatedCaseId, amount, description, dueDate } = req.body || {};
   if (!payeeId) return res.status(400).json({ error: 'payeeId is required' });
   if (!amount || amount <= 0) return res.status(400).json({ error: 'amount must be greater than 0' });
@@ -2472,7 +2487,7 @@ app.patch('/api/payables/:id/status', requireOrgRole('admin'), async (req, res) 
 const PAYABLES_VALID_STATUSES = ['Draft','Submitted','Approved','Paid','Rejected'];
 
 // Grant a defense firm access to a specific matter (carrier-side action only).
-app.post('/api/cases/:id/share', async (req, res) => {
+app.post('/api/cases/:id/share', requireOrgRole('admin'), async (req, res) => {
   if (req.user?.persona === 'defense') return res.status(403).json({ error: 'Only the owning carrier can share a matter' });
   const { firmOrgId } = req.body || {};
   if (!firmOrgId) return res.status(400).json({ error: 'firmOrgId is required' });
