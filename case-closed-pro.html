@@ -113,6 +113,9 @@ tr.row-link{cursor:pointer;}
 .nav-divider{width:1px;align-self:stretch;background:var(--line2);margin:3px 5px;flex-shrink:0;}
 .nav-group-label{font-size:9px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:1px;padding:0 6px 0 2px;flex-shrink:0;white-space:nowrap;align-self:center;}
 .role-tab{background:transparent;border:none;border-radius:6px;padding:6px 11px;font-size:11.5px;font-weight:600;cursor:pointer;color:var(--muted);transition:all .12s;flex-shrink:0;white-space:nowrap;}
+.role-tab.premium-tab{color:#B45309;}
+.role-tab.premium-tab:hover:not(.on){background:#FFFBEB;color:#B45309;}
+.role-tab.premium-tab.on{background:#B45309;color:#fff;}
 .role-tab.admin-tab{color:#B45309;}
 .role-tab.admin-tab:hover:not(.on){background:#FFFBEB;color:#B45309;}
 .role-tab.admin-tab.on{background:#B45309;color:#fff;}
@@ -2526,6 +2529,7 @@ function render(){
   html += '<div id="ct">';
   if (S.role === 'litigation') html += litigationDashV();
   else if (S.role === 'tpa') html += tpaV();
+  else if (S.role === 'premium') html += premiumHubV();
   else if (S.role === 'partner') html += partV();
   else if (S.role === 'executive') html += execV();
   else if (S.role === 'scorecard') html += (S.scorecardDetail ? attorneyDetailV(S.scorecardDetail) : scorecardV());
@@ -2662,6 +2666,9 @@ function hdr(){
       ['scorecard','Scorecards'],
       ['reports','Reports Hub']
     ]},
+    { label:'', items:[
+      ['premium','★ Premium Features']
+    ]},
     { label:'Admin', items:[
       ['tpa','Account Executive'],
       ['carrier','Carrier Portal'],
@@ -2672,7 +2679,7 @@ function hdr(){
   if (S.currentUser?.platformAdmin) groups[groups.length-1].items.push(['admin','⚙ Admin']);
 
   const btn = ([r, l]) =>
-    '<button onclick="'+(r==='admin' ? 'goToAdmin()' : r==='scorecard' ? "st({role:'scorecard',caseId:null,scorecardDetail:null,showWelcome:false})" : "st({role:'"+r+"',caseId:null,showWelcome:false})")+'" class="role-tab'+(S.role===r?' on':'')+(r==='admin'?' admin-tab':'')+'">'+l+(r==='litigation'?attnBadgeV():'')+'</button>';
+    '<button onclick="'+(r==='admin' ? 'goToAdmin()' : r==='scorecard' ? "st({role:'scorecard',caseId:null,scorecardDetail:null,showWelcome:false})" : "st({role:'"+r+"',caseId:null,showWelcome:false})")+'" class="role-tab'+(S.role===r?' on':'')+(r==='admin'?' admin-tab':'')+(r==='premium'?' premium-tab':'')+'">'+l+(r==='litigation'?attnBadgeV():'')+'</button>';
 
   const roleBtns = groups.map((g,gi) =>
     (gi>0 ? '<div class="nav-divider"></div>' : '') +
@@ -10098,8 +10105,13 @@ function submitPremiumPassword(){
 }
 function relockPremium(){ try { sessionStorage.removeItem('ccpPremiumPreview'); } catch (e) {} window._premPw=''; st({premiumUnlocked:false, premiumPwError:''}); }
 function sentOutKey(m, c){ return m.scope === 'portfolio' ? 'watch' : (c.id + '|' + m.key); }
+function sentCase(){
+  if (S.caseId) return gc();
+  const open = CASES.filter(x => x.status !== 'Closed');
+  return open.find(x => x.id === S.premiumCaseId) || open[0] || null;
+}
 async function runSentinel(modKey){
-  const c = gc(); const m = SENTINEL_MODS.find(x => x.key === modKey); if (!c || !m) return;
+  const c = sentCase(); const m = SENTINEL_MODS.find(x => x.key === modKey); if (!c || !m) return;
   const k = sentOutKey(m, c);
   const set = (o) => { S.sentOut = Object.assign({}, S.sentOut || {}, { [k]: o }); render(); };
   set({ loading:true });
@@ -10113,7 +10125,14 @@ async function runSentinel(modKey){
 }
 function tabSentinel(c){
   let h = '<div class="section-band">Sentinel Suite · Premium</div>';
+  if (!authToken && !premiumUnlocked()) return h + premiumGateV();
   h += '<div style="font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:14px;max-width:720px;">AI modules that work from this matter\'s own numbers and activity. Each one returns a specific recommendation in seconds, with its reasoning. Included in higher plans or as individual add-ons.'+(!authToken?' <strong>Sample output shown below; live analysis runs on your real cases once signed in.</strong>':'')+'</div>';
+  h += sentinelPanelV(c);
+  return h;
+}
+
+function sentinelPanelV(c){
+  let h = '';
   const anyLocked = !!(S.myFeatures && SENTINEL_MODS.some(m => S.myFeatures[m.feat] === false));
   if (anyLocked && authToken) {
     if (premiumUnlocked()) {
@@ -10141,6 +10160,43 @@ function tabSentinel(c){
   });
   h += '</div>';
   h += '<div style="font-size:11px;color:var(--dim);margin-top:14px;">AI-generated analysis to support, not replace, an adjuster\'s or attorney\'s judgment. Every run is recorded in the audit trail.</div>';
+  return h;
+}
+
+
+
+function premiumGateV(){
+  let h = '';
+  h += '<div class="card" style="padding:20px 22px;max-width:620px;margin-bottom:18px;border-top:3px solid #B45309;">';
+  h += '<div style="font-size:26px;margin-bottom:6px;">🔒</div><div style="font-weight:700;font-size:15px;margin-bottom:4px;">Premium features are locked</div>';
+  h += '<div style="font-size:12.5px;color:var(--muted);margin-bottom:12px;">Enter the preview password to open the Sentinel suite on the sample matters.</div>';
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><input class="inp" type="password" autocomplete="off" placeholder="Preview password" style="max-width:240px;" value="'+esc(window._premPw||'')+'" oninput="window._premPw=this.value" onkeydown="if(event.key===\'Enter\')submitPremiumPassword()"><button class="btn btn-pri" onclick="submitPremiumPassword()">Unlock</button>'+(S.premiumPwError?'<span style="font-size:12px;color:#B91C1C;">'+esc(S.premiumPwError)+'</span>':'')+'</div></div>';
+  return h;
+}
+
+function premiumHubV(){
+  let h = '<div class="wrap" style="padding-top:18px;">';
+  h += '<div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">Premium Features</div>';
+  h += '<div style="font-size:13px;color:var(--muted);margin:4px 0 16px;max-width:760px;line-height:1.6;">The Sentinel suite: AI modules that work from each matter\'s own numbers and activity and return a specific recommendation with its reasoning.</div>';
+  if (!authToken && !premiumUnlocked()) {
+    h += premiumGateV();
+    h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;max-width:1100px;opacity:.7;">';
+    SENTINEL_MODS.forEach(m => { h += '<div class="card" style="padding:14px 16px;border-top:3px solid '+m.color+';"><div style="font-weight:700;font-size:13.5px;">'+m.icon+' '+m.name+' <span style="font-size:11px;">🔒</span></div><div style="font-size:12px;color:var(--muted);margin-top:5px;line-height:1.5;">'+m.what+'</div></div>'; });
+    h += '</div></div>';
+    return h;
+  }
+  const open = CASES.filter(x => x.status !== 'Closed');
+  const c = sentCase();
+  if (!c) { h += '<div class="card" style="padding:20px;">There are no open matters to run the Sentinel modules on yet.</div></div>'; return h; }
+  if (!authToken) {
+    h += '<div style="display:flex;align-items:center;gap:10px;background:#ECFDF5;border:1px solid #A7F3D0;border-radius:8px;padding:9px 12px;margin-bottom:14px;font-size:12px;color:#065F46;"><span style="flex:1;"><strong>Premium preview unlocked.</strong> This sample demo shows clearly labelled sample output. Live analysis runs on real cases in a signed-in account.</span><button class="btn btn-out" onclick="relockPremium()">Lock again</button></div>';
+  }
+  h += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;"><label style="font-size:12px;font-weight:600;">Matter</label><select class="inp" style="max-width:420px;" onchange="st({premiumCaseId:this.value})">';
+  open.forEach(x => { h += '<option value="'+esc(x.id)+'"'+(x.id===c.id?' selected':'')+'>'+esc((x.matterNo||x.id)+' · '+x.client+' · '+(x.attorney||'Unassigned'))+'</option>'; });
+  h += '</select></div>';
+  h += sentinelPanelV(c);
+  h += '<div class="card" style="padding:16px 18px;border-top:3px solid #1D4ED8;margin-top:14px;max-width:560px;"><div style="font-weight:700;font-size:14px;">🎯 Sentinel Match</div><div style="font-size:12px;color:var(--muted);line-height:1.55;margin:5px 0 10px;">Recommends the best-fit attorney for each unassigned matter, using workload and matter type, then notifies them.</div><button class="btn btn-pri" onclick="st({role:\'litigation\',caseId:null,showAssignCases:true})">Open Assign Cases</button></div>';
+  h += '</div>';
   return h;
 }
 
