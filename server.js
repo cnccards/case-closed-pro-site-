@@ -3369,6 +3369,103 @@ function computeHealthReport(cases) {
 // created org's internal_notes is tagged clearly so it's easy to
 // tell apart from a real customer or the sandbox in the Admin Panel.
 // ---------------------------------------------------------------
+// The AI brief, with a numbers-only fallback so a missing key or an outage never
+// loses the report (the cases are already imported by the time this runs).
+async function hcBrief(signals) {
+  try {
+    const { analysis, flaggedCount } = await sentinelWatchNarrative(signals);
+    return { analysis, flaggedCount, aiUnavailable: false };
+  } catch (aiErr) {
+    console.error('Health Check AI commentary unavailable:', aiErr.message);
+    const rank = s => (s.daysToSol !== null && s.daysToSol < 90 ? 0 : 1) * 1000 - Math.min(s.reserveBurnPct, 999);
+    const analysis = 'AI commentary is unavailable right now (' + aiErr.message + '), so this is the numbers-only version. ' + signals.length + ' open matter(s) trip a risk threshold:\n\n' +
+      [...signals].sort((a, b) => rank(a) - rank(b)).slice(0, 12).map(s => '- ' + (s.matterNo || '') + ' ' + s.client + ': ' +
+        [s.reserveBurnPct > 70 ? 'reserve ' + s.reserveBurnPct + '% spent' : null,
+         s.daysToSol !== null && s.daysToSol < 90 ? (s.daysToSol < 0 ? Math.abs(s.daysToSol) + ' days past SOL' : s.daysToSol + ' days to SOL') : null,
+         s.daysSinceActivity !== null && s.daysSinceActivity > 14 ? 'quiet ' + s.daysSinceActivity + ' days' : null].filter(Boolean).join(', ')).join('\n') +
+      (signals.length > 12 ? '\n- ...and ' + (signals.length - 12) + ' more' : '');
+    return { analysis, flaggedCount: signals.length, aiUnavailable: true };
+  }
+}
+async function saveHealthCheck(orgId, result) {
+  await q(`UPDATE organizations SET features = jsonb_set(COALESCE(features, '{}'::jsonb), '{_healthCheck}', $1::jsonb) WHERE id = $2`, [JSON.stringify(result), orgId]);
+}
+const HC_NOTE_PREFIX = 'Paid Sentinel Health Check engagement';
+
+// Past Health Checks: every engagement org, newest first, whether or not a saved
+// report exists (older runs can be rebuilt from the cases that were imported).
+app.get('/api/admin/health-checks', requirePlatformAdmin, async (req, res) => {
+  try {
+    const r = await q(`SELECT o.id, o.name, o.created_at, o.access_status, o.internal_notes,
+        o.features->'_healthCheck' AS hc,
+        (SELECT COUNT(*) FROM cases c WHERE c.org_id = o.id) AS case_count
+      FROM organizations o WHERE o.internal_notes LIKE $1 ORDER BY o.created_at DESC LIMIT 200`, [HC_NOTE_PREFIX + '%']);
+    res.json({ healthChecks: r.rows.map(o => {
+      const hc = o.hc || null;
+      const m = /^Health Check — (.*) \(\d{4}-\d{2}-\d{2}\)$/.exec(o.name || '');
+      return {
+        id: o.id, name: o.name, prospectName: (hc && hc.prospectName) || (m ? m[1] : o.name),
+        createdAt: o.created_at, accessStatus: o.access_status, caseCount: Number(o.case_count),
+        hasSavedReport: !!hc, savedAt: hc ? hc.savedAt || null : null,
+        score: hc && hc.report ? hc.report.score : null, grade: hc && hc.report ? hc.report.grade : null,
+        pricePaid: hc && hc.billing ? hc.billing.pricePaid : null, creditExpiresAt: hc && hc.billing ? hc.billing.creditExpiresAt : null
+      };
+    }) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Rebuild a report from the cases stored in an engagement org (fresh dates, fresh brief).
+async function rebuildHealthCheck(org, prior) {
+  const { signals, stats, report, total } = await withOrgScopedTransaction(org.id, async (client) => {
+    const all = await client.query('SELECT * FROM cases WHERE org_id = $1', [org.id]);
+    const open = all.rows.filter(r => r.status !== 'Closed').map(rowToCase);
+    let report = null;
+    try { report = computeHealthReport(open); } catch (rErr) { console.error('Health report analytics failed:', rErr); }
+    return { signals: computeRiskSignals(open), stats: computePortfolioStats(open), report, total: all.rows.length };
+  });
+  const sentinelWatch = await hcBrief(signals);
+  const note = org.internal_notes || '';
+  const pm = /Price paid: \$([\d,]+)/.exec(note), cm = /sign by (\d{4}-\d{2}-\d{2})/.exec(note);
+  const nm = /^Health Check — (.*) \(\d{4}-\d{2}-\d{2}\)$/.exec(org.name || '');
+  return {
+    organization: { id: org.id, name: org.name },
+    prospectName: (prior && prior.prospectName) || (nm ? nm[1] : org.name),
+    imported: total, failed: (prior && prior.failed) || 0, importErrors: (prior && prior.importErrors) || [],
+    stats, report,
+    billing: (prior && prior.billing) || { pricePaid: pm ? Number(pm[1].replace(/,/g, '')) : null, creditExpiresAt: cm ? cm[1] : null },
+    sentinelWatch, savedAt: new Date().toISOString(), rebuilt: true
+  };
+}
+
+// Open a past Health Check. Returns the saved report; if none was saved (a run from
+// before reports were kept) it is rebuilt from the stored cases and saved now.
+app.get('/api/admin/health-checks/:id', requirePlatformAdmin, async (req, res) => {
+  try {
+    const r = await q('SELECT * FROM organizations WHERE id = $1 AND internal_notes LIKE $2', [req.params.id, HC_NOTE_PREFIX + '%']);
+    const org = r.rows[0];
+    if (!org) return res.status(404).json({ error: 'Health Check not found' });
+    const saved = org.features && org.features._healthCheck;
+    if (saved) return res.json(saved);
+    const result = await rebuildHealthCheck(org, null);
+    try { await saveHealthCheck(org.id, result); } catch (e) { console.error('Could not save rebuilt health check:', e.message); }
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Re-run on the stored cases (dates move on, so deadlines and silence recompute).
+app.post('/api/admin/health-checks/:id/refresh', requirePlatformAdmin, async (req, res) => {
+  try {
+    const r = await q('SELECT * FROM organizations WHERE id = $1 AND internal_notes LIKE $2', [req.params.id, HC_NOTE_PREFIX + '%']);
+    const org = r.rows[0];
+    if (!org) return res.status(404).json({ error: 'Health Check not found' });
+    const prior = org.features && org.features._healthCheck;
+    const result = await rebuildHealthCheck(org, prior);
+    await saveHealthCheck(org.id, result);
+    await audit(org.id, req.user.sub, 'admin.sentinel_health_check_refresh', 'organization', org.id, null, req.ip);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/admin/sentinel-health-check', requirePlatformAdmin, async (req, res) => {
   const { prospectName, cases: inputCases, pricePaid } = req.body || {};
   if (!prospectName || !prospectName.trim()) return res.status(400).json({ error: 'prospectName is required' });
@@ -3426,32 +3523,23 @@ app.post('/api/admin/sentinel-health-check', requirePlatformAdmin, async (req, r
       return { signals: computeRiskSignals(openCases), stats: computePortfolioStats(openCases), report };
     });
 
-    // If the AI is unavailable (no key, quota, outage) the check still delivers the numbers
-    // instead of failing after the cases were already imported.
-    let analysis, flaggedCount, aiUnavailable = false;
-    try {
-      ({ analysis, flaggedCount } = await sentinelWatchNarrative(signals));
-    } catch (aiErr) {
-      console.error('Health Check AI commentary unavailable:', aiErr.message);
-      aiUnavailable = true; flaggedCount = signals.length;
-      const rank = s => (s.daysToSol !== null && s.daysToSol < 90 ? 0 : 1) * 1000 - Math.min(s.reserveBurnPct, 999);
-      analysis = 'AI commentary is unavailable right now (' + aiErr.message + '), so this is the numbers-only version. ' + signals.length + ' open matter(s) trip a risk threshold:\n\n' +
-        [...signals].sort((a, b) => rank(a) - rank(b)).slice(0, 12).map(s => '- ' + (s.matterNo || '') + ' ' + s.client + ': ' +
-          [s.reserveBurnPct > 70 ? 'reserve ' + s.reserveBurnPct + '% spent' : null,
-           s.daysToSol !== null && s.daysToSol < 90 ? (s.daysToSol < 0 ? Math.abs(s.daysToSol) + ' days past SOL' : s.daysToSol + ' days to SOL') : null,
-           s.daysSinceActivity !== null && s.daysSinceActivity > 14 ? 'quiet ' + s.daysSinceActivity + ' days' : null].filter(Boolean).join(', ')).join('\n') +
-        (signals.length > 12 ? '\n- ...and ' + (signals.length - 12) + ' more' : '');
-    }
+    const sentinelWatch = await hcBrief(signals);
 
     await audit(org.id, req.user.sub, 'admin.sentinel_health_check', 'organization', org.id, { prospectName: prospectName.trim(), imported, failed: importErrors.length, pricePaid: price, creditExpiresAt }, req.ip);
 
-    res.status(201).json({
+    const result = {
       organization: { id: org.id, name: org.name },
+      prospectName: prospectName.trim(),
       imported, failed: importErrors.length, importErrors,
       stats, report,
       billing: { pricePaid: price, creditExpiresAt },
-      sentinelWatch: { analysis, flaggedCount, aiUnavailable }
-    });
+      sentinelWatch,
+      savedAt: new Date().toISOString()
+    };
+    // Keep the finished report so it can be reopened and re-downloaded later
+    // (internal "_" key: customers never see it).
+    try { await saveHealthCheck(org.id, result); } catch (sErr) { console.error('Could not save health check report:', sErr.message); result.saveFailed = true; }
+    res.status(201).json(result);
   } catch (e) {
     console.error('Sentinel Health Check failed:', e);
     res.status(500).json({ error: 'Sentinel Health Check failed: ' + e.message });
