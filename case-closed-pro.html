@@ -238,6 +238,23 @@ label{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing
   .hero{background:#fff !important;color:#000 !important;padding:10px 0;}
   .hero-title, .hero-sub, .hero-eyebrow{color:#000 !important;}
 }
+
+/* Sentinel Health Check printing: only the report prints; summary mode hides the appendix. */
+@media print{
+  body.hc-printing, body.hc-printing #app, body.hc-printing #app > div{background:#fff !important;min-height:0 !important;height:auto !important;}
+  body.hc-printing #app > *:not(.modal-bg){display:none !important;}
+  body.hc-printing .modal-bg{position:static !important;background:none !important;backdrop-filter:none !important;padding:0 !important;display:block !important;}
+  body.hc-printing .modal{max-width:100% !important;max-height:none !important;overflow:visible !important;box-shadow:none !important;border-radius:0;}
+  body.hc-printing .modal-h{display:none !important;}
+  body.hc-printing .modal-b{padding:0 !important;overflow:visible !important;}
+  body.hc-printing *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  body.hc-printing .hc-sec{break-inside:avoid;}
+  body.hc-printing .hc-tr{break-inside:avoid;}
+  body.hc-summary .hc-detail, body.hc-summary .hc-extra{display:none !important;}
+  body.hc-summary .hc-modal{zoom:.86;}
+  body.hc-printing:not(.hc-summary) .hc-detail-break{break-before:page;}
+  @page{margin:12mm;}
+}
 </style>
 </head>
 <body>
@@ -8546,21 +8563,20 @@ async function submitHealthCheck(){
       method:'POST',
       body: JSON.stringify({ prospectName, cases, pricePaid })
     });
-    st({healthCheckLoading:false, healthCheckResult:data});
+    data.prospectName = prospectName; st({healthCheckLoading:false, healthCheckResult:data});
   } catch (e) {
     st({healthCheckLoading:false, healthCheckError:e.message});
   }
 }
-function healthCheckModalV(){
-  let h = '<div class="modal-bg" onclick="if(event.target===this && !S.healthCheckLoading)closeHealthCheckModal()">';
-  h += '<div class="modal" style="max-width:640px;max-height:88vh;overflow-y:auto;">';
-  h += '<div class="modal-h"><div class="serif" style="font-size:18px;font-weight:700;">🩺 Sentinel Health Check</div>';
-  h += '<button class="x" onclick="closeHealthCheckModal()">×</button></div>';
-  h += '<div class="modal-b">';
-
-  if (S.healthCheckResult) {
-    const r = S.healthCheckResult;
-    h += '<div id="hcReport">';
+function hcPrint(summary){
+  document.body.classList.add('hc-printing');
+  document.body.classList.toggle('hc-summary', !!summary);
+  const done = () => { document.body.classList.remove('hc-printing','hc-summary'); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  window.print();
+}
+function hcLegacyReportV(r){
+  let h = '';
     h += '<div class="alert-good" style="margin-bottom:14px;">Imported '+r.imported+' matter'+(r.imported===1?'':'s')+' into a dedicated, isolated engagement org'+(r.failed?' ('+r.failed+' row'+(r.failed===1?'':'s')+' skipped — see below)':'')+'.</div>';
     if (r.billing && r.billing.pricePaid != null) {
       h += '<div style="background:#FFF7ED;border:1px solid #FDBA74;border-radius:8px;padding:12px 14px;margin-bottom:16px;">';
@@ -8586,12 +8602,141 @@ function healthCheckModalV(){
     h += '<div class="card" style="margin-top:6px;"><div class="sh"><span>Sentinel Watch — Portfolio Risk Brief</span><span style="color:var(--dim);font-weight:500;">'+r.sentinelWatch.flaggedCount+' matter'+(r.sentinelWatch.flaggedCount===1?'':'s')+' flagged</span></div>';
     h += '<div style="font-size:13px;line-height:1.7;white-space:pre-wrap;">'+esc(r.sentinelWatch.analysis)+'</div></div>';
 
+  return h;
+}
+function hcM(v){ v=Number(v)||0; return v>=1e6 ? '$'+(v/1e6).toFixed(1).replace(/\.0$/,'')+'M' : v>=1e3 ? '$'+Math.round(v/1e3)+'K' : '$'+Math.round(v); }
+function hcBar(p, color){
+  return '<div style="background:#E5E7EB;border-radius:4px;height:8px;overflow:hidden;min-width:60px;"><div style="width:'+Math.max(0,Math.min(100,p))+'%;height:100%;background:'+(color||'#2563EB')+';"></div></div>';
+}
+function hcSec(title, sub, body, cls){
+  return '<div class="hc-sec '+(cls||'')+'" style="margin-top:22px;"><div style="font-weight:700;font-size:14px;border-bottom:2px solid #0B1220;padding-bottom:4px;margin-bottom:10px;">'+title+(sub?'<span style="font-weight:500;font-size:11.5px;color:var(--dim);margin-left:8px;">'+sub+'</span>':'')+'</div>'+body+'</div>';
+}
+function hcTbl(heads, rows, aligns){
+  let h = '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr>';
+  heads.forEach((x,i)=>{ h += '<th style="text-align:'+((aligns&&aligns[i])||'left')+';font-size:10.5px;color:var(--muted);font-weight:600;padding:4px 8px 4px 0;border-bottom:1px solid #D1D5DB;">'+x+'</th>'; });
+  h += '</tr></thead><tbody>';
+  rows.forEach(r=>{ h += '<tr class="hc-tr'+(r.cls?' '+r.cls:'')+'">'; r.cells.forEach((c,i)=>{ h += '<td style="text-align:'+((aligns&&aligns[i])||'left')+';padding:5px 8px 5px 0;border-bottom:1px solid #F1F5F9;vertical-align:top;">'+c+'</td>'; }); h += '</tr>'; });
+  return h + '</tbody></table>';
+}
+function hcKpi(label, val, color){
+  return '<div style="flex:1 1 120px;min-width:110px;border:1px solid #E5E7EB;border-radius:10px;padding:8px 10px;"><div style="font-size:10.5px;color:var(--muted);">'+label+'</div><div style="font-size:18px;font-weight:700;margin-top:2px;color:'+(color||'inherit')+';">'+val+'</div></div>';
+}
+function hcReportV(r){
+  const R = r.report, H = R.headline, st2 = r.stats;
+  const name = esc(r.prospectName || window._hcProspectName || 'Prospect');
+  const scoreColor = R.score >= 75 ? '#15803D' : R.score >= 50 ? '#B45309' : '#B91C1C';
+  const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+  let h = '';
+
+  // Internal-only boxes: never printed, so the prospect's PDF carries no billing details.
+  h += '<div class="no-print">';
+  h += '<div class="alert-good" style="margin-bottom:10px;">Imported '+plural(r.imported,'matter')+' into a dedicated, isolated engagement org'+(r.failed?' ('+plural(r.failed,'row')+' skipped, see below)':'')+'.</div>';
+  if (r.billing && r.billing.pricePaid != null) {
+    h += '<div style="background:#FFF7ED;border:1px solid #FDBA74;border-radius:8px;padding:10px 14px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;color:#9A3412;">💳 '+fM(r.billing.pricePaid)+' paid · credit expires '+esc(r.billing.creditExpiresAt)+'</div><div style="font-size:11px;color:#9A3412;margin-top:2px;">Fully credited toward their first invoice if they sign by this date. Track it in your own calendar or CRM too.</div></div>';
+  }
+  if (r.sentinelWatch && r.sentinelWatch.aiUnavailable) h += '<div class="alert-bad" style="margin-bottom:10px;">AI commentary was unavailable for this run, so the brief at the bottom is the numbers-only version. Everything else is unaffected.</div>';
+  h += '</div>';
+
+  // Header
+  h += '<div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:6px;border-bottom:3px solid #0B1220;padding-bottom:8px;">';
+  h += '<div><div class="serif" style="font-size:24px;font-weight:700;line-height:1.15;">Sentinel Health Check</div><div style="font-size:13px;color:var(--muted);margin-top:2px;">Prepared for '+name+' · '+esc(R.generatedAt)+' · '+plural(R.matterCount,'open matter')+' reviewed</div></div>';
+  h += '<div style="font-size:11px;color:var(--dim);">Case Closed Pro</div></div>';
+
+  // Score and findings
+  h += '<div class="hc-sec" style="display:flex;gap:22px;flex-wrap:wrap;margin-top:16px;align-items:flex-start;">';
+  h += '<div style="flex:0 0 150px;text-align:center;"><div style="width:120px;height:120px;border-radius:50%;border:8px solid '+scoreColor+';margin:0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;"><div style="font-size:38px;font-weight:800;line-height:1;color:'+scoreColor+';">'+R.score+'</div><div style="font-size:11px;color:var(--muted);">out of 100</div></div><div style="margin-top:8px;font-size:13px;font-weight:700;color:'+scoreColor+';">Portfolio health: '+R.grade+'</div></div>';
+  h += '<div style="flex:1 1 300px;"><div style="font-weight:700;font-size:13.5px;margin-bottom:6px;">What stands out</div>';
+  if (R.findings.length) { h += '<ul style="margin:0 0 10px 18px;padding:0;font-size:13px;line-height:1.55;">'+R.findings.map(f=>'<li style="margin-bottom:4px;">'+esc(f)+'</li>').join('')+'</ul>'; }
+  else h += '<div style="font-size:13px;margin-bottom:10px;">No major issues surfaced in this book.</div>';
+  h += '<div style="display:grid;grid-template-columns:150px 1fr 70px;gap:4px 10px;align-items:center;font-size:11.5px;">';
+  R.components.forEach(c=>{ const p = c.max ? c.earned/c.max*100 : 0; h += '<div>'+esc(c.label)+'</div>'+hcBar(p, p>=75?'#15803D':p>=50?'#B45309':'#B91C1C')+'<div style="text-align:right;color:var(--muted);">'+c.earned+' / '+c.max+'</div>'; });
+  h += '</div><div style="font-size:10.5px;color:var(--dim);margin-top:6px;">Score is 100 minus the deductions shown. Each one is computed from the rows in your own export.</div></div></div>';
+
+  // KPI row
+  h += '<div class="hc-sec" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">';
+  h += hcKpi('Open exposure', hcM(st2.totalValue));
+  h += hcKpi('Reserves held', hcM(st2.totalReserves));
+  h += hcKpi('Exposure within 90 days of SOL', hcM(H.nearSolValue), H.nearSolCount?'#B91C1C':'#15803D');
+  h += hcKpi('Reserves on quiet files (30+ days)', hcM(H.staleReserves), H.staleCount?'#B45309':'#15803D');
+  h += hcKpi('Unassigned matters', H.unassignedCount+' · '+hcM(H.unassignedValue), H.unassignedCount?'#B45309':'#15803D');
+  h += hcKpi('Key data filled in', R.completeness.scorePct+'%', R.completeness.scorePct>=90?'#15803D':'#B45309');
+  h += '</div>';
+
+  // Top files
+  const top = R.topFiles.map((t,i)=>({ cls: i>=5?'hc-extra':'', cells:[(i+1), '<strong>'+esc(t.client)+'</strong><div style="font-size:10.5px;color:var(--dim);">'+esc(t.matterNo||'')+' · '+esc(t.attorney)+'</div>', hcM(t.value), esc(t.why.join('; ')), esc(t.action)] }));
+  h += hcSec('Where to look first','the ten files that most need a human this week', top.length ? hcTbl(['#','Matter','Exposure','Why it is here','Suggested next step'], top, ['left','left','right','left','left']) : '<div style="font-size:13px;">Nothing here trips a threshold.</div>');
+
+  // What Case Closed Pro does about it
+  const W = R.withProduct, bul = [];
+  if (W.deadlineAlerts) bul.push('<strong>'+plural(W.deadlineAlerts,'deadline')+'</strong> inside 90 days would already be on the calendar with escalating alerts, so none arrives as a surprise.');
+  if (W.staleNudges) bul.push('<strong>'+plural(W.staleNudges,'file')+'</strong> quiet for 30+ days would have triggered a status-update nudge to the responsible attorney.');
+  if (W.routing.count) bul.push('<strong>'+plural(W.routing.count,'unassigned matter')+'</strong> would go to Sentinel Match for a ranked attorney recommendation'+(W.routing.plan.length?' (balancing the load, '+W.routing.plan.map(p=>esc(p.name)+' +'+p.count).join(', ')+')':'')+', each with the reasoning shown.');
+  if (W.reserveReviews) bul.push('<strong>'+plural(W.reserveReviews,'reserve')+'</strong> would be queued for review against how the rest of the book reserves similar matters.');
+  if (W.dataGapsFlagged) bul.push('<strong>'+plural(W.dataGapsFlagged,'file')+'</strong> with several missing fields would be flagged for cleanup at intake.');
+  if (!bul.length) bul.push('Nothing urgent here. Case Closed Pro would keep it that way by watching deadlines, activity and reserves continuously.');
+  h += hcSec('What Case Closed Pro would do with this book','', '<ul style="margin:0 0 0 18px;padding:0;font-size:13px;line-height:1.6;">'+bul.map(b=>'<li style="margin-bottom:5px;">'+b+'</li>').join('')+'</ul>');
+
+  // ---- Appendix (full report only) ----
+  h += '<div class="hc-detail hc-detail-break"></div>';
+
+  // Workload
+  const wl = R.workload, maxOpen = Math.max.apply(null, wl.attorneys.map(a=>a.open).concat([wl.unassigned.count,1]));
+  let wlRows = wl.attorneys.map(a=>({cells:[esc(a.name)+(a.overloaded?' <span style="color:#B91C1C;font-size:10.5px;font-weight:700;">overloaded</span>':''), a.open, hcBar(a.open/maxOpen*100, a.overloaded?'#B91C1C':'#2563EB'), fM(a.value), a.stale]}));
+  if (wl.unassigned.count) wlRows.unshift({cells:['<span style="color:#B45309;font-weight:700;">Unassigned</span>', wl.unassigned.count, hcBar(wl.unassigned.count/maxOpen*100,'#B45309'), fM(wl.unassigned.value), '']});
+  h += hcSec('Attorney workload','median '+wl.medianOpen+' open per attorney', wlRows.length ? hcTbl(['Attorney','Open','','Exposure','Quiet 30+ days'], wlRows, ['left','right','left','right','right']) : '<div style="font-size:13px;">No attorney data in this export.</div>', 'hc-detail');
+
+  // Aging
+  const ag = R.aging, agTbl = (title, arr, color) => '<div style="flex:1 1 280px;"><div style="font-size:12px;font-weight:600;margin-bottom:4px;">'+title+'</div>'+hcTbl(['Bucket','Files','','Reserves'], arr.map(b=>({cells:[esc(b.label), b.count, hcBar(R.matterCount?b.count/R.matterCount*100:0,color), fM(b.reserves)]})), ['left','right','left','right'])+'</div>';
+  h += hcSec('Aging and silence', ag.oldAndSilent ? plural(ag.oldAndSilent,'file')+' open over a year and quiet for 60+ days' : '', '<div style="display:flex;gap:20px;flex-wrap:wrap;">'+agTbl('Age of file (from filing date)', ag.byFileAge, '#2563EB')+agTbl('Days since last activity', ag.bySilence, '#B45309')+'</div>'+(ag.noActivityDate?'<div style="font-size:11px;color:var(--dim);margin-top:6px;">'+plural(ag.noActivityDate,'file')+' had no activity date in the export.</div>':''), 'hc-detail');
+
+  // Reserve adequacy
+  const ra = R.reserveAdequacy;
+  let rb = '<div style="font-size:12.5px;line-height:1.6;margin-bottom:8px;">Across this book, reserves run at a median <strong>'+ra.overallRatioPct+'%</strong> of matter value. Files below 60% of that pattern for their matter type are shown as under-reserved; files above 160% as over-reserved. This compares the book to itself, not to an outside benchmark.</div>';
+  rb += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">'+hcKpi('Under-reserved files', ra.underCount+' ('+fM(ra.underGap)+' gap)', ra.underCount?'#B91C1C':'#15803D')+hcKpi('Over-reserved files', ra.overCount+' ('+fM(ra.overGap)+' tied up)', ra.overCount?'#B45309':'#15803D')+hcKpi('No reserve set', ra.noReserveCount, ra.noReserveCount?'#B91C1C':'#15803D')+hcKpi('Reserve under 25% of demand', ra.belowDemandCount, ra.belowDemandCount?'#B45309':'#15803D')+'</div>';
+  const raRows = l => l.map(x=>({cells:[esc(x.client), fM(x.reserve), fM(x.expected), fM(x.gap)]}));
+  if (ra.under.length) rb += '<div style="font-size:12px;font-weight:600;margin:6px 0 4px;">Largest under-reserved files</div>'+hcTbl(['Matter','Reserve now','Typical for this book','Gap'], raRows(ra.under), ['left','right','right','right']);
+  if (ra.over.length) rb += '<div style="font-size:12px;font-weight:600;margin:10px 0 4px;">Largest over-reserved files</div>'+hcTbl(['Matter','Reserve now','Typical for this book','Excess'], raRows(ra.over), ['left','right','right','right']);
+  h += hcSec('Reserve adequacy','', rb, 'hc-detail');
+
+  // Completeness
+  const cp = R.completeness;
+  let cb = '<div style="display:grid;grid-template-columns:170px 1fr 90px;gap:4px 10px;align-items:center;font-size:12px;">';
+  cp.fields.forEach(f=>{ cb += '<div>'+esc(f.label)+'</div>'+hcBar(f.pct, f.pct>=95?'#15803D':f.pct>=80?'#B45309':'#B91C1C')+'<div style="text-align:right;color:var(--muted);">'+f.pct+'%'+(f.missing?' ('+f.missing+' missing)':'')+'</div>'; });
+  cb += '</div>';
+  if (cp.worstFiles.length) cb += '<div style="font-size:12px;font-weight:600;margin:10px 0 4px;">Files missing the most</div>'+hcTbl(['Matter','Missing'], cp.worstFiles.map(w=>({cells:[esc(w.client), esc(w.missing.join(', '))]})));
+  h += hcSec('Data completeness', cp.scorePct+'% overall', cb, 'hc-detail');
+
+  // Concentration
+  const cc = R.concentration, share = (title, arr, color) => '<div style="flex:1 1 260px;"><div style="font-size:12px;font-weight:600;margin-bottom:4px;">'+title+'</div>'+hcTbl(['','Files','','Share'], arr.map(x=>({cells:[esc(x.name), x.count, hcBar(x.pct,color), x.pct+'%']})), ['left','right','left','right'])+'</div>';
+  let ccb = '<div style="display:flex;gap:20px;flex-wrap:wrap;">'+share('By carrier', cc.carriers, '#2563EB')+share('By matter type', cc.types, '#7C3AED')+share('By attorney', cc.attorneys, '#0F766E')+'</div>';
+  ccb += '<div style="font-size:12px;font-weight:600;margin:12px 0 4px;">Ten largest exposures <span style="font-weight:500;color:var(--dim);">('+cc.top10Pct+'% of the book)</span></div>'+hcTbl(['Matter','Type','Carrier','Attorney','Exposure','Share'], cc.largest.map(x=>({cells:[esc(x.client), esc(x.type), esc(x.carrier), esc(x.attorney), fM(x.value), x.pct+'%']})), ['left','left','left','left','right','right']);
+  h += hcSec('Concentration','', ccb, 'hc-detail');
+
+  // AI brief
+  if (r.sentinelWatch) {
+    h += hcSec('Sentinel Watch risk brief', r.sentinelWatch.flaggedCount+' matter'+(r.sentinelWatch.flaggedCount===1?'':'s')+' flagged', '<div style="font-size:13px;line-height:1.7;white-space:pre-wrap;">'+esc(r.sentinelWatch.analysis)+'</div>', 'hc-detail');
+  }
+  h += '<div style="font-size:10.5px;color:var(--dim);margin-top:18px;">Based solely on the open-matter export supplied for this review. Figures are calculated from that data and have not been independently verified. This is an operational review, not legal or actuarial advice.</div>';
+  return h;
+}
+
+function healthCheckModalV(){
+  let h = '<div class="modal-bg" onclick="if(event.target===this && !S.healthCheckLoading)closeHealthCheckModal()">';
+  h += '<div class="modal hc-modal" style="max-width:'+(S.healthCheckResult&&S.healthCheckResult.report?'940':'640')+'px;max-height:92vh;overflow-y:auto;">';
+  h += '<div class="modal-h"><div class="serif" style="font-size:18px;font-weight:700;">🩺 Sentinel Health Check</div>';
+  h += '<button class="x" onclick="closeHealthCheckModal()">×</button></div>';
+  h += '<div class="modal-b">';
+
+  if (S.healthCheckResult) {
+    const r = S.healthCheckResult;
+    h += '<div id="hcReport">';
+    h += r.report ? hcReportV(r) : hcLegacyReportV(r);
     if (r.failed) {
       h += '<div style="font-size:10.5px;color:var(--dim);margin-top:12px;">Skipped rows: '+r.importErrors.map(e=>'#'+(e.index+1)+' ('+esc(e.error)+')').join(', ')+'</div>';
     }
-    h += '<div style="font-size:10.5px;color:var(--dim);margin-top:12px;">This engagement lives in its own isolated organization ("'+esc(r.organization.name)+'"), separate from your sandbox and every real customer. Billing is handled the same way as everything else in this app — outside it, by your team.</div>';
+    h += '<div class="no-print" style="font-size:10.5px;color:var(--dim);margin-top:12px;">This engagement lives in its own isolated organization ("'+esc(r.organization.name)+'"), separate from your sandbox and every real customer. Billing is handled the same way as everything else in this app — outside it, by your team.</div>';
     h += '</div>';
-    h += '<div style="display:flex;gap:8px;margin-top:16px;"><button class="btn btn-out" style="flex:1;justify-content:center;" onclick="window.print()">🖨 Print / Save as PDF</button><button class="btn btn-pri" style="flex:1;justify-content:center;" onclick="closeHealthCheckModal()">Done</button></div>';
+    h += '<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;"><button class="btn btn-out" style="flex:1;justify-content:center;" onclick="hcPrint(true)">🖨 One-page summary (PDF)</button><button class="btn btn-out" style="flex:1;justify-content:center;" onclick="hcPrint(false)">🖨 Full report (PDF)</button><button class="btn btn-pri" style="flex:1;justify-content:center;" onclick="closeHealthCheckModal()">Done</button></div>';
   } else {
     h += '<p style="font-size:12.5px;color:var(--muted);margin-bottom:14px;">Runs the same portfolio risk-signal engine and Sentinel Watch AI brief a paying customer sees, against a prospect\'s real OPEN caseload — deliberately not closed cases with a known outcome. Creates its own isolated org; never touches the sandbox or any real customer\'s data.</p>';
     h += '<p style="font-size:11px;color:var(--dim);margin-bottom:14px;">Columns can be in any order. Only Client is required — Attorney, LastActivity, and TotalBilled can be left blank if the prospect doesn\'t have that data handy. SOL = statute of limitations date. LastActivity falls back to Filed if left blank.</p>';
