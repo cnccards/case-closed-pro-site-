@@ -47,7 +47,7 @@ const BCRYPT_ROUNDS = 10;
 // runs on this server and returns just the finished analysis.
 // ---------------------------------------------------------------
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5';
 const AI_CONFIGURED = !!ANTHROPIC_API_KEY;
 
 async function callClaude(systemPrompt, userPrompt, maxTokens = 1000) {
@@ -3233,7 +3233,22 @@ app.post('/api/admin/sentinel-health-check', requirePlatformAdmin, async (req, r
       return { signals: computeRiskSignals(openCases), stats: computePortfolioStats(openCases) };
     });
 
-    const { analysis, flaggedCount } = await sentinelWatchNarrative(signals);
+    // If the AI is unavailable (no key, quota, outage) the check still delivers the numbers
+    // instead of failing after the cases were already imported.
+    let analysis, flaggedCount, aiUnavailable = false;
+    try {
+      ({ analysis, flaggedCount } = await sentinelWatchNarrative(signals));
+    } catch (aiErr) {
+      console.error('Health Check AI commentary unavailable:', aiErr.message);
+      aiUnavailable = true; flaggedCount = signals.length;
+      const rank = s => (s.daysToSol !== null && s.daysToSol < 90 ? 0 : 1) * 1000 - Math.min(s.reserveBurnPct, 999);
+      analysis = 'AI commentary is unavailable right now (' + aiErr.message + '), so this is the numbers-only version. ' + signals.length + ' open matter(s) trip a risk threshold:\n\n' +
+        [...signals].sort((a, b) => rank(a) - rank(b)).slice(0, 12).map(s => '- ' + (s.matterNo || '') + ' ' + s.client + ': ' +
+          [s.reserveBurnPct > 70 ? 'reserve ' + s.reserveBurnPct + '% spent' : null,
+           s.daysToSol !== null && s.daysToSol < 90 ? (s.daysToSol < 0 ? Math.abs(s.daysToSol) + ' days past SOL' : s.daysToSol + ' days to SOL') : null,
+           s.daysSinceActivity !== null && s.daysSinceActivity > 14 ? 'quiet ' + s.daysSinceActivity + ' days' : null].filter(Boolean).join(', ')).join('\n') +
+        (signals.length > 12 ? '\n- ...and ' + (signals.length - 12) + ' more' : '');
+    }
 
     await audit(org.id, req.user.sub, 'admin.sentinel_health_check', 'organization', org.id, { prospectName: prospectName.trim(), imported, failed: importErrors.length, pricePaid: price, creditExpiresAt }, req.ip);
 
@@ -3242,7 +3257,7 @@ app.post('/api/admin/sentinel-health-check', requirePlatformAdmin, async (req, r
       imported, failed: importErrors.length, importErrors,
       stats,
       billing: { pricePaid: price, creditExpiresAt },
-      sentinelWatch: { analysis, flaggedCount }
+      sentinelWatch: { analysis, flaggedCount, aiUnavailable }
     });
   } catch (e) {
     console.error('Sentinel Health Check failed:', e);
