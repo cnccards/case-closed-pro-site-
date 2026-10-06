@@ -1576,7 +1576,7 @@ app.get('/api/admin/pricing-catalog', requirePlatformAdmin, (req, res) => {
 // to a payment processor; see the file-level billing note.
 // ---------------------------------------------------------------
 app.post('/api/admin/onboard-customer', requirePlatformAdmin, async (req, res) => {
-  const { orgName, persona, ownerName, ownerEmail, planTier, addOns, extraSeats, implementationFee, notes } = req.body || {};
+  const { orgName, persona, ownerName, ownerEmail, planTier, addOns, extraSeats, implementationFee, notes, template, contract } = req.body || {};
   if (!orgName || !orgName.trim()) return res.status(400).json({ error: 'orgName is required' });
   if (!isValidEmail(ownerEmail)) return res.status(400).json({ error: 'A valid ownerEmail is required' });
   const tierVal = TIER_PRICING[planTier] ? planTier : 'starter';
@@ -1591,6 +1591,28 @@ app.post('/api/admin/onboard-customer', requirePlatformAdmin, async (req, res) =
   const features = {};
   selectedAddOns.forEach(k => { features[k] = true; });
   if (seats > 0) features.extra_seats = seats;
+
+  // Template defaults (email cadence the customer can later change; emails still stay opt-in)
+  const tpl = ONBOARDING_TEMPLATES[template] || null;
+  if (tpl) { features.alert_emails_freq = tpl.alertFreq; features.digest_freq = tpl.digestFreq; }
+  // Internal onboarding record — never shown to the customer (see orgFeatures)
+  let monthlyPre = tierInfo.monthly + seats * EXTRA_SEAT_PRICE;
+  selectedAddOns.forEach(k => { const a = ADDON_CATALOG.find(x => x.key === k); if (a) monthlyPre += a.monthly; });
+  const c0 = contract && typeof contract === 'object' ? contract : {};
+  const okDate = d => (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) ? d : null;
+  features._onboarding = {
+    stage: 'onboarding',
+    template: tpl ? template : 'custom',
+    createdBy: req.user.email,
+    contract: {
+      signedDate: okDate(c0.signedDate), termMonths: Math.max(0, parseInt(c0.termMonths, 10) || 12),
+      renewalDate: okDate(c0.renewalDate), setupFee: implFee, monthlyAmount: monthlyPre,
+      setupInvoicedDate: null, setupPaidDate: null,
+      invoiceDay: Math.min(28, Math.max(1, parseInt(c0.invoiceDay, 10) || 1)), lastInvoicedMonth: null,
+      billingNotes: String(c0.billingNotes || '').slice(0, 2000)
+    },
+    steps: {}
+  };
 
   const client = await pool.connect();
   try {
@@ -1614,6 +1636,7 @@ app.post('/api/admin/onboard-customer', requirePlatformAdmin, async (req, res) =
       [org.id, normalizedEmail, passwordHash, (ownerName || normalizedEmail.split('@')[0]).trim(), personaVal]
     );
     const user = userResult.rows[0];
+    if (features._onboarding.contract.renewalDate) await client.query('UPDATE organizations SET renewal_date = $1 WHERE id = $2', [features._onboarding.contract.renewalDate, org.id]);
     await client.query('COMMIT');
 
     // Itemized purchase summary — this is what turns into a real
@@ -1690,6 +1713,244 @@ app.post('/api/admin/onboard-customer', requirePlatformAdmin, async (req, res) =
     client.release();
   }
 });
+
+// ===============================================================
+// Customer onboarding (Admin > New Customer tab)
+// A step-by-step checklist per customer, a contract/billing record, starter
+// templates and a customer health view.
+// Stored in organizations.features under the internal key "_onboarding"
+// (hidden from customers by orgFeatures) so no database migration is needed.
+// Nothing here charges anyone: invoices are still sent by hand, this just
+// remembers what is owed and reminds you when to send it.
+// ===============================================================
+const ONBOARDING_TEMPLATES = {
+  carrier_tpa: { label: 'TPA / carrier', persona: 'carrier', suggestedTier: 'growth', alertFreq: 'daily', digestFreq: 'weekly',
+    note: 'Claims teams: daily alert cadence available, weekly executive briefing.' },
+  defense_firm: { label: 'Defense firm', persona: 'defense', suggestedTier: 'starter', alertFreq: 'weekly', digestFreq: 'monthly',
+    note: 'Firm partners: weekly alert cadence available, monthly executive briefing.' }
+};
+const ONBOARDING_STEPS = [
+  { key: 'account',    label: 'Account created',                    kind: 'auto',    hint: 'The organization and its owner login exist.' },
+  { key: 'contract',   label: 'Contract and billing recorded',      kind: 'derived', hint: 'Fill in the signed date, renewal date and when the setup invoice went out.' },
+  { key: 'setup_paid', label: 'Setup fee received',                 kind: 'manual',  hint: 'Mark this once the setup fee has actually been paid.' },
+  { key: 'welcome',    label: 'Welcome email and password sent',    kind: 'manual',  hint: 'Send the welcome email, then give the owner the temporary password by a separate route (phone or text).' },
+  { key: 'owner_login',label: 'Owner has signed in',                kind: 'auto',    hint: 'Detected automatically when the owner first signs in.' },
+  { key: 'owner_2fa',  label: 'Owner turned on two-factor sign-in', kind: 'auto',    hint: 'Owner: user menu, Security, Enable Two-Factor Authentication.' },
+  { key: 'team',       label: 'Attorneys and staff added',          kind: 'auto',    hint: 'At least one other person has joined (Team tab, invite by email).' },
+  { key: 'cases',      label: 'Cases imported',                     kind: 'auto',    hint: 'At least one real matter is in their cabinet (Import or Add Case).' },
+  { key: 'assigned',   label: 'Matters assigned (Sentinel Match run)', kind: 'manual', hint: 'Open Assign Cases with them and run Sentinel Match on an unassigned matter.' },
+  { key: 'training',   label: 'Walkthrough call done',              kind: 'manual',  hint: 'Walk the owner through dashboards, alerts and the Sentinel Digest.' },
+  { key: 'live',       label: 'Go live',                            kind: 'manual',  hint: 'Everything above is done. The customer moves to Live and is tracked by health instead.' }
+];
+
+// Pure function (unit-testable): turn an org row + counts into the onboarding picture.
+function computeOnboarding(org, agg, todayStr) {
+  const f = (org.features && typeof org.features === 'object') ? org.features : {};
+  const legacy = !f._onboarding;
+  const ob = f._onboarding || { stage: 'live', template: 'custom', contract: {}, steps: {} };
+  const contract = ob.contract || {};
+  const manual = ob.steps || {};
+  const today = new Date(todayStr + 'T00:00:00Z').getTime();
+  const daysSince = d => d ? Math.floor((today - new Date(d).getTime()) / 864e5) : null;
+
+  const auto = {
+    account: true,
+    contract: !!(contract.signedDate && contract.renewalDate && contract.setupInvoicedDate),
+    owner_login: !!agg.ownerLogin,
+    owner_2fa: !!agg.owner2fa,
+    team: (agg.users || 0) >= 2,
+    cases: (agg.realCases || 0) >= 1
+  };
+  let prevDone = true;
+  const steps = ONBOARDING_STEPS.map(st => {
+    const m = manual[st.key];
+    const done = !!(auto[st.key] || (m && m.done));
+    const available = prevDone;
+    const out = { key: st.key, label: st.label, kind: st.kind, hint: st.hint, done, available, auto: !!auto[st.key], doneAt: m && m.at || null, doneBy: m && m.by || null, overridden: !!(m && m.done && !auto[st.key] && st.kind !== 'manual') };
+    if (!done) prevDone = false;
+    return out;
+  });
+  const doneCount = steps.filter(s => s.done).length;
+  const progress = Math.round(doneCount / steps.length * 100);
+  const current = steps.find(s => !s.done) || null;
+
+  const lastLoginDays = daysSince(agg.lastLogin);
+  const ageDays = daysSince(org.created_at);
+  let stage = ob.stage || 'onboarding';
+  if (stage === 'onboarding' && steps.every(s => s.done)) stage = 'onboarding'; // go-live is still an explicit click
+  let health = { label: 'Healthy', tone: 'green' };
+  if (org.access_status === 'suspended') health = { label: 'Suspended', tone: 'red' };
+  else if (stage === 'onboarding') {
+    health = (ageDays !== null && ageDays > 7 && progress < 50) ? { label: 'Stalled', tone: 'red' } : { label: 'Onboarding', tone: 'blue' };
+  } else {
+    health = (lastLoginDays === null || lastLoginDays > 30) ? { label: 'At risk', tone: 'red' }
+      : lastLoginDays > 14 ? { label: 'Quiet', tone: 'amber' } : { label: 'Healthy', tone: 'green' };
+  }
+
+  // Next manual invoice reminder
+  let nextInvoice = null;
+  if (contract.monthlyAmount > 0 && contract.setupInvoicedDate) {
+    const inv = Math.min(28, Math.max(1, contract.invoiceDay || 1));
+    const y = new Date(today).getUTCFullYear(), m = new Date(today).getUTCMonth();
+    const key = (yy, mm) => yy + '-' + String(mm + 1).padStart(2, '0');
+    let yy = y, mm = m;
+    if ((contract.lastInvoicedMonth || '') >= key(yy, mm)) { mm++; if (mm > 11) { mm = 0; yy++; } }
+    const dueStr = yy + '-' + String(mm + 1).padStart(2, '0') + '-' + String(inv).padStart(2, '0');
+    nextInvoice = { date: dueStr, inDays: Math.ceil((new Date(dueStr + 'T00:00:00Z').getTime() - today) / 864e5), amount: contract.monthlyAmount };
+  }
+
+  return {
+    id: org.id, name: org.name, persona: org.persona, planTier: org.plan_tier, accessStatus: org.access_status,
+    createdAt: org.created_at, renewalDate: org.renewal_date || null, legacy,
+    stage, template: ob.template || 'custom',
+    contract: { signedDate: contract.signedDate || null, termMonths: contract.termMonths || null, renewalDate: contract.renewalDate || org.renewal_date || null,
+      setupFee: contract.setupFee || 0, monthlyAmount: contract.monthlyAmount || 0, setupInvoicedDate: contract.setupInvoicedDate || null,
+      setupPaidDate: contract.setupPaidDate || null, invoiceDay: contract.invoiceDay || 1, lastInvoicedMonth: contract.lastInvoicedMonth || null,
+      billingNotes: contract.billingNotes || '' },
+    ownerEmail: agg.ownerEmail || null, ownerName: agg.ownerName || null,
+    steps, progress, currentStep: current ? current.key : null, health, nextInvoice,
+    usage: { users: agg.users || 0, cases: agg.realCases || 0, sampleCases: (agg.cases || 0) - (agg.realCases || 0), lastLogin: agg.lastLogin || null, lastLoginDays, activity30: agg.activity30 || 0, casesUpdated30: agg.casesUpdated30 || 0 }
+  };
+}
+
+async function loadOnboardingRows(db, onlyOrgId) {
+  const where = onlyOrgId ? 'AND o.id = $2' : '';
+  const params = [SANDBOX_ORG_NAME]; if (onlyOrgId) params.push(onlyOrgId);
+  const orgs = (await db.query(
+    `SELECT o.id, o.name, o.persona, o.plan_tier, o.access_status, o.features, o.renewal_date, o.created_at
+     FROM organizations o WHERE o.name NOT LIKE 'Health Check —%' AND o.name <> $1 ${where} ORDER BY o.created_at DESC`, params)).rows;
+  if (!orgs.length) return [];
+  const ids = orgs.map(o => o.id);
+  const users = (await db.query(
+    `SELECT org_id,
+        COUNT(*) FILTER (WHERE is_active)::int AS users,
+        MAX(last_login_at) AS last_login,
+        (array_agg(last_login_at ORDER BY created_at) FILTER (WHERE role = 'owner'))[1] AS owner_login,
+        COALESCE(bool_or(totp_enabled) FILTER (WHERE role = 'owner'), false) AS owner_2fa,
+        (array_agg(email ORDER BY created_at) FILTER (WHERE role = 'owner'))[1] AS owner_email,
+        (array_agg(name ORDER BY created_at) FILTER (WHERE role = 'owner'))[1] AS owner_name
+     FROM users WHERE org_id = ANY($1::uuid[]) GROUP BY org_id`, [ids])).rows;
+  const cases = (await db.query(
+    `SELECT org_id, COUNT(*)::int AS n,
+        COUNT(*) FILTER (WHERE data->>'isSample' IS DISTINCT FROM 'true')::int AS real_n,
+        COUNT(*) FILTER (WHERE updated_at > now() - interval '30 days')::int AS upd
+     FROM cases WHERE org_id = ANY($1::uuid[]) GROUP BY org_id`, [ids])).rows;
+  const act = (await db.query(
+    `SELECT org_id, COUNT(*)::int AS n FROM audit_log WHERE org_id = ANY($1::uuid[]) AND created_at > now() - interval '30 days' GROUP BY org_id`, [ids])).rows;
+  const U = Object.fromEntries(users.map(r => [r.org_id, r])), C = Object.fromEntries(cases.map(r => [r.org_id, r])), A = Object.fromEntries(act.map(r => [r.org_id, r]));
+  const today = new Date().toISOString().slice(0, 10);
+  return orgs.map(o => computeOnboarding(o, {
+    users: U[o.id]?.users || 0, lastLogin: U[o.id]?.last_login || null, ownerLogin: U[o.id]?.owner_login || null,
+    owner2fa: !!U[o.id]?.owner_2fa, ownerEmail: U[o.id]?.owner_email || null, ownerName: U[o.id]?.owner_name || null,
+    cases: C[o.id]?.n || 0, realCases: C[o.id]?.real_n || 0, casesUpdated30: C[o.id]?.upd || 0, activity30: A[o.id]?.n || 0
+  }, today));
+}
+async function saveOnboarding(db, orgId, ob) {
+  await db.query(`UPDATE organizations SET features = jsonb_set(COALESCE(features, '{}'::jsonb), '{_onboarding}', $1::jsonb) WHERE id = $2`, [JSON.stringify(ob), orgId]);
+}
+async function getOnboardingRaw(db, orgId) {
+  const r = await db.query('SELECT features FROM organizations WHERE id = $1', [orgId]);
+  if (!r.rows[0]) return null;
+  return (r.rows[0].features && r.rows[0].features._onboarding) || { stage: 'live', template: 'custom', contract: {}, steps: {} };
+}
+
+app.get('/api/admin/onboarding', requirePlatformAdmin, async (req, res) => {
+  try {
+    const customers = await loadOnboardingRows(req.db);
+    const invoicesDue = customers.filter(c => c.nextInvoice && c.nextInvoice.inDays <= 7 && c.accessStatus !== 'suspended')
+      .map(c => ({ id: c.id, name: c.name, ...c.nextInvoice })).sort((a, b) => a.inDays - b.inDays);
+    res.json({ customers, invoicesDue, templates: ONBOARDING_TEMPLATES, steps: ONBOARDING_STEPS.map(s => ({ key: s.key, label: s.label })) });
+  } catch (e) {
+    console.error('Onboarding list failed:', e);
+    res.status(500).json({ error: 'Could not load onboarding: ' + e.message });
+  }
+});
+
+// Tick or untick one checklist step. Every step needs the ones before it done first.
+app.post('/api/admin/organizations/:id/onboarding/step', requirePlatformAdmin, async (req, res) => {
+  const { key, done } = req.body || {};
+  const def = ONBOARDING_STEPS.find(s => s.key === key);
+  if (!def) return res.status(400).json({ error: 'Unknown step' });
+  if (key === 'account' || key === 'contract') return res.status(400).json({ error: 'This step completes itself — fill in the details above it.' });
+  const [row] = await loadOnboardingRows(req.db, req.params.id);
+  if (!row) return res.status(404).json({ error: 'Organization not found' });
+  const step = row.steps.find(s => s.key === key);
+  if (done && !step.available) {
+    const blocker = row.steps.find(s => !s.done);
+    return res.status(400).json({ error: `Finish "${blocker.label}" first.` });
+  }
+  if (!done && step.auto) return res.status(400).json({ error: 'This step was detected automatically and cannot be unticked.' });
+  const ob = await getOnboardingRaw(req.db, req.params.id);
+  ob.steps = ob.steps || {};
+  if (done) ob.steps[key] = { done: true, at: new Date().toISOString(), by: req.user.email };
+  else delete ob.steps[key];
+  if (key === 'live') { ob.stage = done ? 'live' : 'onboarding'; if (done) ob.liveAt = new Date().toISOString(); }
+  await saveOnboarding(req.db, req.params.id, ob);
+  await audit(req.params.id, req.user.sub, 'admin.onboarding_step', 'organization', req.params.id, { key, done: !!done, by: req.user.email }, req.ip);
+  const [fresh] = await loadOnboardingRows(req.db, req.params.id);
+  res.json({ customer: fresh });
+});
+
+// Contract and billing record. Dates are YYYY-MM-DD. All optional; send only what changed.
+app.post('/api/admin/organizations/:id/contract', requirePlatformAdmin, async (req, res) => {
+  const b = req.body || {};
+  const dateOrNull = (v) => v === null || v === '' ? null : (/^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? String(v) : undefined);
+  const ob = await getOnboardingRaw(req.db, req.params.id);
+  if (!ob) return res.status(404).json({ error: 'Organization not found' });
+  ob.contract = ob.contract || {};
+  for (const k of ['signedDate', 'renewalDate', 'setupInvoicedDate', 'setupPaidDate']) {
+    if (b[k] !== undefined) {
+      const v = dateOrNull(b[k]);
+      if (v === undefined) return res.status(400).json({ error: `${k} must be a date (YYYY-MM-DD)` });
+      ob.contract[k] = v;
+    }
+  }
+  for (const k of ['setupFee', 'monthlyAmount']) {
+    if (b[k] !== undefined) { const n = Number(b[k]); if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: `${k} must be a non-negative number` }); ob.contract[k] = n; }
+  }
+  if (b.termMonths !== undefined) ob.contract.termMonths = Math.min(120, Math.max(0, parseInt(b.termMonths, 10) || 0));
+  if (b.invoiceDay !== undefined) ob.contract.invoiceDay = Math.min(28, Math.max(1, parseInt(b.invoiceDay, 10) || 1));
+  if (b.billingNotes !== undefined) ob.contract.billingNotes = String(b.billingNotes).slice(0, 2000);
+  if (b.markSetupInvoiced) ob.contract.setupInvoicedDate = new Date().toISOString().slice(0, 10);
+  if (b.markMonthlyInvoiced) ob.contract.lastInvoicedMonth = new Date().toISOString().slice(0, 7);
+  await saveOnboarding(req.db, req.params.id, ob);
+  if (b.renewalDate !== undefined) await req.db.query('UPDATE organizations SET renewal_date = $1 WHERE id = $2', [ob.contract.renewalDate, req.params.id]);
+  await audit(req.params.id, req.user.sub, 'admin.contract_updated', 'organization', req.params.id, { by: req.user.email, fields: Object.keys(b) }, req.ip);
+  const [fresh] = await loadOnboardingRows(req.db, req.params.id);
+  res.json({ customer: fresh });
+});
+
+// Welcome email to the owner. Deliberately has NO password in it: give the
+// temporary password separately (phone, text) so one inbox leak is not enough.
+app.post('/api/admin/organizations/:id/welcome-email', requirePlatformAdmin, async (req, res) => {
+  if (!SMTP_CONFIGURED) return res.status(503).json({ error: 'Email is not configured on this server (SMTP settings). Copy the text instead.' });
+  const [row] = await loadOnboardingRows(req.db, req.params.id);
+  if (!row || !row.ownerEmail) return res.status(404).json({ error: 'Owner not found' });
+  const url = `${process.env.APP_URL || 'http://localhost:3000'}/case-closed-pro.html`;
+  const text = welcomeEmailText(row.ownerName, row.name, url);
+  try {
+    await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: row.ownerEmail, subject: `Welcome to Case Closed Pro — ${row.name}`, text });
+    await audit(req.params.id, req.user.sub, 'admin.welcome_email_sent', 'organization', req.params.id, { to: row.ownerEmail, by: req.user.email }, req.ip);
+    res.json({ sent: true, to: row.ownerEmail });
+  } catch (e) { res.status(502).json({ error: 'Could not send: ' + e.message }); }
+});
+function welcomeEmailText(ownerName, orgName, url) {
+  return `Hi ${ownerName || 'there'},
+
+Welcome to Case Closed Pro. Your account for ${orgName} is ready.
+
+Sign in here: ${url}
+Your login is this email address. We will give you your temporary password separately (by phone or text) — please change it after you sign in.
+
+Three things to do first:
+  1. Turn on two-factor sign-in (your name in the top corner, then Security).
+  2. Invite your attorneys and staff (Team tab).
+  3. Import your open cases, or add a few by hand.
+
+Once your cases are in, we will walk through the dashboards and Sentinel with you. Reply to this email any time if you get stuck.
+
+— The Case Closed Pro team`;
+}
 
 app.post('/api/admin/organizations/:id/suspend', requirePlatformAdmin, async (req, res) => {
   const result = await q(`UPDATE organizations SET access_status = 'suspended' WHERE id = $1 RETURNING id, name`, [req.params.id]);
@@ -2629,7 +2890,9 @@ const FEATURE_LABELS = {
 // features row to explicitly turn something off if they ever need to.
 function orgFeatures(org) {
   const baseline = TIER_FEATURES[org.plan_tier] || TIER_FEATURES.starter;
-  const addOns = org.features && typeof org.features === 'object' ? org.features : {};
+  const raw = org.features && typeof org.features === 'object' ? org.features : {};
+  // keys starting with "_" are internal (onboarding checklist, contract notes) and never shown to customers
+  const addOns = Object.fromEntries(Object.entries(raw).filter(([k]) => !k.startsWith('_')));
   return { ...baseline, ...addOns };
 }
 function requireFeature(key) {
