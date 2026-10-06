@@ -76,6 +76,22 @@ textarea.inp{min-height:60px;resize:vertical;font-family:inherit;}
 .kpi-v{font-size:22px;font-weight:700;font-family:var(--serif);letter-spacing:-.5px;line-height:1.05;}
 .kpi-sub{font-size:10px;color:var(--dim);margin-top:3px;}
 @keyframes spin{to{transform:rotate(360deg);}}
+/* "Needs an attorney" alert — pulses and blinks to be noticed; stills for people who prefer reduced motion */
+@keyframes attnGlow{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.55);}50%{box-shadow:0 0 0 9px rgba(220,38,38,0);}}
+@keyframes attnBlink{0%,100%{opacity:1;}50%{opacity:.25;}}
+.attn-strip{order:-1;margin-bottom:16px;}
+.attn-strip-h{display:flex;align-items:center;justify-content:space-between;margin:0 0 8px;}
+.attn-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;}
+.attn-card{background:#fff;border:1px solid var(--line);border-left:5px solid var(--dim);border-radius:10px;padding:11px 13px;cursor:pointer;transition:box-shadow .15s,transform .15s;}
+.attn-card:hover{box-shadow:0 4px 14px rgba(15,23,42,.12);transform:translateY(-1px);}
+.attn-card.red{border-left-color:#DC2626;}.attn-card.amber{border-left-color:#D97706;}.attn-card.blue{border-left-color:#0056D2;}
+.attn-n{font-size:24px;font-weight:800;line-height:1;margin-right:10px;min-width:30px;}
+.attn-card.red .attn-n{color:#DC2626;}.attn-card.amber .attn-n{color:#B45309;}.attn-card.blue .attn-n{color:#0056D2;}
+.attn-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#DC2626;margin-right:6px;animation:attnBlink 1.2s steps(2,jump-none) infinite;vertical-align:middle;}
+.attn-banner{order:-1;display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:linear-gradient(90deg,#FEF2F2,#FFF7ED);border:2px solid #DC2626;border-radius:12px;padding:14px 18px;margin-bottom:16px;animation:attnGlow 1.6s ease-out infinite;}
+.attn-icon{font-size:24px;animation:attnBlink 1s steps(2,jump-none) infinite;}
+.attn-badge{display:inline-block;min-width:17px;padding:1px 5px;margin-left:6px;border-radius:9px;background:#DC2626;color:#fff;font-size:10px;font-weight:800;line-height:15px;text-align:center;animation:attnBlink 1s steps(2,jump-none) infinite;}
+@media (prefers-reduced-motion:reduce){.attn-banner,.attn-icon,.attn-badge,.attn-dot{animation:none;}}
 .spin{width:14px;height:14px;border:2px solid var(--pri2);border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite;display:inline-block;}
 table{width:100%;border-collapse:collapse;}
 th{padding:9px 12px;text-align:left;font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:1.3px;border-bottom:1px solid var(--line);background:var(--surf2);font-weight:700;}
@@ -699,7 +715,20 @@ const REPORT_TEMPLATES = [
   {id:'r27',cat:'Enterprise',name:'Litigation Inflow vs. Outflow',icon:'📈',color:'#5B21B6',desc:'New filings vs. closures by month over the last 12 months'},
   {id:'r28',cat:'Enterprise',name:'Avg. Cycle Time by Claim Type',icon:'⏱️',color:'#0F766E',desc:'Average days from filing to resolution, broken out by matter type'},
   {id:'r29',cat:'Enterprise',name:'Root Cause Analysis',icon:'🔍',color:'#6D28D9',desc:'Why the company is being sued, ranked — for preventative policy decisions'},
-  {id:'r30',cat:'Enterprise',name:'Regulatory / Compliance Incidents',icon:'🏛️',color:'#DC2626',desc:'Open and resolved government investigations and enforcement actions'}
+  {id:'r30',cat:'Enterprise',name:'Regulatory / Compliance Incidents',icon:'🏛️',color:'#DC2626',desc:'Open and resolved government investigations and enforcement actions'},
+  /* ── Alert reports: each mirrors a "Needs your attention" alert, with early-warning lead times ── */
+  {id:'a0',cat:'Alerts',name:'Needs Attention — Full Summary',icon:'⚑',color:'#DC2626',desc:'Every active alert in one report: what it is, how serious, how many matters'},
+  {id:'a1',cat:'Alerts',name:'Statute of Limitations Early Warning',icon:'⏰',color:'#DC2626',desc:'Open matters with a limitations date inside the early-warning window, most urgent first'},
+  {id:'a2',cat:'Alerts',name:'Under-Reserved Matters',icon:'🛡️',color:'#DC2626',desc:'Reserve below likely exposure, with the dollar shortfall'},
+  {id:'a3',cat:'Alerts',name:'Overdue Tasks',icon:'✅',color:'#DC2626',desc:'Every open task past its due date, by matter and assignee'},
+  {id:'a4',cat:'Alerts',name:'Trial Countdown',icon:'⚖️',color:'#D97706',desc:'Matters with a trial date coming up, with days remaining'},
+  {id:'a5',cat:'Alerts',name:'Spend vs. Reserve Early Warning',icon:'🔥',color:'#D97706',desc:'Matters whose billed amount is approaching the reserve'},
+  {id:'a6',cat:'Alerts',name:'Stale Matters — No Recent Activity',icon:'💤',color:'#D97706',desc:'Open matters with no logged activity inside the activity window'},
+  {id:'a7',cat:'Alerts',name:'Matters With No Next Step',icon:'🧭',color:'#D97706',desc:'Open matters that have no next step on file'},
+  {id:'a8',cat:'Alerts',name:'Attorney Workload',icon:'📈',color:'#D97706',desc:'Open matters and reserves per attorney, flagging those near or over capacity'},
+  {id:'a9',cat:'Alerts',name:'Payables Needing Action',icon:'💳',color:'#D97706',desc:'Payables awaiting approval and approved payables past their due date'},
+  {id:'a10',cat:'Alerts',name:'Ready to Close',icon:'🏁',color:'#0056D2',desc:'Matters whose closing steps are complete and ready for claims handoff'},
+  {id:'a11',cat:'Alerts',name:'Unassigned Matters',icon:'🚨',color:'#DC2626',desc:'Open matters with no attorney, with age and value'}
 ];
 
 /* ── HELPERS ───────────────────────────────────────────────── */
@@ -1190,6 +1219,29 @@ function closeRegulatoryIncident(id){
 // since it never calls the backend at all.
 const DEMO_MODE = (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('demo') === '1');
 
+/* Public demo only: the sample matters were written with fixed past dates, so
+   every relative alert ("no activity in 30 days", "SOL within 90 days") would
+   look wrong against today's date. Give the sample portfolio a believable,
+   current spread of activity and a few upcoming deadlines so the dashboard
+   alerts show realistic numbers. Never runs for real customer accounts. */
+(function seedDemoAttention(){
+  if (!DEMO_MODE) return;
+  const iso = n => new Date(Date.now() + n*864e5).toISOString().slice(0,10);
+  const ago = [4,9,2,18,41,7,26,12,55,3,33,15,22,6,48,10,29,1];
+  let i = 0;
+  CASES.forEach(c => {
+    if (c.status === 'Closed') return;
+    c.updates = c.updates || [];
+    c.updates.push({date: iso(-ago[i % ago.length]), author: c.attorney || 'Team', type:'Status Update', text:'Case reviewed; no change in posture.'});
+    i++;
+  });
+  const set = (id, fn) => { const c = CASES.find(x => x.id === id); if (c) fn(c); };
+  set('CC-003', c => { c.keyDates.sol = iso(34); });
+  set('CC-009', c => { c.keyDates.sol = iso(18); });
+  set('CC-011', c => { c.keyDates.sol = iso(71); });
+  set('CC-006', c => { c.keyDates.trialDate = iso(12); });
+})();
+
 let S = {
   /* Enterprise budget targets — a company-level number, not tied to
      any single matter, so it lives in app state rather than on a
@@ -1197,7 +1249,7 @@ let S = {
      Enterprise tab; a 0 target is treated as "not configured" in the
      UI rather than shown as 0% spent. */
   enterpriseBudgetQuarterly: 0, enterpriseBudgetAnnual: 0,
-  weeklyDigestRecipients: '', weeklyDigestDay: 'Monday', weeklyDigestEnabled: false, weeklyDigestLastSentWeek: '',
+  weeklyDigestRecipients: '', weeklyDigestDay: 'Monday', weeklyDigestFreq: 'weekly', weeklyDigestEnabled: false, weeklyDigestLastSentWeek: '',
   role: DEMO_MODE ? 'litigation' : 'litigation',  /* default = Litigation Dashboard */
   isAuthenticated: DEMO_MODE ? true : false,
   currentUser: DEMO_MODE ? { name: 'Alex Rivera', email: 'demo@cclosed.com', persona: 'carrier', orgId: 'demo-org' } : null,
@@ -1451,6 +1503,15 @@ async function loadMyFeatures() {
   try {
     const data = await apiFetch('/api/org/features');
     S.myFeatures = data.features || {};
+    // Daily alert-email status (owners/admins can switch it off or send a test)
+    if (!(S.currentUser && S.currentUser.role === 'member' && !S.currentUser.platformAdmin)) {
+      try { S.alertEmails = await apiFetch('/api/org/alert-emails'); } catch (e2) { S.alertEmails = null; }
+      try {
+        const cfg = await apiFetch('/api/reports/schedule-weekly-digest');
+        S.weeklyDigestRecipients = (cfg.recipients||[]).join(', '); S.weeklyDigestDay = cfg.day || 'Monday'; S.weeklyDigestEnabled = !!cfg.enabled; S.weeklyDigestFreq = cfg.frequency || 'weekly';
+        const hist = await apiFetch('/api/reports/sentinel-digest/history'); S.digestHistory = hist.digests || [];
+      } catch (e3) { /* digest config is optional; the card still works */ }
+    }
   } catch (e) {
     console.error('Failed to load plan features:', e.message);
     S.myFeatures = {};
@@ -2174,6 +2235,7 @@ function myCasesV() {
     : '<button onclick="st({role:\'litigation\'})" class="btn btn-out">← Back to Dashboard</button>');
   h += '</div>';
   h += attorneyTaskNotificationsV();
+  if (myCases.length) h += needsAttentionV(myCases, {personal:true});
   
   if (myCases.length === 0) {
     h += '<div class="card" style="text-align:center;padding:40px;color:var(--muted);">';
@@ -2553,7 +2615,7 @@ function hdr(){
   if (S.currentUser?.platformAdmin) groups[groups.length-1].items.push(['admin','⚙ Admin']);
 
   const btn = ([r, l]) =>
-    '<button onclick="'+(r==='admin' ? 'goToAdmin()' : r==='scorecard' ? "st({role:'scorecard',caseId:null,scorecardDetail:null,showWelcome:false})" : "st({role:'"+r+"',caseId:null,showWelcome:false})")+'" class="role-tab'+(S.role===r?' on':'')+(r==='admin'?' admin-tab':'')+'">'+l+'</button>';
+    '<button onclick="'+(r==='admin' ? 'goToAdmin()' : r==='scorecard' ? "st({role:'scorecard',caseId:null,scorecardDetail:null,showWelcome:false})" : "st({role:'"+r+"',caseId:null,showWelcome:false})")+'" class="role-tab'+(S.role===r?' on':'')+(r==='admin'?' admin-tab':'')+'">'+l+(r==='litigation'?attnBadgeV():'')+'</button>';
 
   const roleBtns = groups.map((g,gi) =>
     (gi>0 ? '<div class="nav-divider"></div>' : '') +
@@ -2604,59 +2666,37 @@ function legalFooterV(){
 function privacyPolicyV(){
   return `<div style="max-width:800px;margin:40px auto;padding:20px;">
     <div style="font-size:24px;font-weight:700;margin-bottom:20px;">Privacy Policy</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:20px;">Last Updated: September 14, 2026</div>
-    
+    <div style="font-size:12px;color:var(--muted);margin-bottom:20px;">Last Updated: October 5, 2026</div>
     <div style="line-height:1.8;color:var(--ink);">
-      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">1. Information We Collect</h3>
-      <p>Case Closed Pro collects and processes the following information:</p>
-      <ul style="margin-left:20px;">
-        <li>Account information (email, name, company name)</li>
-        <li>Case data (client names, case values, judge names, status)</li>
-        <li>Usage data (which features you use, when, how often)</li>
-        <li>Device information (browser type, IP address)</li>
-      </ul>
-      
-      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">2. How We Use Your Information</h3>
-      <p>We use your information to:</p>
-      <ul style="margin-left:20px;">
-        <li>Provide and improve the Case Closed Pro service</li>
-        <li>Support your account and resolve issues</li>
-        <li>Send service updates and security alerts</li>
-        <li>Analyze usage patterns to improve features</li>
-      </ul>
-      
-      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">3. Data Security</h3>
-      <p>We protect your data through:</p>
-      <ul style="margin-left:20px;">
-        <li>Encryption in transit (HTTPS/TLS)</li>
-        <li>Encryption at rest (AES-256)</li>
-        <li>Multi-factor authentication</li>
-        <li>Access controls and audit logging</li>
-        <li>Automatic backups to multiple geographic locations</li>
-      </ul>
-      
-      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">4. Data Retention</h3>
-      <p>We retain your case data for as long as you maintain an account. You can request deletion at any time. After account deletion, we retain backups for 90 days, then permanently delete them.</p>
-      
-      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">5. Sharing Your Data</h3>
-      <p>We do not sell or share your case data with third parties. Your data is only accessed by:</p>
-      <ul style="margin-left:20px;">
-        <li>Your team members (if you grant them access)</li>
-        <li>Case Closed Pro employees (with access controls)</li>
-        <li>Google (Firebase provider - see their privacy policy)</li>
-      </ul>
-      
-      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">6. Your Rights</h3>
-      <p>You have the right to:</p>
-      <ul style="margin-left:20px;">
-        <li>Access your data at any time</li>
-        <li>Export your data in standard format</li>
-        <li>Delete your data and account</li>
-        <li>Request we stop processing your data</li>
-      </ul>
-      
-      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">7. Contact Us</h3>
-      <p>For privacy questions or to exercise your rights, contact us at: <strong>privacy@cclosed.com</strong></p>
+      <p>This Privacy Policy explains how Case Closed Pro ("we," "us") collects, uses and shares information when you visit our website, use the demo, contact us, or use the Case Closed Pro application (the "Service").</p>
+      <p style="background:#FFF6D6;border-left:4px solid #F5B700;padding:10px 12px;">When a customer (such as a TPA, carrier or law firm) uses the Service, the customer decides what case data goes in. For that data we act as the customer's service provider and handle it under our agreement with them. If you have a question about your claim or case information, contact the organization that handles it.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">1. Information we collect</h3>
+      <p>Information from you:</p>
+      <ul style="margin-left:20px;"><li>Contact and sales inquiries: name, work email, company, phone and message when you use a contact form or email us.</li><li>Account information: name, work email, role, organization, and a hashed (not readable) password. If you turn on two-factor sign-in, we store the data needed to verify your authenticator code.</li></ul>
+      <p>Customer Data: case and claim information that customers enter or import, such as client and claimant names, matter numbers, carriers, claim numbers, dates, reserves, billing, notes and documents. This may include personal information about people involved in claims.</p>
+      <p>Information collected automatically: technical and usage data such as IP address, browser type, features used, and security and audit logs (who did what, and when), and error reports that help us fix problems. The app keeps your sign-in token in your browser's memory for the session. We do not use advertising or analytics cookies. Our website loads fonts from Google Fonts, which may receive your IP address.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">2. How we use information</h3>
+      <ul style="margin-left:20px;"><li>To provide, secure, support and improve the Service.</li><li>To send account, security and service messages, including invitations, password resets and notices of case assignments.</li><li>To respond to inquiries and provide quotes.</li><li>To detect fraud, abuse and security incidents, and to meet legal obligations.</li><li>To produce de-identified, aggregated statistics that do not identify individuals or customers.</li></ul>
+      <p>We do not sell personal information. We do not use Customer Data for advertising, and we do not use it to train AI models.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">3. AI features</h3>
+      <p>Sentinel features send the content you submit (for example, claim text or case details) to our AI provider, Anthropic, to generate results. Results are suggestions and should be reviewed by a person.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">4. Who we share information with</h3>
+      <p>We share information only with:</p>
+      <ul style="margin-left:20px;"><li>Service providers that help us run the Service, under contracts that limit their use of it. They currently include Render (application and database hosting), Anthropic (AI processing), an email delivery provider (service emails), and Vercel (website and demo hosting). A current list is available to customers on request.</li><li>Your organization. Administrators in your organization can see activity and data in your organization's account.</li><li>Other parties in a matter, as your organization directs. For example, if a customer shares a case with a carrier or defense counsel through the Service, the shared information is visible to them. Entries marked as internal to an organization are hidden from other organizations by access controls. This is not a legal privilege protection.</li><li>Authorities, when required by law, subpoena or court order, or to protect rights, safety and security.</li><li>A successor, if we are involved in a merger, acquisition or sale, under the same protections.</li></ul>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">5. Security</h3>
+      <p>We use measures that include encrypted connections (TLS), hashed passwords, role-based access, separation of each customer's data from other customers' data, optional two-factor sign-in, and activity logging. No system is perfectly secure. If a breach affects your information we will notify the affected customer and, where we are the responsible party, you, as the law requires.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">6. Retention</h3>
+      <p>We keep Customer Data while the customer has an active account. After termination the customer may export data for 30 days; we then delete it from active systems, and it is removed from backups on a rolling schedule, typically within 90 days, unless the law requires us to keep it. We keep contact and sales inquiries for as long as needed to respond and for reasonable business records.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">7. Your choices and rights</h3>
+      <p>Depending on where you live, you may have rights to access, correct, delete or export your personal information, and to object to or limit certain uses. To exercise a right, email legal@cclosed.com. If your information is in a customer's case data, we will direct your request to that customer, who controls it, and help them respond. We will not discriminate against you for exercising your rights. You may contact your state attorney general or data protection authority if you are not satisfied. You can opt out of marketing emails using the link in them. We do not "sell" or "share" personal information as those terms are defined under California law.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">8. Children</h3>
+      <p>The Service is for businesses and is not directed to anyone under 18. We do not knowingly collect information from children.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">9. Where information is processed</h3>
+      <p>We process and store information in the United States. If you access the Service from outside the United States, you understand your information will be transferred to the United States.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">10. Changes</h3>
+      <p>We may update this policy. We will post the new version with a new date and, for material changes, tell customers by email or in the app.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">11. Contact us</h3>
+      <p>Questions or requests: legal@cclosed.com.</p>
     </div>
   </div>`;
 }
@@ -2664,45 +2704,46 @@ function privacyPolicyV(){
 function termsOfServiceV(){
   return `<div style="max-width:800px;margin:40px auto;padding:20px;">
     <div style="font-size:24px;font-weight:700;margin-bottom:20px;">Terms of Service</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:20px;">Last Updated: September 14, 2026</div>
-    
+    <div style="font-size:12px;color:var(--muted);margin-bottom:20px;">Last Updated: October 5, 2026</div>
     <div style="line-height:1.8;color:var(--ink);">
-      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">1. Service Description</h3>
-      <p>Case Closed Pro is a litigation case management platform with AI-powered analytics and decision support tools. The service helps law firms and insurance companies manage cases, track discovery, predict outcomes, and analyze settlement opportunities.</p>
-      
-      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">2. Use Agreement</h3>
-      <p>By using Case Closed Pro, you agree to:</p>
-      <ul style="margin-left:20px;">
-        <li>Use the service only for lawful purposes</li>
-        <li>Not attempt to gain unauthorized access</li>
-        <li>Not scrape or extract data without permission</li>
-        <li>Not use the service to harm others</li>
-        <li>Comply with all applicable laws and regulations</li>
-      </ul>
-      
-      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">3. Pricing & Payment</h3>
-      <p>Pricing is custom based on your selected plan and organization size. Billing occurs monthly in advance unless otherwise agreed. You can cancel with 30 days notice. Custom pricing terms are available for annual commitments. For pricing inquiries, contact sales@cclosed.com.</p>
-      
-      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">4. Service Level</h3>
-      <p>We commit to 99.5% uptime. We maintain automated backups and disaster recovery procedures. However, we cannot guarantee 100% availability.</p>
-      
-      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">5. Limitations of Liability</h3>
-      <p>Case Closed Pro provides litigation analytics and decision support tools. The tools are not legal advice. You remain responsible for all case decisions. We are not liable for:</p>
-      <ul style="margin-left:20px;">
-        <li>Incorrect AI predictions or recommendations</li>
-        <li>Lost cases or unfavorable settlements</li>
-        <li>Indirect or consequential damages</li>
-        <li>Service interruptions (except for documented negligence)</li>
-      </ul>
-      
-      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">6. Dispute Resolution</h3>
-      <p>Any disputes arising from this agreement will be resolved through binding arbitration, except for IP infringement claims which may be brought in court.</p>
-      
-      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">7. Termination</h3>
-      <p>We may terminate your account if you violate these terms. Upon termination, your data will be available for export for 30 days, then deleted.</p>
-      
-      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">8. Contact Us</h3>
-      <p>For questions about these terms, contact: <strong>legal@cclosed.com</strong></p>
+      <p>These Terms of Service ("Terms") govern your use of the Case Closed Pro website, demo and application (the "Service"), provided by Case Closed Pro ("we," "us"). By accessing or using the Service you agree to these Terms. If you use the Service on behalf of a company, you confirm you have authority to bind that company.</p>
+      <p style="background:#FFF6D6;border-left:4px solid #F5B700;padding:10px 12px;">If your company has signed a Master Services Agreement with us, that agreement controls wherever it conflicts with these Terms.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">1. The Service</h3>
+      <p>Case Closed Pro is a litigation and claims management platform for insurance carriers, third-party administrators and defense counsel. It includes case tracking, reporting, and optional AI-assisted features branded Sentinel.</p>
+      <p>We are a software provider. We are not a law firm, claims adjuster, insurer or broker, and we do not provide legal, insurance, financial or medical advice.</p>
+      <p>The public demo uses sample data only. Do not enter real client, claim or personal information into the demo.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">2. Accounts</h3>
+      <p>Accounts are created by or on behalf of an organization that has an agreement with us. You must give accurate information and keep your login details confidential. You are responsible for activity under your account. Tell us promptly at legal@cclosed.com if you suspect unauthorized access. Account administrators control who in their organization has access and what role each person has.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">3. Acceptable use</h3>
+      <p>You agree not to:</p>
+      <ul style="margin-left:20px;"><li>break the law or use the Service to harm others;</li><li>try to access another organization's data, probe or test the Service's security without our written permission, or bypass any access control;</li><li>scrape, copy or reverse engineer the Service, or use it to build a competing product;</li><li>upload malware or interfere with the Service's operation;</li><li>upload protected health information or payment card data unless we have agreed in writing that the Service may be used for that data;</li><li>resell or provide the Service to others except as your agreement allows.</li></ul>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">4. Your data</h3>
+      <p>You own your data. Case information, documents and other content you or your users put into the Service ("Customer Data") remain yours. You give us a limited right to host, process and display it only to provide, secure and support the Service. We handle Customer Data under our Privacy Policy and, for customers with an agreement, a Data Processing Agreement.</p>
+      <p>You are responsible for having the right to put Customer Data into the Service, and for its accuracy and legality. We may use de-identified, aggregated usage information (for example, how often a feature is used) to operate and improve the Service. It will not identify you or your clients.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">5. AI features (Sentinel)</h3>
+      <p>Sentinel features use a third-party AI model to produce suggestions such as attorney matches, summaries, extracted claim fields and risk indicators. Content you submit to a Sentinel feature is sent to our AI provider to produce the result.</p>
+      <p>AI output can be wrong, incomplete or out of date. It is a decision-support aid, not advice, and not a prediction of any case outcome. A qualified person must review it before anyone relies on it. You are responsible for every decision you make using the Service, including attorney assignments, reserves and settlements.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">6. Privilege and confidentiality</h3>
+      <p>Features such as "internal note" or private-to-organization visibility are access controls. Using them does not create, preserve or guarantee attorney-client privilege or work-product protection. Whether any material is privileged is a legal question for you and your counsel.</p>
+      <p>We treat Customer Data as confidential and do not access it except to run, secure and support the Service, as required by law, or as you direct.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">7. Fees</h3>
+      <p>Fees are set in your Order Form or agreement. If you use the Service without a separate agreement, pricing is as quoted by sales@cclosed.com. We may suspend access for unpaid undisputed fees after written notice and a reasonable chance to pay.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">8. Our property</h3>
+      <p>The Service, including its software, design, scoring methods (such as the Case Closed Index) and branding, belongs to us and our licensors. We give you a limited, non-exclusive, non-transferable right to use it during your subscription. You give us permission to use feedback you send us to improve the Service.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">9. Availability and changes</h3>
+      <p>We work to keep the Service available but do not promise it will be uninterrupted or error-free. We may update the Service and will give reasonable notice of changes that materially reduce its functionality.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">10. Disclaimers</h3>
+      <p>THE SERVICE IS PROVIDED "AS IS" AND "AS AVAILABLE." TO THE FULLEST EXTENT THE LAW ALLOWS, WE DISCLAIM ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT, AND ANY WARRANTY THAT AI OUTPUT OR ANALYTICS WILL BE ACCURATE OR COMPLETE.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">11. Limitation of liability</h3>
+      <p>TO THE FULLEST EXTENT THE LAW ALLOWS, WE ARE NOT LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL OR PUNITIVE DAMAGES, OR FOR LOST PROFITS, LOST CASES OR UNFAVORABLE SETTLEMENTS. OUR TOTAL LIABILITY FOR ALL CLAIMS RELATING TO THE SERVICE IS LIMITED TO THE FEES YOU PAID US FOR THE SERVICE IN THE 12 MONTHS BEFORE THE CLAIM AROSE. These limits do not apply to liability that cannot be limited by law. If you have signed a Master Services Agreement, its limitation terms apply instead.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">12. Termination</h3>
+      <p>You may stop using the Service at any time, subject to your agreement. We may suspend or end your access if you materially breach these Terms, with notice where practical. After termination, your organization may export its data for 30 days. After that we delete it as described in the Privacy Policy.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">13. Governing law and disputes</h3>
+      <p>These Terms are governed by the laws of the state in which Case Closed Pro has its principal place of business, without regard to conflict-of-law rules. The state and federal courts located there have exclusive jurisdiction, and each party consents to them.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">14. General</h3>
+      <p>These Terms and any signed agreement are the entire agreement on this subject. If a provision is unenforceable the rest stays in effect. We may update these Terms by posting a new version with a new date; material changes will be notified in the app or by email. Continued use after the effective date means you accept them.</p>
+      <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">15. Contact</h3>
+      <p>Questions about these Terms: legal@cclosed.com.</p>
     </div>
   </div>`;
 }
@@ -3096,12 +3137,169 @@ function getTop3Recommendations(caseObj) {
   return scores.sort((x, y) => y.score - x.score).slice(0, 3);
 }
 
+/* ── NEEDS ATTENTION ─────────────────────────────────────────
+   One place that watches the whole portfolio and surfaces what needs a
+   human today: deadlines, money, stale work, workload and approvals.
+   Built from data the app already tracks; thresholds are named here so
+   they're easy to change. Red = act now, amber = watch, blue = good news. */
+/* Early-warning thresholds — set a little ahead of the point of real trouble so people hear
+   about it while there is still time to act. (Deadlines fire earlier; activity/spend fire sooner.) */
+const ATTN = { SOL_DAYS:120, TRIAL_DAYS:45, STALE_DAYS:21, BURN_PCT:0.60, RESERVE_PCT:0.85, OVERLOAD_OPEN:9 };
+function caseLastActivity(c){
+  let best = c.filed ? new Date(c.filed).getTime() : 0;
+  (c.updates||[]).forEach(u => { const t = new Date(u.date).getTime(); if (!isNaN(t) && t > best) best = t; });
+  return best;
+}
+function attentionData(scopeCases, opts){
+  opts = opts || {};
+  const now = Date.now(), day = 864e5;
+  const open = (scopeCases || CASES).filter(c => c.status !== 'Closed');
+  const items = [];
+  const add = (o) => { if (o.cases ? o.cases.length : o.count) items.push(Object.assign({count:o.cases?o.cases.length:0}, o)); };
+  const dLabel = d => d < 0 ? Math.abs(d)+'d past due' : d === 0 ? 'today' : 'in '+d+'d';
+  const first = (arr, fn) => arr.slice(0,2).map(fn).join(' · ') + (arr.length > 2 ? ' · +' + (arr.length-2) + ' more' : '');
+
+  // 1. Statute of limitations — the one missed date that becomes a claim against you
+  const sol = open.filter(c => c.keyDates && c.keyDates.sol && new Date(c.keyDates.sol).getTime() <= now + ATTN.SOL_DAYS*day)
+                  .sort((a,b) => new Date(a.keyDates.sol) - new Date(b.keyDates.sol));
+  add({key:'sol', sev:'red', icon:'⏰', title:'Statute of limitations within '+ATTN.SOL_DAYS+' days', cases:sol,
+       detail: first(sol, c => esc(c.client)+' '+dLabel(Math.ceil((new Date(c.keyDates.sol)-now)/day)))});
+
+  // 2. Under-reserved — reserve below likely exposure
+  const under = open.filter(c => (c.exposure && c.exposure.likelyExposure > 0) && ((c.insurance && c.insurance.reserveAmount) || 0) < c.exposure.likelyExposure*ATTN.RESERVE_PCT);
+  const gap = under.reduce((t,c) => t + (c.exposure.likelyExposure - ((c.insurance&&c.insurance.reserveAmount)||0)), 0);
+  add({key:'reserve', sev:'red', icon:'🛡️', title:'Reserves below likely exposure', cases:under, detail:'Combined shortfall about '+fM(gap)+' across '+under.length+' matter'+(under.length!==1?'s':'')});
+
+  // 3. Overdue tasks
+  const today = new Date().toISOString().slice(0,10);
+  let overdueTasks = 0;
+  const overdue = open.filter(c => { const n = (c.tasks||[]).filter(t => !t.done && t.due && t.due < today).length; overdueTasks += n; return n > 0; });
+  add({key:'tasks', sev:'red', icon:'✅', title:'Overdue tasks', cases:overdue, detail: overdueTasks+' task'+(overdueTasks!==1?'s':'')+' past due on '+overdue.length+' matter'+(overdue.length!==1?'s':'')});
+
+  // 4. Trial coming up
+  const trial = open.filter(c => c.keyDates && c.keyDates.trialDate && new Date(c.keyDates.trialDate).getTime() >= now - day && new Date(c.keyDates.trialDate).getTime() <= now + ATTN.TRIAL_DAYS*day)
+                    .sort((a,b) => new Date(a.keyDates.trialDate) - new Date(b.keyDates.trialDate));
+  add({key:'trial', sev:'amber', icon:'⚖️', title:'Trial in the next '+ATTN.TRIAL_DAYS+' days', cases:trial,
+       detail: first(trial, c => esc(c.client)+' '+dLabel(Math.ceil((new Date(c.keyDates.trialDate)-now)/day)))});
+
+  // 5. Reserve burn
+  const burn = open.filter(c => ((c.insurance&&c.insurance.reserveAmount)||0) > 0 && ((c.billing&&c.billing.totalBilled)||0) / c.insurance.reserveAmount > ATTN.BURN_PCT);
+  add({key:'burn', sev:'amber', icon:'🔥', title:'Spend above '+Math.round(ATTN.BURN_PCT*100)+'% of reserve', cases:burn, detail:'Billed amounts are approaching the reserve on these matters'});
+
+  // 6. Stale
+  const stale = open.filter(c => caseLastActivity(c) && now - caseLastActivity(c) > ATTN.STALE_DAYS*day).sort((a,b) => caseLastActivity(a) - caseLastActivity(b));
+  add({key:'stale', sev:'amber', icon:'💤', title:'No activity in '+ATTN.STALE_DAYS+'+ days', cases:stale,
+       detail: stale.length ? 'Quietest: '+esc(stale[0].client)+' ('+Math.floor((now-caseLastActivity(stale[0]))/day)+' days)' : ''});
+
+  // 7. Missing next step
+  const nostep = open.filter(c => !c.nextStep);
+  add({key:'nostep', sev:'amber', icon:'🧭', title:'No next step recorded', cases:nostep, detail:'Each of these matters has no plan on file'});
+
+  if (!opts.personal) {
+    // 8. Attorney overload
+    const byAtty = {};
+    open.forEach(c => { const a = (c.attorney||'').trim(); if (a && a !== 'Unassigned') (byAtty[a] = byAtty[a] || []).push(c); });
+    const loaded = Object.keys(byAtty).filter(a => byAtty[a].length >= ATTN.OVERLOAD_OPEN).sort((a,b) => byAtty[b].length - byAtty[a].length);
+    if (loaded.length) items.push({key:'overload', sev:'amber', icon:'📈', title:'Attorneys at '+ATTN.OVERLOAD_OPEN+'+ open matters', count:loaded.length, cases:null,
+       detail: loaded.slice(0,2).map(a => esc(a)+' ('+byAtty[a].length+')').join(' · '), go:"st({role:'scorecard',caseId:null,scorecardDetail:null,showWelcome:false})"});
+
+    // 9. Payables awaiting approval (people who can approve only)
+    if (canSeeAssignAlert()) {
+      const waiting = (typeof PAYABLES !== 'undefined' ? PAYABLES : []).filter(p => p.status === 'Submitted');
+      const late = (typeof PAYABLES !== 'undefined' ? PAYABLES : []).filter(p => p.status === 'Approved' && p.dueDate && p.dueDate < today);
+      const n = waiting.length + late.length;
+      if (n) items.push({key:'payables', sev:'amber', icon:'💳', title:'Payables need action', count:n, cases:null,
+        detail: waiting.length+' awaiting approval ('+fM(waiting.reduce((t,p)=>t+(p.amount||0),0))+')'+(late.length?' · '+late.length+' overdue to pay':''), go:"st({role:'payables',caseId:null,showWelcome:false})"});
+    }
+
+    // 10. Ready to close
+    const ready = open.filter(c => c.closing && c.closing.dispositionType && closingReadiness(c).label === 'Ready to Close');
+    add({key:'ready', sev:'blue', icon:'🏁', title:'Ready to close', cases:ready, detail:'All closing steps are done — hand these off to claims'});
+  }
+  const rank = {red:0, amber:1, blue:2};
+  items.sort((a,b) => rank[a.sev] - rank[b.sev] || b.count - a.count);
+  return items;
+}
+function attnGo(key, scope){
+  const it = attentionData(scope === 'mine' ? CASES.filter(c => c.attorney === (S.attorneyName || S.currentUser?.name)) : null, {personal: scope === 'mine'}).find(x => x.key === key);
+  if (it && it.go) { new Function(it.go)(); return; }
+  st({showDrill:true, drillType:'attn-'+key, drillValue:scope||'', drillLabel:(it ? it.title : 'Cases'), caseId:null});
+}
+/* Optional alert emails: off until an owner/admin picks Daily, Weekly or Monthly. */
+const FREQ_LABEL = {daily:'Daily', weekly:'Weekly', monthly:'Monthly'};
+async function setAlertFreq(v){
+  const on = v !== 'off';
+  const body = on ? {enabled:true, frequency:v} : {enabled:false};
+  try {
+    await apiFetch('/api/org/alert-emails', {method:'POST', body: JSON.stringify(body)});
+    st({alertEmails: Object.assign({}, S.alertEmails, {enabled:on}, on ? {frequency:v} : {})});
+  } catch (e) { alert('Could not change the setting: ' + e.message); }
+}
+async function sendAlertTest(){
+  try {
+    const r = await apiFetch('/api/org/alert-emails/test', {method:'POST'});
+    alert('Test sent to ' + r.to + ' (' + r.itemCount + ' alert' + (r.itemCount!==1?'s':'') + ' in it). Check your inbox in a minute.');
+  } catch (e) { alert(e.message); }
+}
+function alertEmailControlsV(){
+  if (DEMO_MODE) return '<span style="color:var(--dim);font-size:11px;">✉ Owners can also get these by email — daily, weekly or monthly</span>';
+  if (!authToken || !canSeeAssignAlert()) return '';
+  const ae = S.alertEmails;
+  if (!ae) return '';
+  const cur = ae.enabled ? (ae.frequency || 'daily') : 'off';
+  return '<span style="font-size:11px;color:var(--dim);">✉ Email these alerts: '+
+    '<select class="inp" style="display:inline-block;width:auto;padding:2px 6px;font-size:11px;height:auto;" onchange="setAlertFreq(this.value)">'+
+    [['off','Off'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']].map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select> · '+
+    '<span class="muted-link" style="cursor:pointer;" onclick="sendAlertTest()">Send me a test</span></span>';
+}
+function needsAttentionV(scopeCases, opts){
+  opts = opts || {};
+  const items = attentionData(scopeCases, opts);
+  const scope = opts.personal ? 'mine' : '';
+  const title = opts.personal ? 'Needs you today' : 'Needs your attention';
+  if (!items.length) return '<div class="attn-strip"><div class="attn-strip-h"><div class="sh"><span>✅ '+title+'</span></div></div><div class="card" style="padding:12px 16px;color:var(--green);font-weight:600;font-size:13px;">All clear — nothing needs attention right now.</div></div>';
+  const limit = S.attnAll ? items.length : 4;
+  let h = '<div class="attn-strip"><div class="attn-strip-h"><div class="sh"><span>⚑ '+title+'</span><span style="color:var(--dim);font-weight:500;">'+items.length+' alert'+(items.length!==1?'s':'')+'</span></div>';
+  h += '<span style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">'+(opts.personal ? '' : alertEmailControlsV());
+  if (items.length > 4) h += '<span class="muted-link" onclick="st({attnAll:'+(!S.attnAll)+'})" style="cursor:pointer;">'+(S.attnAll?'Show fewer':'Show all '+items.length)+' ↓</span>';
+  h += '</span></div><div class="attn-grid">';
+  items.slice(0, limit).forEach(it => {
+    h += '<div class="attn-card '+it.sev+'" onclick="attnGo(\''+it.key+'\',\''+scope+'\')" title="Click to see the matters">'+
+      '<div style="display:flex;align-items:center;"><div class="attn-n">'+it.count+'</div>'+
+      '<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:12.5px;color:var(--ink);">'+(it.sev==='red'?'<span class="attn-dot"></span>':'')+it.icon+' '+it.title+'</div>'+
+      '<div style="font-size:11px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+(it.detail||'')+'</div></div></div></div>';
+  });
+  h += '</div></div>';
+  return h;
+}
+
+/* Open matters nobody is assigned to yet — drives the dashboard alert, the nav badge and the Assign Cases screen. */
+function unassignedOpenCases(){
+  return CASES.filter(c => c.status !== 'Closed' && (((c.attorney||'').trim() === '') || (c.attorney||'').trim() === 'Unassigned'));
+}
+/* Members (attorneys) can't assign matters, so only owners/admins/demo users see the alert. */
+function canSeeAssignAlert(){
+  return !(S.currentUser && S.currentUser.role === 'member' && !S.currentUser.platformAdmin);
+}
+function attnBadgeV(){
+  const n = canSeeAssignAlert() ? unassignedOpenCases().length : 0;
+  return n ? '<span class="attn-badge" title="'+n+' matter'+(n!==1?'s':'')+' need an attorney">'+n+'</span>' : '';
+}
+function unassignedAlertV(){
+  const list = canSeeAssignAlert() ? unassignedOpenCases() : [];
+  if (!list.length) return '';
+  const names = list.slice(0,3).map(c => esc(c.client)).join(', ') + (list.length > 3 ? ' and ' + (list.length-3) + ' more' : '');
+  return '<div class="attn-banner" role="alert">'+
+    '<div class="attn-icon">🚨</div>'+
+    '<div style="flex:1;min-width:220px;"><div style="font-weight:800;font-size:15px;color:#991B1B;">'+list.length+' matter'+(list.length!==1?'s need':' needs')+' an attorney</div>'+
+    '<div style="font-size:12.5px;color:var(--muted);margin-top:2px;">'+names+' — unassigned work is waiting. Run Sentinel Match to pick the best-fit attorney and notify them.</div></div>'+
+    '<button onclick="st({showAssignCases:true})" class="btn btn-pri" style="background:#DC2626;border-color:#DC2626;font-weight:700;white-space:nowrap;">🎯 Run Sentinel Match →</button>'+
+  '</div>';
+}
+
 function assignCasesV() {
   // Filter unassigned cases - catches all variations
-  const unassignedCases = CASES.filter(c => {
-    const atty = (c.attorney || '').trim();
-    return atty === '' || atty === 'Unassigned';
-  });
+  const unassignedCases = unassignedOpenCases();
   
   let h = '<div style="padding:20px;max-width:1200px;margin:0 auto;">';
   h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">';
@@ -3237,6 +3435,12 @@ function drillDownV() {
     case 'afa-matters':
       filteredCases = CASES.filter(c => c.billing.type && c.billing.type !== 'Hourly');
       break;
+    default:
+      if (type && type.indexOf('attn-') === 0) {
+        const mine = value === 'mine';
+        const it = attentionData(mine ? CASES.filter(c => c.attorney === (S.attorneyName || S.currentUser?.name)) : null, {personal: mine}).find(x => x.key === type.slice(5));
+        filteredCases = (it && it.cases) || [];
+      }
   }
   
   let h = '<div style="padding:20px;max-width:1200px;margin:0 auto;">';
@@ -3369,6 +3573,8 @@ function litigationDashV(){
   const trialCandidates = open.filter(c => c.potentialTrialCandidate).length;
 
   let h = '<div style="padding:18px 22px;max-width:1500px;margin:0 auto;display:flex;flex-direction:column;">';
+  h += unassignedAlertV();
+  h += needsAttentionV();
 
   /* NEWLY ASSIGNED TO YOU — the attorney-side half of Sentinel Match. When
      a matter is assigned to the signed-in user (in the last 14 days) it's
@@ -3584,7 +3790,7 @@ function litigationDashV(){
   /* Section label — these two widgets (readiness + risk flags) are the
      things that actually need a human to do something today, so they're
      ordered right after the KPI strip instead of near the bottom. */
-  h += '<div class="section-label" style="order:2;">Needs Attention</div>';
+  h += '<div class="section-label" style="order:2;">Risk Flags &amp; Pipeline</div>';
 
   /* Row 2b: Pending Closures — Readiness (what's blocking claims handoff) */
   const pendingCloseCandidates = CASES.filter(c => c.status !== 'Closed' && (c.status === 'Closing' || (c.closing && c.closing.dispositionType)));
@@ -4505,57 +4711,108 @@ function buildWeeklyExecDigestText(){
   s += 'Full dashboard: sign in and open Executive → Firm at a Glance for drill-downs into every figure above.\n';
   return s;
 }
+/* ── SENTINEL DIGEST ─────────────────────────────────────────
+   A weekly, AI-written executive briefing. Set up here (recipients + day);
+   the server then emails it each week on that day. "Preview" shows this
+   week's briefing on screen. The public demo has no server, so it shows a
+   clearly-labelled sample built from the demo data instead. */
+function sampleSentinelDigestText(){
+  const open = CASES.filter(c => c.status !== 'Closed');
+  const items = attentionData();
+  const reserves = open.reduce((t,c) => t + ((c.insurance&&c.insurance.reserveAmount)||0), 0);
+  const expo = open.reduce((t,c) => t + ((c.exposure&&c.exposure.likelyExposure)||c.value||0), 0);
+  const un = unassignedOpenCases();
+  const sol = (items.find(x => x.key==='sol')||{}).cases || [];
+  const under = (items.find(x => x.key==='reserve')||{}).cases || [];
+  const trial = (items.find(x => x.key==='trial')||{}).cases || [];
+  const top = [...open].sort((a,b) => ((b.exposure&&b.exposure.likelyExposure)||b.value||0) - ((a.exposure&&a.exposure.likelyExposure)||a.value||0)).slice(0,3);
+  const nm = c => esc(c.client);
+  let t = 'SENTINEL DIGEST — Sample Portfolio\nWeek of ' + td() + '\n' + '='.repeat(46) + '\n\n';
+  t += 'HEADLINE\n' + open.length + ' open matters carry ' + fM(reserves) + ' in reserves against ' + fM(expo) + ' of likely exposure. ' +
+       (sol.length ? sol.length + ' matters have a statute of limitations inside 120 days, and ' : '') + (un.length ? un.length + ' new matters still need an attorney.' : 'every matter has an attorney.') + '\n\n';
+  if (un.length) t += 'NEEDS A DECISION\n- ' + un.length + ' unassigned matters: ' + un.map(nm).join(', ') + '. Run Sentinel Match to assign them today.\n\n';
+  if (sol.length || trial.length) {
+    t += 'DEADLINES AND RISK\n';
+    sol.slice(0,3).forEach(c => { t += '- ' + nm(c) + ': statute of limitations ' + c.keyDates.sol + '.\n'; });
+    trial.slice(0,2).forEach(c => { t += '- ' + nm(c) + ': trial ' + c.keyDates.trialDate + '.\n'; });
+    t += '\n';
+  }
+  if (under.length) t += 'MONEY\n- ' + under.length + ' matters are reserved below likely exposure: ' + under.map(nm).join(', ') + '. Review reserves with the handling attorneys.\n\n';
+  t += 'LARGEST OPEN EXPOSURES\n' + top.map(c => '- ' + nm(c) + ': ' + fM((c.exposure&&c.exposure.likelyExposure)||c.value) + ' (' + (c.litigationStage||c.status) + ', ' + (c.attorney||'Unassigned') + ')').join('\n') + '\n\n';
+  t += 'RECOMMENDED ACTIONS\n';
+  let n = 1;
+  if (un.length) t += (n++) + '. Assign the ' + un.length + ' unassigned matters.\n';
+  if (sol.length) t += (n++) + '. Confirm filing plans on ' + nm(sol[0]) + ' before its limitations date.\n';
+  if (under.length) t += (n++) + '. Re-examine reserves on ' + nm(under[0]) + '.\n';
+  t += '\n---\nSample only. In a live account, Sentinel writes this briefing with AI from the account\'s own data and emails it every week.\n';
+  return t;
+}
+async function saveDigestSchedule(){
+  if (!authToken) return;
+  try {
+    await apiFetch('/api/reports/schedule-weekly-digest', { method:'POST', body: JSON.stringify({ recipients: S.weeklyDigestRecipients, day: S.weeklyDigestDay, enabled: S.weeklyDigestEnabled, frequency: S.weeklyDigestFreq }) });
+    st({digestError:''});
+  } catch (e) { st({digestError:'Could not save the schedule: ' + e.message}); }
+}
+function setDigestField(k, v){ st({[k]: v}); saveDigestSchedule(); }
+function toggleWeeklyDigest(){
+  if (!S.weeklyDigestEnabled && authToken && !(S.weeklyDigestRecipients||'').trim()) { st({digestError:'Add at least one recipient email first.'}); return; }
+  st({weeklyDigestEnabled: !S.weeklyDigestEnabled, digestError:''});
+  saveDigestSchedule();
+}
+async function previewDigest(send){
+  if (!authToken) { st({digestPreview:{text:sampleSentinelDigestText(), sample:true}, digestError:''}); return; }
+  st({digestLoading:send||'none', digestError:''});
+  try {
+    const r = await apiFetch('/api/reports/sentinel-digest/preview', { method:'POST', body: JSON.stringify({send: send||'none'}) });
+    st({digestLoading:'', digestPreview:{text:r.text, usedAI:r.usedAI, sentTo:r.sentTo||[]}});
+    if (send === 'recipients') { try { const h = await apiFetch('/api/reports/sentinel-digest/history'); st({digestHistory:h.digests||[]}); } catch(e){} }
+  } catch (e) { st({digestLoading:'', digestError:e.message}); }
+}
 function weeklyDigestCardV(){
-  const today = new Date();
-  const todayName = today.toLocaleDateString('en-US',{weekday:'long'});
-  const isDigestDayToday = S.weeklyDigestEnabled && S.weeklyDigestDay === todayName;
-  const alreadySentThisWeek = S.weeklyDigestLastSentWeek === isoWeekKey(today);
-
+  const real = !!authToken;
+  const busy = S.digestLoading;
+  const dp = S.digestPreview;
   let h = '<div class="card" style="margin-bottom:14px;border-left:3px solid var(--pri2);">';
-  h += '<div class="sh"><span>📧 Weekly Executive Email</span></div>';
+  h += '<div class="sh"><span>🛡️ Sentinel Digest</span><span style="color:var(--dim);font-weight:500;">An AI-written briefing for your executives</span></div>';
+  h += '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5;">Sentinel reads your portfolio each week and writes a two-minute briefing: what changed, what needs a decision, deadlines and risk, money, workload and recommended actions. Choose who gets it and how often — daily, weekly or monthly.</div>';
+  if (S.digestError) h += '<div class="alert-info" style="margin-bottom:10px;background:#FEF2F2;border-color:#FCA5A5;color:#991B1B;">'+esc(S.digestError)+'</div>';
 
-  if (isDigestDayToday && !alreadySentThisWeek) {
-    h += '<div class="alert-info" style="margin-bottom:12px;">Today (' + todayName + ') is this digest\'s scheduled send day. <button class="btn btn-pri" style="margin-left:8px;font-size:11px;padding:5px 12px;" onclick="sendWeeklyDigestNow()">Send Now</button></div>';
+  h += '<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;align-items:end;margin-bottom:10px;">';
+  h += '<div class="fld"><label class="lbl">Recipients (comma-separated)</label><input type="text" class="inp" placeholder="cfo@company.com, gc@company.com" value="'+escAttr(S.weeklyDigestRecipients)+'" onchange="setDigestField(\'weeklyDigestRecipients\', this.value)"></div>';
+  h += '<div class="fld"><label class="lbl">How often</label><select class="inp" onchange="setDigestField(\'weeklyDigestFreq\', this.value)">'+[['daily','Daily (weekdays)'],['weekly','Weekly'],['monthly','Monthly']].map(o=>'<option value="'+o[0]+'"'+(S.weeklyDigestFreq===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select></div>';
+  if (S.weeklyDigestFreq !== 'daily') h += '<div class="fld"><label class="lbl">'+(S.weeklyDigestFreq==='monthly'?'On the first':'On')+'</label><select class="inp" onchange="setDigestField(\'weeklyDigestDay\', this.value)">'+['Monday','Tuesday','Wednesday','Thursday','Friday'].map(d=>'<option'+(S.weeklyDigestDay===d?' selected':'')+'>'+d+'</option>').join('')+'</select></div>';
+  else h += '<div></div>';
+  h += '<div class="fld"><label class="lbl">Email</label><button class="btn '+(S.weeklyDigestEnabled?'btn-pri':'btn-out')+'" style="width:100%;justify-content:center;" onclick="toggleWeeklyDigest()">'+(S.weeklyDigestEnabled?'✓ On':'Turn on')+'</button></div>';
+  h += '</div>';
+
+  h += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
+  h += '<button class="btn btn-pri" '+(busy?'disabled':'')+' onclick="previewDigest(\'none\')">'+(busy==='none'?'Writing…':'Preview the latest briefing')+'</button>';
+  if (real) {
+    h += '<button class="btn btn-out" '+(busy?'disabled':'')+' onclick="previewDigest(\'me\')">'+(busy==='me'?'Sending…':'Email it to me')+'</button>';
+    h += '<button class="btn btn-out" '+(busy?'disabled':'')+' onclick="if(confirm(\'Send this week\\\'s briefing to all recipients now?\'))previewDigest(\'recipients\')">'+(busy==='recipients'?'Sending…':'Send to recipients now')+'</button>';
+  }
+  h += '</div>';
+
+  if (dp) {
+    h += '<div style="margin-top:12px;border:1px solid var(--line);border-radius:8px;background:var(--surf2);padding:14px 16px;">';
+    h += '<div style="font-size:10.5px;color:var(--dim);margin-bottom:8px;text-transform:uppercase;letter-spacing:.6px;">'+(dp.sample?'Sample briefing (public demo)':(dp.usedAI?'Written by Sentinel AI':'Numbers-only version — AI commentary was unavailable'))+(dp.sentTo&&dp.sentTo.length?' · emailed to '+esc(dp.sentTo.join(', ')):'')+'</div>';
+    h += '<div style="white-space:pre-wrap;font-size:12.5px;line-height:1.6;color:var(--ink);">'+esc(dp.text)+'</div>';
+    h += '</div>';
   }
 
-  h += '<div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;align-items:end;margin-bottom:8px;">';
-  h += '<div class="fld"><label class="lbl">Recipients (comma-separated)</label><input type="text" class="inp" placeholder="cfo@company.com, gc@company.com" value="'+escAttr(S.weeklyDigestRecipients)+'" onchange="st({weeklyDigestRecipients:this.value})"></div>';
-  h += '<div class="fld"><label class="lbl">Send Every</label><select class="inp" onchange="st({weeklyDigestDay:this.value})">'+['Monday','Tuesday','Wednesday','Thursday','Friday'].map(d=>'<option'+(S.weeklyDigestDay===d?' selected':'')+'>'+d+'</option>').join('')+'</select></div>';
-  h += '<div class="fld"><label class="lbl">Status</label><button class="btn '+(S.weeklyDigestEnabled?'btn-pri':'btn-out')+'" style="width:100%;justify-content:center;" onclick="toggleWeeklyDigest()">'+(S.weeklyDigestEnabled?'✓ Scheduled':'Enable')+'</button></div>';
-  h += '</div>';
-
-  h += '<div style="display:flex;gap:8px;align-items:center;">';
-  h += '<button class="btn btn-out" onclick="sendWeeklyDigestNow()">Send This Week\'s Summary Now</button>';
-  if (API_BASE) h += '<button class="btn btn-out" onclick="syncWeeklyDigestSchedule()">Sync Schedule to Server</button>';
-  h += '</div>';
-
-  h += '<div style="font-size:10px;color:var(--dim);margin-top:10px;line-height:1.5;">"Send Now" always works — it opens your email client with this week\'s numbers filled in. True unattended sending (an email that arrives every '+S.weeklyDigestDay+' even if no one has this app open) needs a backend running on a schedule'+(API_BASE?' — click "Sync Schedule to Server" to hand this off to yours.':'; connect one (window.CCP_API_BASE) to enable that. Until then, enabling this just shows a one-click prompt at the top of this card on the scheduled day when someone has the app open.')+'</div>';
+  if (real && S.digestHistory && S.digestHistory.length) {
+    h += '<div style="margin-top:12px;"><div class="lbl" style="margin-bottom:6px;">Past briefings</div>';
+    S.digestHistory.forEach(d => {
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--surf2);font-size:12px;"><span>'+esc(String(d.createdAt||'').slice(0,10))+' — '+esc(d.name||'Sentinel Digest')+'</span><span class="muted-link" style="cursor:pointer;" onclick="st({digestPreview:{text:S.digestHistory.find(x=>x.id===\''+d.id+'\').text, usedAI:true}})">View</span></div>';
+    });
+    h += '</div>';
+  }
+  h += '<div style="font-size:10.5px;color:var(--dim);margin-top:10px;line-height:1.5;">'+(real
+    ? 'When on, the briefing is emailed to the recipients '+(S.weeklyDigestFreq==='daily'?'every weekday morning':S.weeklyDigestFreq==='monthly'?'on the first '+esc(S.weeklyDigestDay)+' of each month':'every '+esc(S.weeklyDigestDay)+' morning')+'. Organization-only notes are never included. Briefings are written by AI from your account\'s data — review before acting.'
+    : 'This is the public demo, so the briefing above is a sample built from the demo data. In a live account Sentinel writes it with AI and emails it on the schedule you choose.')+'</div>';
   h += '</div>';
   return h;
-}
-function toggleWeeklyDigest(){
-  st({weeklyDigestEnabled: !S.weeklyDigestEnabled});
-  if (S.weeklyDigestEnabled && API_BASE) syncWeeklyDigestSchedule();
-}
-function sendWeeklyDigestNow(){
-  const to = (S.weeklyDigestRecipients||'').trim();
-  const body = buildWeeklyExecDigestText();
-  const subject = 'Weekly Executive Litigation Summary — ' + td();
-  const mailto = 'mailto:' + encodeURIComponent(to).replace(/%2C/g,',') + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
-  window.location.href = mailto;
-  st({weeklyDigestLastSentWeek: isoWeekKey(new Date())});
-}
-async function syncWeeklyDigestSchedule(){
-  if (!API_BASE) return;
-  try {
-    await apiFetch('/api/reports/schedule-weekly-digest', {
-      method:'POST',
-      body: JSON.stringify({ recipients: S.weeklyDigestRecipients, day: S.weeklyDigestDay, enabled: S.weeklyDigestEnabled })
-    });
-    alert('Schedule synced to your server. Actual weekly sending now depends on that backend running this job on a timer — see server.js.');
-  } catch (e) {
-    alert('Could not sync to server: ' + e.message + '\n\nThe schedule is still saved locally and "Send Now" still works regardless.');
-  }
 }
 
 /* ── SHARED WIDGET: KPI column + donut chart + grouped bar chart,
@@ -5705,7 +5962,7 @@ function setRating(a){
 
 /* ── REPORTS HUB ───────────────────────────────────────── */
 function reportsHubV(){
-  const cats = ['All', 'Enterprise', 'Litigation', 'Financial', 'Compliance', 'Strategic', 'Aging'];
+  const cats = ['All', 'Alerts', 'Enterprise', 'Litigation', 'Financial', 'Compliance', 'Strategic', 'Aging', 'Claim Facts', 'Settlement'];
   const filt = S.rptCat || 'All';
   const filtered = filt === 'All' ? REPORT_TEMPLATES : REPORT_TEMPLATES.filter(r => r.cat === filt);
   const view = S.reportsView || 'templates';
@@ -5958,6 +6215,76 @@ function buildReportData(rptId){
       cols = ['ID','Incident','Agency','Status','Opened','Exposure Estimate','Notes'];
       rows = REGULATORY_INCIDENTS.map(r => [r.id, r.name, r.agency, r.status, r.openedDate, fM(r.exposureEstimate), r.notes||'']);
       break;
+    /* ── Alert reports (share their logic with the dashboard alerts via attentionData) ── */
+    case 'a0': { /* Full summary */
+      cols = ['Alert','Severity','Matters / Items','Detail'];
+      const un = unassignedOpenCases();
+      rows = [];
+      if (un.length) rows.push(['Matters need an attorney','Critical',un.length,un.slice(0,3).map(c=>c.client).join(', ')]);
+      attentionData().forEach(it => rows.push([it.title, {red:'Critical',amber:'Watch',blue:'Good news'}[it.sev], it.count, String(it.detail||'').replace(/&amp;/g,'&').replace(/<[^>]*>/g,'')]));
+      break; }
+    case 'a1': { /* SOL early warning */
+      cols = ['Matter #','Client','SOL Date','Days Left','Urgency','Atty','Reserve'];
+      const it = attentionData().find(x => x.key==='sol'); const now = Date.now();
+      rows = ((it && it.cases) || []).map(c => { const d = Math.ceil((new Date(c.keyDates.sol)-now)/864e5);
+        return [c.matterNo||c.id, c.client, c.keyDates.sol, d, d<0?'PAST DUE':d<=30?'Critical (30 days or less)':d<=60?'Urgent (31-60 days)':'Heads-up', c.attorney||'Unassigned', fM(c.insurance.reserveAmount)]; });
+      break; }
+    case 'a2': {
+      cols = ['Matter #','Client','Reserve','Likely Exposure','Shortfall','Reserve % of Exposure','Atty'];
+      const it = attentionData().find(x => x.key==='reserve');
+      rows = ((it && it.cases) || []).map(c => { const r = c.insurance.reserveAmount||0, e = c.exposure.likelyExposure;
+        return [c.matterNo||c.id, c.client, fM(r), fM(e), fM(e-r), Math.round(r/e*100)+'%', c.attorney||'Unassigned']; }).sort((a,b)=>0);
+      break; }
+    case 'a3': {
+      cols = ['Matter #','Client','Task','Due','Days Overdue','Assignee'];
+      const t0 = new Date().toISOString().slice(0,10); rows = [];
+      CASES.filter(c => c.status !== 'Closed').forEach(c => (c.tasks||[]).filter(t => !t.done && t.due && t.due < t0).forEach(t =>
+        rows.push([c.matterNo||c.id, c.client, t.title, t.due, Math.floor((Date.now()-new Date(t.due))/864e5), t.assignee||c.attorney||'Unassigned'])));
+      rows.sort((a,b)=>b[4]-a[4]);
+      break; }
+    case 'a4': {
+      cols = ['Matter #','Client','Trial Date','Days Left','Atty','Exposure','CCI'];
+      const it = attentionData().find(x => x.key==='trial');
+      rows = ((it && it.cases) || []).map(c => [c.matterNo||c.id, c.client, c.keyDates.trialDate, Math.ceil((new Date(c.keyDates.trialDate)-Date.now())/864e5), c.attorney||'Unassigned', fM(c.exposure.likelyExposure||c.value), cci(c)]);
+      break; }
+    case 'a5': {
+      cols = ['Matter #','Client','Reserve','Billed','Burn %','Remaining','Atty'];
+      const it = attentionData().find(x => x.key==='burn');
+      rows = ((it && it.cases) || []).map(c => { const r = c.insurance.reserveAmount, b = c.billing.totalBilled||0;
+        return [c.matterNo||c.id, c.client, fM(r), fM(b), Math.round(b/r*100)+'%', fM(r-b), c.attorney||'Unassigned']; });
+      rows.sort((a,b)=>parseInt(b[4])-parseInt(a[4]));
+      break; }
+    case 'a6': {
+      cols = ['Matter #','Client','Last Activity','Days Quiet','Stage','Atty'];
+      const it = attentionData().find(x => x.key==='stale');
+      rows = ((it && it.cases) || []).map(c => [c.matterNo||c.id, c.client, new Date(caseLastActivity(c)).toISOString().slice(0,10), Math.floor((Date.now()-caseLastActivity(c))/864e5), c.litigationStage||c.status, c.attorney||'Unassigned']);
+      break; }
+    case 'a7': {
+      cols = ['Matter #','Client','Stage','Days Open','Atty','Reserve'];
+      const it = attentionData().find(x => x.key==='nostep');
+      rows = ((it && it.cases) || []).map(c => [c.matterNo||c.id, c.client, c.litigationStage||c.status, daysOpen(c), c.attorney||'Unassigned', fM(c.insurance.reserveAmount)]);
+      break; }
+    case 'a8': {
+      cols = ['Attorney','Open Matters','Total Reserves','Total Value','Status'];
+      const m = {};
+      CASES.filter(c => c.status !== 'Closed' && (c.attorney||'').trim() && c.attorney !== 'Unassigned').forEach(c => { const a = m[c.attorney] = m[c.attorney] || {n:0,res:0,val:0}; a.n++; a.res += c.insurance.reserveAmount||0; a.val += c.value||0; });
+      rows = Object.entries(m).sort((a,b)=>b[1].n-a[1].n).map(([a,d]) => [a, d.n, fM(d.res), fM(d.val), d.n >= ATTN.OVERLOAD_OPEN ? 'AT CAPACITY' : d.n >= ATTN.OVERLOAD_OPEN-2 ? 'NEAR CAPACITY' : 'OK']);
+      break; }
+    case 'a9': {
+      cols = ['Payable','Payee','Amount','Due','Status','Why it needs action'];
+      const t0 = new Date().toISOString().slice(0,10);
+      rows = PAYABLES.filter(p => p.status === 'Submitted' || (p.status === 'Approved' && p.dueDate && p.dueDate < t0))
+        .map(p => [p.id, p.payeeName, fM(p.amount), p.dueDate||'—', p.status, p.status === 'Submitted' ? 'Awaiting approval' : 'Approved and past due — pay now']);
+      break; }
+    case 'a10': {
+      cols = ['Matter #','Client','Disposition','Atty','Reserve'];
+      const it = attentionData().find(x => x.key==='ready');
+      rows = ((it && it.cases) || []).map(c => [c.matterNo||c.id, c.client, c.closing.dispositionType, c.attorney||'Unassigned', fM(c.insurance.reserveAmount)]);
+      break; }
+    case 'a11': {
+      cols = ['Matter #','Client','Type','Value','Days Open','Filed','Priority'];
+      rows = unassignedOpenCases().map(c => [c.matterNo||c.id, c.client, c.type, fM(c.value), daysOpen(c), c.filed||'—', c.priority||'—']);
+      break; }
   }
   return {tmpl, rows, cols};
 }
