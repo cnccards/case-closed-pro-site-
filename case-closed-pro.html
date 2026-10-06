@@ -8540,6 +8540,34 @@ function parseHealthCheckCSV(text){
 
 function openHealthCheckModal(){
   st({showHealthCheckModal:true, healthCheckError:'', healthCheckResult:null, healthCheckCsvText:'', csvFileName:''});
+  loadHealthChecks();
+}
+async function loadHealthChecks(){
+  if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) return;
+  st({hcListLoading:true});
+  try {
+    const d = await apiFetch('/api/admin/health-checks');
+    st({hcList:d.healthChecks||[], hcListLoading:false});
+  } catch (e) { st({hcList:[], hcListLoading:false}); }
+}
+async function openPastHealthCheck(id){
+  st({healthCheckLoading:true, healthCheckError:''});
+  try {
+    const d = await apiFetch('/api/admin/health-checks/'+encodeURIComponent(id));
+    st({healthCheckLoading:false, healthCheckResult:d});
+  } catch (e) { st({healthCheckLoading:false, healthCheckError:e.message}); }
+}
+async function refreshHealthCheck(id){
+  if (!confirm('Re-run this Health Check on the stored cases? Deadlines and quiet-time are recalculated as of today, and the saved report is replaced.')) return;
+  st({healthCheckLoading:true, healthCheckError:''});
+  try {
+    const d = await apiFetch('/api/admin/health-checks/'+encodeURIComponent(id)+'/refresh', {method:'POST'});
+    st({healthCheckLoading:false, healthCheckResult:d});
+  } catch (e) { st({healthCheckLoading:false, healthCheckError:e.message}); }
+}
+function backToHealthChecks(){
+  st({healthCheckResult:null, healthCheckError:''});
+  loadHealthChecks();
 }
 function closeHealthCheckModal(){
   st({showHealthCheckModal:false});
@@ -8630,7 +8658,7 @@ function hcReportV(r){
 
   // Internal-only boxes: never printed, so the prospect's PDF carries no billing details.
   h += '<div class="no-print">';
-  h += '<div class="alert-good" style="margin-bottom:10px;">Imported '+plural(r.imported,'matter')+' into a dedicated, isolated engagement org'+(r.failed?' ('+plural(r.failed,'row')+' skipped, see below)':'')+'.</div>';
+  h += '<div class="alert-good" style="margin-bottom:10px;">'+(r.savedAt?'Saved '+esc(String(r.savedAt).slice(0,10))+'. You can reopen this report any time from the Health Check window. ':'')+(r.saveFailed?'WARNING: the report could not be saved, so download the PDF now. ':'')+'Includes '+plural(r.imported,'matter')+' in a dedicated, isolated engagement org'+(r.failed?' ('+plural(r.failed,'row')+' skipped, see below)':'')+'.</div>';
   if (r.billing && r.billing.pricePaid != null) {
     h += '<div style="background:#FFF7ED;border:1px solid #FDBA74;border-radius:8px;padding:10px 14px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;color:#9A3412;">💳 '+fM(r.billing.pricePaid)+' paid · credit expires '+esc(r.billing.creditExpiresAt)+'</div><div style="font-size:11px;color:#9A3412;margin-top:2px;">Fully credited toward their first invoice if they sign by this date. Track it in your own calendar or CRM too.</div></div>';
   }
@@ -8720,6 +8748,21 @@ function hcReportV(r){
   return h;
 }
 
+function hcPastListV(){
+  const list = S.hcList || [];
+  if (S.hcListLoading && !list.length) return '<div style="font-size:12px;color:var(--dim);margin-bottom:14px;">Loading saved reports…</div>';
+  if (!list.length) return '';
+  let h = '<div style="margin-bottom:18px;"><div style="font-weight:700;font-size:13.5px;margin-bottom:6px;">Saved Health Checks</div>';
+  h += '<div style="border:1px solid #E5E7EB;border-radius:10px;max-height:220px;overflow-y:auto;">';
+  list.forEach(x=>{
+    const when = x.createdAt ? new Date(x.createdAt).toLocaleDateString() : '';
+    h += '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid #F1F5F9;font-size:12.5px;">';
+    h += '<div style="flex:1;min-width:0;"><div style="font-weight:600;">'+esc(x.prospectName)+'</div><div style="font-size:11px;color:var(--dim);">'+esc(when)+' · '+x.caseCount+' matters'+(x.pricePaid!=null?' · '+fM(x.pricePaid)+' paid':'')+(x.hasSavedReport?'':' · report not saved yet')+'</div></div>';
+    if (x.score!=null) h += '<div style="font-weight:700;color:'+(x.score>=75?'#15803D':x.score>=50?'#B45309':'#B91C1C')+';">'+x.score+' ('+esc(x.grade)+')</div>';
+    h += '<button class="btn btn-out" onclick="openPastHealthCheck(\''+x.id+'\')" '+(S.healthCheckLoading?'disabled':'')+'>'+(x.hasSavedReport?'Open':'Rebuild and open')+'</button></div>';
+  });
+  return h + '</div></div>';
+}
 function healthCheckModalV(){
   let h = '<div class="modal-bg" onclick="if(event.target===this && !S.healthCheckLoading)closeHealthCheckModal()">';
   h += '<div class="modal hc-modal" style="max-width:'+(S.healthCheckResult&&S.healthCheckResult.report?'940':'640')+'px;max-height:92vh;overflow-y:auto;">';
@@ -8736,8 +8779,9 @@ function healthCheckModalV(){
     }
     h += '<div class="no-print" style="font-size:10.5px;color:var(--dim);margin-top:12px;">This engagement lives in its own isolated organization ("'+esc(r.organization.name)+'"), separate from your sandbox and every real customer. Billing is handled the same way as everything else in this app — outside it, by your team.</div>';
     h += '</div>';
-    h += '<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;"><button class="btn btn-out" style="flex:1;justify-content:center;" onclick="hcPrint(true)">🖨 One-page summary (PDF)</button><button class="btn btn-out" style="flex:1;justify-content:center;" onclick="hcPrint(false)">🖨 Full report (PDF)</button><button class="btn btn-pri" style="flex:1;justify-content:center;" onclick="closeHealthCheckModal()">Done</button></div>';
+    h += '<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;"><button class="btn btn-out" style="flex:1;justify-content:center;" onclick="hcPrint(true)">🖨 One-page summary (PDF)</button><button class="btn btn-out" style="flex:1;justify-content:center;" onclick="hcPrint(false)">🖨 Full report (PDF)</button><button class="btn btn-out" style="flex:1;justify-content:center;" onclick="backToHealthChecks()">All saved reports</button><button class="btn btn-out" style="flex:1;justify-content:center;" onclick="refreshHealthCheck(\''+r.organization.id+'\')" '+(S.healthCheckLoading?'disabled':'')+'>↻ Refresh with today\'s dates</button><button class="btn btn-pri" style="flex:1;justify-content:center;" onclick="closeHealthCheckModal()">Done</button></div>';
   } else {
+    h += hcPastListV();
     h += '<p style="font-size:12.5px;color:var(--muted);margin-bottom:14px;">Runs the same portfolio risk-signal engine and Sentinel Watch AI brief a paying customer sees, against a prospect\'s real OPEN caseload — deliberately not closed cases with a known outcome. Creates its own isolated org; never touches the sandbox or any real customer\'s data.</p>';
     h += '<p style="font-size:11px;color:var(--dim);margin-bottom:14px;">Columns can be in any order. Only Client is required — Attorney, LastActivity, and TotalBilled can be left blank if the prospect doesn\'t have that data handy. SOL = statute of limitations date. LastActivity falls back to Filed if left blank.</p>';
     h += inp('Prospect / Company Name', window._hcProspectName||'', 'window._hcProspectName=this.value', 'text', 'placeholder="Acme Insurance Co"');
