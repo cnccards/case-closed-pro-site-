@@ -2102,6 +2102,49 @@ app.get('/api/org/features', async (req, res) => {
 
 // matter_no is NOT NULL + unique per org in the schema, so any route that
 // creates a matter without the caller supplying one must generate it.
+
+// ---------------------------------------------------------------
+// Bulk-import safety. Every request runs inside ONE Postgres
+// transaction (see withTenantScope), and Postgres aborts the whole
+// transaction after any single failed statement — so without these a
+// single bad row (a malformed date, "$1,200" in a number column) made
+// every later row fail AND turned the final COMMIT into a ROLLBACK,
+// i.e. the response said "imported N" while nothing was saved.
+//  - cleanNum / cleanDate turn common spreadsheet formatting into
+//    valid values, or throw a plain-English error for that row.
+//  - withRowSavepoint isolates each row so a failure only skips that
+//    row and the rest still commit.
+// ---------------------------------------------------------------
+function cleanNum(v, field) {
+  if (v === null || v === undefined || v === '') return 0;
+  if (typeof v === 'number') { if (!Number.isFinite(v)) throw new Error(`${field} must be a number`); return v; }
+  const n = Number(String(v).replace(/[$,\s]/g, ''));
+  if (!Number.isFinite(n)) throw new Error(`${field} "${v}" is not a number`);
+  return n;
+}
+function cleanDate(v, field) {
+  if (v === null || v === undefined || v === '') return null;
+  const str = String(v).trim();
+  const m = str.match(/^(\d{4})-(\d{2})-(\d{2})/) || null;
+  let d;
+  if (m) { d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])); if (d.getUTCMonth() !== +m[2] - 1) throw new Error(`${field} "${v}" is not a valid date (use YYYY-MM-DD)`); return `${m[1]}-${m[2]}-${m[3]}`; }
+  const us = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (us) { const yr = us[3].length === 2 ? 2000 + +us[3] : +us[3]; d = new Date(Date.UTC(yr, +us[1] - 1, +us[2])); if (d.getUTCMonth() !== +us[1] - 1) throw new Error(`${field} "${v}" is not a valid date`); return d.toISOString().slice(0, 10); }
+  throw new Error(`${field} "${v}" is not a valid date (use YYYY-MM-DD)`);
+}
+async function withRowSavepoint(db, fn) {
+  await db.query('SAVEPOINT import_row');
+  try {
+    const r = await fn();
+    await db.query('RELEASE SAVEPOINT import_row');
+    return r;
+  } catch (e) {
+    await db.query('ROLLBACK TO SAVEPOINT import_row').catch(() => {});
+    await db.query('RELEASE SAVEPOINT import_row').catch(() => {});
+    throw e;
+  }
+}
+
 async function generateMatterNo(db, orgId, prefix = 'CC') {
   const r = await db.query('SELECT COUNT(*)::int AS n FROM cases WHERE org_id = $1', [orgId]);
   return prefix + '-' + String(r.rows[0].n + 1).padStart(3, '0') + '-' + Math.random().toString(36).slice(2, 5).toUpperCase();
@@ -2161,12 +2204,12 @@ app.post('/api/cases/import', async (req, res) => {
       if (!b.client) throw new Error('client is required');
       const data = { ...defaultCaseData(), ...(b.data || {}) };
       if (b.settlementAmount != null) data.exposure.settlementAmount = b.settlementAmount;
-      const result = await req.db.query(
+      const result = await withRowSavepoint(req.db, () => req.db.query(
         `INSERT INTO cases (org_id, matter_no, client, type, status, litigation_stage, attorney, carrier, claim_no, reserve_amount, filed_date, deadline_date, value, data)
          VALUES ($1,$2,$3,$4,'Closed','Closed',$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
         [req.orgId, b.matterNo || ('HIST-' + String(i + 1).padStart(4, '0') + '-' + Date.now().toString(36).slice(-4)), b.client, b.type || 'Other', b.attorney || null, b.carrier || null,
-         b.claimNo || null, b.reserveAmount || 0, b.filed || null, b.deadline || null, b.value || 0, JSON.stringify(data)]
-      );
+         b.claimNo || null, cleanNum(b.reserveAmount, 'reserveAmount'), cleanDate(b.filed, 'filed'), cleanDate(b.deadline, 'deadline'), cleanNum(b.value, 'value'), JSON.stringify(data)]
+      ));
       created.push(rowToCase(result.rows[0]));
     } catch (e) {
       errors.push({ index: i, error: e.message });
@@ -2207,12 +2250,12 @@ app.post('/api/cases/import-open', requireOrgRole('admin'), async (req, res) => 
       if (!b.client) throw new Error('client is required');
       const matterNo = b.matterNo || ('IMP-' + String(i + 1).padStart(4, '0') + '-' + Date.now().toString(36).slice(-4));
       const data = { ...defaultCaseData(), ...(b.data || {}) };
-      const result = await req.db.query(
+      const result = await withRowSavepoint(req.db, () => req.db.query(
         `INSERT INTO cases (org_id, matter_no, client, type, status, litigation_stage, attorney, carrier, claim_no, reserve_amount, filed_date, deadline_date, value, data)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
         [req.orgId, matterNo, b.client, b.type || 'Other', b.status || 'Active', b.litigationStage || 'Pre-Suit',
-         b.attorney || null, b.carrier || null, b.claimNo || null, b.reserveAmount || 0, b.filed || null, b.deadline || null, b.value || 0, JSON.stringify(data)]
-      );
+         b.attorney || null, b.carrier || null, b.claimNo || null, cleanNum(b.reserveAmount, 'reserveAmount'), cleanDate(b.filed, 'filed'), cleanDate(b.deadline, 'deadline'), cleanNum(b.value, 'value'), JSON.stringify(data)]
+      ));
       created.push(rowToCase(result.rows[0]));
     } catch (e) {
       errors.push({ index: i, error: e.message });
@@ -2844,12 +2887,12 @@ app.post('/api/admin/sentinel-health-check', requirePlatformAdmin, async (req, r
           if (!b.client) throw new Error('client is required');
           const matterNo = b.matterNo || ('HC-' + String(i + 1).padStart(3, '0'));
           const data = { ...defaultCaseData(), ...(b.data || {}) };
-          await client.query(
+          await withRowSavepoint(client, () => client.query(
             `INSERT INTO cases (org_id, matter_no, client, type, status, litigation_stage, attorney, carrier, claim_no, reserve_amount, filed_date, deadline_date, value, data)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
             [org.id, matterNo, b.client, b.type || 'Other', b.status || 'Active', b.litigationStage || 'Pre-Suit',
-             b.attorney || null, b.carrier || null, b.claimNo || null, b.reserveAmount || 0, b.filed || null, b.deadline || null, b.value || 0, JSON.stringify(data)]
-          );
+             b.attorney || null, b.carrier || null, b.claimNo || null, cleanNum(b.reserveAmount, 'reserveAmount'), cleanDate(b.filed, 'filed'), cleanDate(b.deadline, 'deadline'), cleanNum(b.value, 'value'), JSON.stringify(data)]
+          ));
           imported++;
         } catch (e) {
           importErrors.push({ index: i, error: e.message });
