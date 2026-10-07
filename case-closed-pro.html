@@ -1020,6 +1020,24 @@ let CASES = [
 CASES.forEach(c => {
   c.orgId = 'demo-org';  // All demo cases belong to demo-org
 });
+/* Demo time-limit demands (dates are relative to today so the demo always shows live countdowns). */
+(function(){
+  const iso = n => { const d = new Date(Date.now() + n*864e5); return d.toLocaleDateString('en-CA',{timeZone:'America/New_York'}); };
+  const set = (id, jur, list) => { const c = CASES.find(x => x.id === id); if (!c) return; c.court = c.court || {}; c.court.jurisdiction = jur; c.timeLimitDemands = list; };
+  const bk = {'CC-012':'Chase Meidroth','CC-004':'James Ortega'};
+  Object.keys(bk).forEach(id => { const c = CASES.find(x => x.id === id); if (c) c.backupAttorney = bk[id]; });
+  set('CC-012','State - Georgia',[
+    {id:'TLD-demo1', receivedDate:iso(-26), deadline:iso(2), deadlineHM:'17:00', tz:'America/New_York', acks:[{by:'Maria Santos', role:'primary', at:new Date(Date.now()-5*36e5).toISOString()}], demandAmount:1000000, policyLimits:1000000, claimantFirm:'Harlan & Pike, LLP', method:'Certified mail', state:'Georgia', notes:'Policy-limits demand, pre-suit. Offer letter requires written acceptance and a release of the insured.', status:'open',
+     log:[{date:iso(-26), by:'Maria Santos', text:'Demand recorded. Received '+iso(-26)+', deadline '+iso(2)+' 5:00 PM.'}]}]);
+  set('CC-014','State - California',[
+    {id:'TLD-demo2', receivedDate:iso(-21), deadline:iso(9), deadlineTime:'', demandAmount:2000000, policyLimits:2000000, claimantFirm:'Brandt Injury Law', method:'Email', state:'California', notes:'Time-limited demand under CCP 999.', status:'open',
+     log:[{date:iso(-21), by:'Sarah Chen', text:'Demand recorded. Received '+iso(-21)+', deadline '+iso(9)+'.'}]}]);
+  set('CC-004','State - Florida',[
+    {id:'TLD-demo3', receivedDate:iso(-14), deadline:iso(31), deadlineTime:'', demandAmount:450000, policyLimits:450000, claimantFirm:'Ocean Coast Trial Group', method:'Certified mail', state:'Florida', notes:'', status:'open',
+     log:[{date:iso(-14), by:'Sarah Chen', text:'Demand recorded.'}]},
+    {id:'TLD-demo4', receivedDate:iso(-60), deadline:iso(-30), deadlineTime:'', demandAmount:300000, policyLimits:450000, claimantFirm:'Ocean Coast Trial Group', method:'Certified mail', state:'Florida', notes:'Earlier demand.', status:'accepted', respondedDate:iso(-34), responseNote:'Accepted in writing before the deadline; paid within limits.',
+     log:[{date:iso(-60), by:'Sarah Chen', text:'Demand recorded.'},{date:iso(-34), by:'Sarah Chen', text:'Response recorded on '+iso(-34)+': accepted.'}]}]);
+})();
 
 /* Assign cases to customers */
 [0, 1, 4].forEach(i => addCustomerToCase(CASES[i], 'carr1')); // Zurich
@@ -2295,8 +2313,9 @@ function myCasesV() {
     ? '<button onclick="st({isAuthenticated:false, attorneyId:null, attorneyName:null})" class="btn btn-out">Sign Out</button>'
     : '<button onclick="st({role:\'litigation\'})" class="btn btn-out">← Back to Dashboard</button>');
   h += '</div>';
+  h += demandDeskV({forceMine:true});
   h += attorneyTaskNotificationsV();
-  if (myCases.length) h += needsAttentionV(myCases, {personal:true});
+  if (myCases.length || myAttnCases().length) h += needsAttentionV(myAttnCases(), {personal:true});
   
   if (myCases.length === 0) {
     h += '<div class="card" style="text-align:center;padding:40px;color:var(--muted);">';
@@ -2531,6 +2550,7 @@ function render(){
   if (S.role === 'litigation') html += litigationDashV();
   else if (S.role === 'tpa') html += tpaV();
   else if (S.role === 'premium') html += premiumHubV();
+  else if (S.role === 'demands') html += demandWatchV();
   else if (S.role === 'partner') html += partV();
   else if (S.role === 'executive') html += execV();
   else if (S.role === 'scorecard') html += (S.scorecardDetail ? attorneyDetailV(S.scorecardDetail) : scorecardV());
@@ -2657,6 +2677,7 @@ function hdr(){
     { label:'', items:[
       ['litigation','Litigation'],
       ['attorney','My Cases'],
+      ['demands','🛡 Verdict Shield'],
       ['claims','Claims Desk'],
       ['activity','Activity Hub'],
       ['billing','Invoice Hub'],
@@ -2680,7 +2701,7 @@ function hdr(){
   if (S.currentUser?.platformAdmin) groups[groups.length-1].items.push(['admin','⚙ Admin']);
 
   const btn = ([r, l]) =>
-    '<button onclick="'+(r==='admin' ? 'goToAdmin()' : r==='scorecard' ? "st({role:'scorecard',caseId:null,scorecardDetail:null,showWelcome:false})" : "st({role:'"+r+"',caseId:null,showWelcome:false})")+'" class="role-tab'+(S.role===r?' on':'')+(r==='admin'?' admin-tab':'')+(r==='premium'?' premium-tab':'')+'">'+l+(r==='litigation'?attnBadgeV():'')+'</button>';
+    '<button onclick="'+(r==='admin' ? 'goToAdmin()' : r==='scorecard' ? "st({role:'scorecard',caseId:null,scorecardDetail:null,showWelcome:false})" : "st({role:'"+r+"',caseId:null,showWelcome:false})")+'" class="role-tab'+(S.role===r?' on':'')+(r==='admin'?' admin-tab':'')+(r==='premium'?' premium-tab':'')+'">'+l+(r==='litigation'?attnBadgeV():'')+(r==='demands'?demandBadgeV():'')+'</button>';
 
   const roleBtns = groups.map((g,gi) =>
     (gi>0 ? '<div class="nav-divider"></div>' : '') +
@@ -3215,6 +3236,613 @@ function caseLastActivity(c){
   (c.updates||[]).forEach(u => { const t = new Date(u.date).getTime(); if (!isNaN(t) && t > best) best = t; });
   return best;
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   TIME-LIMIT DEMANDS & STATE LAW WATCH
+   A time-limited policy-limits demand that nobody answers can turn a
+   defensible claim into an excess ("nuclear") verdict against the
+   insurer. Every demand is recorded on its case with a hard deadline,
+   stays OPEN until a person records the response, and an open demand
+   past its deadline is the loudest alert in the product. Dates are
+   day-granular (US Eastern) and never round in favor of more time.
+   ══════════════════════════════════════════════════════════════════════ */
+const DEMAND_WARN_DAYS = 14;
+const DEMAND_REVIEWED = 'October 7, 2026';
+const DEMAND_SRC = {
+  holt: ['Georgia Legislature overhauls Holt demand statute (Swift Currie / McGuire Woods summary)','https://www.mmmlaw.com/news-resources/georgia-legislature-overhauls-holt-demand-statute-in-effort-to-curb-failure-to-settle-litigation/'],
+  woodard: ['Georgia Supreme Court, Grange Mutual v. Woodard (2017) summary','https://www.nobadfaith.com/georgia-supreme-court-clarifies-pre-suit-offer-requirements/'],
+  sb68: ['Jones Day: Georgia enacts major tort reform (SB 68, 2025)','https://www.jonesday.com/en/insights/2025/04/georgia-enacts-major-tort-reform-legislation'],
+  clm: ['CLM: comparing reform efforts on time-limited demands','https://www.theclm.org/Magazine/articles/times-up-comparing-reform-efforts-on-time-limited-demands/3229'],
+  ca: ['Goldberg Segalla: California time-limited demand statute (CCP 999)','https://www.goldbergsegalla.com/news-and-knowledge/knowledge/california-time-limited-demand-statute-to-take-effect-jan-1-2023/']
+};
+/* Informational summaries only. Statutes change and courts interpret them; every entry must be
+   confirmed against the current statute text and with counsel before anyone relies on it. */
+const STATE_RULES = {
+  'Georgia': {
+    abbr:'GA', hot:true, cite:'O.C.G.A. § 9-11-67.1 (pre-suit offers, auto cases); Southern General v. Holt (1991)',
+    minDays:30, minFrom:'receipt of the offer', methods:'Certified mail or another method that provides proof of delivery',
+    headline:'Georgia is the highest-risk state for time-limit demands. A demand that meets the statute and goes unanswered can support a failure-to-settle claim for the full verdict, including amounts above limits.',
+    points:[
+      'Applies to pre-suit offers to settle certain motor-vehicle tort claims. Originally enacted 2013; amended in 2021 and again by SB 83, signed April 22, 2024.',
+      'Offer must be in writing and give at least 30 days from receipt to accept.',
+      'Core terms confirmed in practitioner summaries: time period for acceptance, amount, who is released, type of release, and claims released. The statute now lists seven enumerated material terms as the only material terms; read the statute text for the full list.',
+      'Since the 2024 amendment, an offer is treated as a bilateral contract (binding once accepted) instead of a unilateral one.',
+      'A safe harbor protects an insurer that accepts the material terms, provides any required sworn statement of insurance, and pays the lesser of the demand or the policy limits.',
+      'Background: under Holt, an insurer that unreasonably fails to settle within limits when it had the chance can owe the whole judgment. That common-law duty is why an unanswered demand is so dangerous.'
+    ],
+    verify:['Exact list of the seven material terms and any sworn-statement requirement','Payment deadline after acceptance (practitioner summaries mention 40 days; confirm in the statute)','Whether the demand arises from a motor-vehicle claim covered by the statute'],
+    nuclear:[
+      'SB 68 (2025) limits "anchoring" arguments about non-economic damages; effective immediately, including pending cases.',
+      'SB 68 lets defendants show actual amounts paid to satisfy medical bills ("phantom damages"); applies to claims arising on or after April 21, 2025.',
+      'SB 68 makes seat-belt use admissible on negligence, causation and fault; applies to claims arising on or after April 21, 2025.',
+      'SB 68 allows bifurcated trials (fault first, then damages) in bodily injury and wrongful death cases unless under $150,000; effective immediately, including pending cases.',
+      'SB 68 narrows negligent-security liability (claims arising on or after April 21, 2025) and stays discovery while a motion to dismiss is pending (up to 90 days).',
+      'Litigation-financing disclosure takes effect January 1, 2026.'],
+    src:['holt','woodard','sb68']
+  },
+  'California': {
+    abbr:'CA', cite:'Cal. Code Civ. Proc. §§ 999 to 999.5 (effective Jan. 1, 2023)',
+    minDays:30, minFrom:'transmission (33 days if sent by regular mail)', methods:'Email, fax or certified mail to the insurer\'s designated address, or to the assigned claims representative',
+    headline:'California regulates time-limited demands for auto, motor vehicle, homeowner and commercial premises liability policies.',
+    points:[
+      'Demand must be in writing, labeled as a time-limited demand, and give at least 30 days from transmission by email, fax or certified mail, or 33 days if mailed by regular mail.',
+      'Must include a clear offer within policy limits, complete release language, date and location of loss, claim number if available, a description of injuries, and reasonable proof such as medical records or bills.',
+      'Asking for more information or for an extension is not, by itself, a counteroffer or a rejection.',
+      'The insurer should accept in full or reject in writing with reasons before the deadline.',
+      'A demand that does not substantially comply cannot be treated as a reasonable settlement offer in a later bad-faith action. This protection does not apply to unrepresented claimants.'],
+    verify:['Which policy types and claim types are covered for this matter','The insurer\'s designated address registered with the California Department of Insurance'],
+    nuclear:[], src:['ca']
+  },
+  'Florida': {
+    abbr:'FL', cite:'Fla. Stat. § 624.155(4) (2023 tort reform)',
+    minDays:null, minFrom:'', methods:'',
+    headline:'Florida\'s 2023 reform created a 90-day safe harbor instead of a fixed demand period.',
+    points:[
+      'An insurer is protected from bad-faith liability if it tenders the lesser of the policy limits or the amount demanded within 90 days after receiving actual notice of a claim accompanied by sufficient evidence to support the amount of the claim.',
+      'The 90-day clock starts at notice of the claim, not at a demand deadline, so a short demand deadline can expire before the safe harbor does. Track both.'],
+    verify:['What counts as "actual notice" and "sufficient evidence" for this claim','Whether the safe harbor applies to this type of claim'],
+    nuclear:[], src:['clm'], safeHarborDays:90
+  },
+  'Missouri': {
+    abbr:'MO', cite:'R.S.Mo. § 537.058 (amended 2017 and 2021)',
+    minDays:90, minFrom:'the date the demand is received', methods:'Certified mail',
+    headline:'Missouri sets a long, formal window for time-limited demands.',
+    points:[
+      'A written demand must reference the statute, be sent by certified mail, and give at least 90 days from the date it is received.',
+      'It must include healthcare provider lists, a description of the injuries, and a HIPAA authorization.'],
+    verify:['Full list of required attachments and what happens if one is missing'],
+    nuclear:[], src:['clm']
+  },
+  'Texas': {
+    abbr:'TX', cite:'Common law (Stowers doctrine); no statutory demand period',
+    minDays:null, minFrom:'', methods:'',
+    headline:'Texas has no demand statute, but the Stowers doctrine can make an insurer liable for a judgment above limits.',
+    points:[
+      'Generally requires a demand within policy limits, on terms an ordinarily prudent insurer would accept, with a full release of the insured, for a claim within coverage.',
+      'There is no fixed number of days; courts look at whether the time given was reasonable.'],
+    verify:['Confirm current case law with Texas counsel; this entry is a general summary and is not sourced to a specific article'],
+    nuclear:[], src:[]
+  }
+};
+const DEMAND_STATE_NAMES = Object.keys(STATE_RULES);
+const DEMAND_METHODS = ['Certified mail','Email','Fax','Hand delivery','Overnight courier','Regular mail','Other'];
+
+function demandToday(){ return new Date().toLocaleDateString('en-CA', {timeZone:'America/New_York'}); }
+function demandDaysBetween(a, b){ const x = Date.parse(a+'T00:00:00Z'), y = Date.parse(b+'T00:00:00Z'); return (isFinite(x) && isFinite(y)) ? Math.round((y-x)/864e5) : null; }
+function demandEff(d){ return (d.extendedDeadline || d.deadline || '').slice(0,10); }
+function demandsOf(c){ return Array.isArray(c.timeLimitDemands) ? c.timeLimitDemands : []; }
+/* ── Hour-level deadlines. A demand has a date, a time of day and a time zone. If the letter gives no
+   time we assume 5:00 PM Eastern and say so on screen, so the clock is never kinder than the letter. ── */
+const DEMAND_TZ = [['America/New_York','ET'],['America/Chicago','CT'],['America/Denver','MT'],['America/Los_Angeles','PT']];
+function demandTzAbbr(tz){ const m = DEMAND_TZ.find(x => x[0] === tz); return m ? m[1] : 'ET'; }
+function demandTzOffsetMs(utcMs, tz){
+  const f = new Intl.DateTimeFormat('en-US', {timeZone:tz, hourCycle:'h23', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  const p = {}; f.formatToParts(new Date(utcMs)).forEach(x => { p[x.type] = x.value; });
+  return Date.UTC(+p.year, +p.month-1, +p.day, +p.hour, +p.minute, +p.second) - Math.floor(utcMs/1000)*1000;
+}
+function demandInstant(dateStr, hm, tz){
+  const dm = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr || ''), tm = /^(\d{1,2}):(\d{2})/.exec(hm || '');
+  if (!dm || !tm) return NaN;
+  const base = Date.UTC(+dm[1], +dm[2]-1, +dm[3], +tm[1], +tm[2]);
+  let t = base; for (let i = 0; i < 3; i++) t = base - demandTzOffsetMs(t, tz || 'America/New_York');
+  return t;
+}
+function demandHM(d){
+  if (d.deadlineHM && /^\d{1,2}:\d{2}$/.test(d.deadlineHM)) return {hm:d.deadlineHM, stated:true};
+  const m = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i.exec(d.deadlineTime || '');
+  if (m) { let h = (+m[1]) % 12; if (/pm/i.test(m[3])) h += 12; return {hm:String(h).padStart(2,'0')+':'+(m[2]||'00'), stated:true}; }
+  return {hm:'17:00', stated:false};
+}
+function demandDeadlineMs(d){ return demandInstant(demandEff(d), demandHM(d).hm, d.tz); }
+function demandHours(d){ const ms = demandDeadlineMs(d); return isFinite(ms) ? (ms - Date.now())/36e5 : null; }
+function demandTimeLabel(d){
+  const t = demandHM(d), [h, m] = t.hm.split(':').map(Number);
+  return ((h%12)||12)+':'+String(m).padStart(2,'0')+' '+(h>=12?'PM':'AM')+' '+demandTzAbbr(d.tz)+(t.stated ? '' : ' (no time in the letter, assumed)');
+}
+function demandCountdown(hrs){
+  const a = Math.abs(hrs), h = Math.floor(a), m = Math.floor((a-h)*60);
+  const txt = a >= 48 ? Math.floor(a/24)+' days '+Math.floor(a%24)+'h' : h+'h '+String(m).padStart(2,'0')+'m';
+  return hrs < 0 ? txt+' PAST DEADLINE' : txt+' left';
+}
+function demandLeftFromHours(hrs){ return hrs < 0 ? -Math.max(1, Math.ceil(-hrs/24)) : Math.floor(hrs/24); }
+/* Every OPEN demand across the open caseload, most urgent first. */
+function openDemandRows(scope){
+  const today = demandToday(), rows = [];
+  (scope || CASES).forEach(c => {
+    if (c.status === 'Closed') return;
+    demandsOf(c).forEach(d => {
+      if (!d || d.status !== 'open') return;
+      const hrs = demandHours(d);
+      if (hrs === null) return;
+      rows.push({c, d, left:demandLeftFromHours(hrs), hrs});
+    });
+  });
+  return rows.sort((a,b) => a.hrs - b.hrs);
+}
+function demandWhen(left){
+  return left < 0 ? Math.abs(left)+' day'+(Math.abs(left)===1?'':'s')+' PAST DEADLINE' : left === 0 ? 'DUE TODAY' : left === 1 ? 'Due tomorrow' : 'Due in '+left+' days';
+}
+function demandTone(left){
+  return left < 0 ? {bg:'#7F1D1D', fg:'#fff', bd:'#7F1D1D', label:'Past deadline'}
+       : left <= 3 ? {bg:'#FEE2E2', fg:'#991B1B', bd:'#FCA5A5', label:'Critical'}
+       : left <= DEMAND_WARN_DAYS ? {bg:'#FEF3C7', fg:'#92400E', bd:'#FCD34D', label:'Due soon'}
+       : {bg:'#ECFDF5', fg:'#065F46', bd:'#A7F3D0', label:'On track'};
+}
+function demandCounts(){
+  const rows = openDemandRows();
+  return {all:rows.length, late:rows.filter(r=>r.left<0).length, crit:rows.filter(r=>r.left>=0 && r.left<=3).length, soon:rows.filter(r=>r.left>3 && r.left<=DEMAND_WARN_DAYS).length, rows};
+}
+function demandStateOf(c){
+  const s = stateFromJurisdiction(c.court && c.court.jurisdiction);
+  return (s && STATE_RULES[s]) ? s : '';
+}
+/* Plain-language checks of a demand against its state's rule. Flags for a human, never a legal conclusion. */
+function demandChecks(d){
+  const out = [], r = STATE_RULES[d.state];
+  if (!r) { if (d.state) out.push({sev:'info', t:'No rule loaded for '+d.state+' yet. Use the deadline exactly as written in the demand letter and ask counsel.'}); return out; }
+  const given = (d.receivedDate && d.deadline) ? demandDaysBetween(d.receivedDate, d.deadline) : null;
+  let min = r.minDays;
+  if (r.abbr === 'CA' && d.method === 'Regular mail') min = 33;
+  if (min && given !== null && given < min) out.push({sev:'warn', t:'This demand gives '+given+' day'+(given===1?'':'s')+' from the date recorded as received. '+d.state+' sets a minimum of '+min+' days from '+r.minFrom+'. It may not meet the statute. Send it to counsel today, and do not assume the deadline can be ignored.'});
+  if (r.abbr === 'GA' && d.method && !['Certified mail','Overnight courier','Hand delivery'].includes(d.method)) out.push({sev:'warn', t:'Georgia expects delivery by certified mail or another method with proof of delivery. This one came by '+d.method.toLowerCase()+'. Ask counsel whether it qualifies, and still treat the deadline as live.'});
+  if (r.abbr === 'MO' && d.method && d.method !== 'Certified mail') out.push({sev:'warn', t:'Missouri requires certified mail. Ask counsel whether this demand qualifies.'});
+  if (r.safeHarborDays && d.receivedDate) {
+    const sh = new Date(Date.parse(d.receivedDate+'T00:00:00Z') + r.safeHarborDays*864e5).toISOString().slice(0,10);
+    out.push({sev:'info', t:'Florida safe harbor: tender within 90 days of actual notice of the claim with sufficient evidence. If notice was received '+d.receivedDate+', that is '+sh+' ('+demandWhen(demandDaysBetween(demandToday(), sh)).toLowerCase()+'). Confirm the notice date with counsel.'});
+  }
+  if (Number(d.policyLimits) > 0 && Number(d.demandAmount) > 0 && Number(d.demandAmount) <= Number(d.policyLimits)) out.push({sev:'info', t:'The demand is within policy limits, which is the situation in which an unreasonable refusal creates excess-judgment exposure.'});
+  return out;
+}
+function demandExposureFlag(c, d){
+  const lim = Number(d.policyLimits) || 0, likely = (c.exposure && c.exposure.likelyExposure) || c.value || 0;
+  return lim > 0 && likely > lim ? 'Likely exposure ('+fM(likely)+') is above the policy limit ('+fM(lim)+'). Excess-verdict risk is elevated.' : '';
+}
+
+/* ── mutations ── */
+function demandLog(d, text){ d.log = d.log || []; d.log.push({date:demandToday(), by:(S.currentUser && S.currentUser.name) || 'User', text}); }
+function demandCaseNote(c, text){ c.updates = c.updates || []; c.updates.push({date:demandToday(), author:(S.currentUser && S.currentUser.name) || 'User', type:'Time-Limit Demand', text}); }
+function demandVal(id){ const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+function addDemand(caseId){
+  const c = CASES.find(x => x.id === caseId); if (!c) return;
+  const recv = demandVal('dmRecv'), due = demandVal('dmDue');
+  if (!recv || !due) { st({dmError:'Enter both the date the demand was received and the deadline in the letter.'}); return; }
+  if (demandDaysBetween(recv, due) === null) { st({dmError:'Dates must be valid.'}); return; }
+  if (demandDaysBetween(recv, due) < 0) { st({dmError:'The deadline is before the received date. Check both dates.'}); return; }
+  const bk = demandVal('dmBackup') || (backupMissing(c) ? '' : c.backupAttorney);
+  if (!bk) { st({dmError:'Choose a backup claims person. Every time-limit demand needs a second person tracking it.'}); return; }
+  if (bk === (c.attorney||'').trim()) { st({dmError:'The backup has to be a different person from the primary attorney.'}); return; }
+  c.backupAttorney = bk;
+  const money = v => { const n = parseFloat(String(v||'').replace(/[^0-9.]/g,'')); return isNaN(n) ? 0 : n; };
+  const d = {id:'TLD-'+Date.now().toString(36), receivedDate:recv, deadline:due, deadlineHM:demandVal('dmTime'), tz:demandVal('dmTz') || 'America/New_York', demandAmount:money(demandVal('dmAmt')), policyLimits:money(demandVal('dmLim')),
+    claimantFirm:demandVal('dmFirm'), method:demandVal('dmMethod'), state:demandVal('dmState'), notes:demandVal('dmNotes'), status:'open', log:[]};
+  demandLog(d, 'Demand recorded. Received '+recv+', deadline '+due+' '+demandTimeLabel(d)+'.');
+  c.timeLimitDemands = demandsOf(c).concat([d]);
+  demandCaseNote(c, 'Time-limit demand logged. Deadline '+due+(d.demandAmount?', demand '+fM(d.demandAmount):'')+'.');
+  sc(c); st({dmError:'', dmPanel:null});
+}
+function demandFind(caseId, id){ const c = CASES.find(x => x.id === caseId); return c ? {c, d:demandsOf(c).find(x => x.id === id)} : {}; }
+function openDemandPanel(caseId, id, mode){ st({dmPanel:{caseId, id, mode}, dmError:''}); }
+function saveDemandPanel(){
+  const p = S.dmPanel; if (!p) return;
+  const {c, d} = demandFind(p.caseId, p.id); if (!c || !d) return;
+  const date = demandVal('dpDate') || demandToday(), note = demandVal('dpNote');
+  if (p.mode === 'response') {
+    const status = demandVal('dpStatus');
+    if (!['accepted','rejected','countered','withdrawn'].includes(status)) { st({dmError:'Choose how the demand was answered.'}); return; }
+    d.status = status; d.respondedDate = date; d.responseNote = note;
+    const lab = {accepted:'accepted', rejected:'rejected in writing', countered:'answered with a counter-offer', withdrawn:'withdrawn by the claimant'}[status];
+    demandLog(d, 'Response recorded on '+date+': '+lab+(note?'. '+note:'.')); demandCaseNote(c, 'Time-limit demand '+lab+' ('+date+').');
+  } else if (p.mode === 'extension') {
+    const nd = demandVal('dpNewDue');
+    if (!nd || demandDaysBetween(demandToday(), nd) === null) { st({dmError:'Enter the new deadline exactly as granted in writing.'}); return; }
+    d.extendedDeadline = nd; demandLog(d, 'Extension to '+nd+' recorded on '+date+(note?'. '+note:'.')); demandCaseNote(c, 'Time-limit demand extension to '+nd+' recorded. Confirm it is in writing.');
+  } else if (p.mode === 'clarify') {
+    demandLog(d, 'Request for clarification sent on '+date+(note?'. '+note:'.')+' The deadline still stands unless an extension is granted in writing.'); demandCaseNote(c, 'Clarification requested on time-limit demand ('+date+'). Deadline unchanged.');
+  }
+  sc(c); st({dmPanel:null, dmError:''});
+}
+function removeDemand(caseId, id){
+  if (!confirm('Delete this demand record? Only do this if it was entered by mistake. To close a real demand, record the response instead.')) return;
+  const c = CASES.find(x => x.id === caseId); if (!c) return;
+  c.timeLimitDemands = demandsOf(c).filter(x => x.id !== id); sc(c); render();
+}
+function reopenDemand(caseId, id){
+  const {c, d} = demandFind(caseId, id); if (!d) return;
+  d.status = 'open'; demandLog(d, 'Reopened.'); sc(c); render();
+}
+
+/* ── views ── */
+function demandPillV(left, hrs){
+  const t = demandTone(left);
+  const txt = (typeof hrs === 'number' && hrs < 72) ? demandCountdown(hrs) : demandWhen(left);
+  return '<span style="display:inline-block;background:'+t.bg+';color:'+t.fg+';border:1px solid '+t.bd+';border-radius:999px;padding:2px 10px;font-size:11px;font-weight:800;white-space:nowrap;">'+(left<0?'⏱ ':'')+txt+'</span>';
+}
+function demandPanelV(c, d){
+  const p = S.dmPanel; if (!p || p.id !== d.id || p.caseId !== c.id) return '';
+  let h = '<div style="margin-top:10px;background:#F8FAFC;border:1px solid #CBD5E1;border-radius:8px;padding:12px 14px;">';
+  if (p.mode === 'response') {
+    h += '<div style="font-weight:700;font-size:12.5px;margin-bottom:8px;">Record the response</div><div style="display:flex;gap:10px;flex-wrap:wrap;">';
+    h += '<div><label class="lbl">How was it answered?</label><select id="dpStatus" class="inp"><option value="">Choose…</option><option value="accepted">Accepted</option><option value="rejected">Rejected in writing</option><option value="countered">Counter-offer sent</option><option value="withdrawn">Withdrawn by claimant</option></select></div>';
+    h += '<div><label class="lbl">Date answered</label><input id="dpDate" type="date" class="inp" value="'+demandToday()+'"></div></div>';
+  } else if (p.mode === 'extension') {
+    h += '<div style="font-weight:700;font-size:12.5px;margin-bottom:8px;">Record an extension granted in writing</div><div style="display:flex;gap:10px;flex-wrap:wrap;"><div><label class="lbl">New deadline</label><input id="dpNewDue" type="date" class="inp"></div><div><label class="lbl">Date granted</label><input id="dpDate" type="date" class="inp" value="'+demandToday()+'"></div></div>';
+  } else {
+    h += '<div style="font-weight:700;font-size:12.5px;margin-bottom:4px;">Record a request for clarification</div><div style="font-size:11.5px;color:var(--muted);margin-bottom:8px;">Asking a question does not stop the clock. The deadline stays the same unless an extension is granted in writing.</div><div><label class="lbl">Date sent</label><input id="dpDate" type="date" class="inp" value="'+demandToday()+'"></div>';
+  }
+  h += '<div style="margin-top:8px;"><label class="lbl">Note (optional)</label><input id="dpNote" class="inp" placeholder="Who responded, how it was sent, where the letter is filed"></div>';
+  if (S.dmError) h += '<div class="alert-bad" style="margin-top:8px;font-size:12px;">'+esc(S.dmError)+'</div>';
+  h += '<div style="margin-top:10px;display:flex;gap:8px;"><button class="btn btn-pri" onclick="saveDemandPanel()">Save</button><button class="btn btn-out" onclick="st({dmPanel:null,dmError:\'\'})">Cancel</button></div></div>';
+  return h;
+}
+
+/* ── Backup claims person: every matter with an open time-limit demand or a statute of limitations
+   inside 120 days needs a second person tracking it, so the date is not riding on one person. ── */
+function caseNeedsBackup(c){
+  if (c.status === 'Closed') return false;
+  if (demandsOf(c).some(d => d && d.status === 'open')) return true;
+  const sol = c.keyDates && c.keyDates.sol ? Date.parse(String(c.keyDates.sol).slice(0,10)+'T00:00:00Z') : NaN;
+  return isFinite(sol) && sol <= Date.now() + 120*864e5;
+}
+function backupMissing(c){
+  const p = (c.attorney||'').trim().toLowerCase(), b = (c.backupAttorney||'').trim().toLowerCase();
+  return !b || b === 'unassigned' || b === p;
+}
+function myAttnCases(){
+  const me = S.attorneyName || (S.currentUser && S.currentUser.name);
+  return CASES.filter(c => c.attorney === me || (me && c.backupAttorney === me));
+}
+function setBackup(caseId, name){
+  const c = CASES.find(x => x.id === caseId); if (!c) return;
+  if (name && name === c.attorney) { alert('The backup has to be a different person from the primary attorney.'); render(); return; }
+  c.backupAttorney = name || '';
+  c.updates = c.updates || [];
+  c.updates.push({date:demandToday(), author:(S.currentUser && S.currentUser.name) || 'User', type:'Backup Claims Person', text: name ? 'Backup claims person set to '+name+' for time-limit and statute-of-limitations dates.' : 'Backup claims person removed.'});
+  sc(c); render();
+}
+function teamLineV(c){
+  const p = (c.attorney||'').trim(), miss = backupMissing(c);
+  return '<div style="font-size:12px;margin-top:4px;">Primary: <strong>'+esc(p && p !== 'Unassigned' ? p : 'none assigned')+'</strong> · Backup: '+
+    (miss ? '<strong style="color:#B91C1C;">none assigned</strong>' : '<strong>'+esc(c.backupAttorney)+'</strong>')+'</div>';
+}
+function backupPickerV(c){
+  const opts = ATTY.filter(a => a !== c.attorney);
+  const miss = backupMissing(c), need = caseNeedsBackup(c);
+  return '<div class="card" style="padding:12px 14px;margin-bottom:12px;border-left:4px solid '+(miss&&need?'#DC2626':'#15803D')+';">'+
+    '<div style="font-weight:700;font-size:13px;">Backup claims person</div>'+
+    '<div style="font-size:12px;color:var(--muted);margin:3px 0 8px;max-width:720px;line-height:1.55;">A second person tracks every time-limit demand and statute of limitations on this matter. They get the same alerts and emails as the primary, so the date is covered if one person is out or misses it.</div>'+
+    '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><span style="font-size:12px;">Primary: <strong>'+esc(c.attorney && c.attorney !== 'Unassigned' ? c.attorney : 'none assigned')+'</strong></span>'+
+    '<select class="inp" style="width:auto;min-width:200px;" onchange="setBackup(\''+esc(c.id)+'\',this.value)"><option value="">Choose a backup…</option>'+
+    opts.map(a => '<option'+(c.backupAttorney===a?' selected':'')+'>'+esc(a)+'</option>').join('')+'</select></div>'+
+    (miss&&need ? '<div style="font-size:12px;color:#B91C1C;font-weight:700;margin-top:8px;">⚠ No backup assigned. This matter has a time-critical date.</div>' : '')+'</div>';
+}
+
+/* ── Opt-in email alerts for time-limit demands and statute-of-limitations dates ── */
+async function loadDemandEmails(){
+  if (DEMO_MODE || !authToken || S.demandEmailsLoading || S.demandEmails) return;
+  S.demandEmailsLoading = true;
+  try { const r = await apiFetch('/api/org/demand-emails'); st({demandEmails:r, demandEmailsLoading:false}); }
+  catch (e) { st({demandEmailsLoading:false, demandEmails:{enabled:false, error:true}}); }
+}
+async function toggleDemandEmails(on){
+  try {
+    const r = await apiFetch('/api/org/demand-emails', {method:'POST', body: JSON.stringify({enabled:on})});
+    st({demandEmails: Object.assign({}, S.demandEmails, r)});
+  } catch (e) { alert('Could not change the setting: ' + e.message); }
+}
+function demandEmailsV(){
+  const canEdit = canSeeAssignAlert();
+  if (DEMO_MODE) return '<div class="card" style="padding:12px 16px;margin-bottom:14px;font-size:12.5px;color:var(--muted);">✉ <strong style="color:var(--ink);">Email alerts are opt-in.</strong> An owner or admin turns them on here. Once on, owners and admins get a daily email for every time-limit demand and statute of limitations that is close or late, and each matter\'s primary and backup claims person get theirs too.</div>';
+  const de = S.demandEmails;
+  if (!de) { loadDemandEmails(); return ''; }
+  const on = de.enabled === true;
+  let h = '<div class="card" style="padding:12px 16px;margin-bottom:14px;border-left:4px solid '+(on?'#15803D':'#B45309')+';"><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:space-between;"><div style="flex:1;min-width:260px;">';
+  h += '<div style="font-weight:700;font-size:13px;">✉ Email alerts for time-limit demands and statutes of limitations: '+(on?'<span style="color:#15803D;">On</span>':'<span style="color:#B45309;">Off</span>')+'</div>';
+  h += '<div style="font-size:12px;color:var(--muted);margin-top:3px;line-height:1.55;">'+(on
+    ? 'Owners and admins get a daily email for every demand and statute that is close or late. Each matter\'s primary and backup claims person get theirs too. These ignore the general alert frequency setting.'
+    : 'Off. You still see every alert inside the app. Turn this on to also get emails, including the backup person on each matter.')+(de.emailConfigured===false?' <strong style="color:#B91C1C;">Email is not configured on this server yet, so nothing will send.</strong>':'')+'</div></div>';
+  if (canEdit) h += '<button class="btn '+(on?'btn-out':'btn-pri')+'" onclick="toggleDemandEmails('+(!on)+')">'+(on?'Turn off emails':'Turn on emails')+'</button>';
+  else h += '<span style="font-size:11.5px;color:var(--dim);">An owner or admin can change this.</span>';
+  return h + '</div></div>';
+}
+
+
+/* ── Acknowledgment: each person on the matter confirms "I have seen this demand". The matter is fully
+   acknowledged when the primary AND the backup have both done it. ── */
+function demandAcks(d){ return Array.isArray(d.acks) ? d.acks : []; }
+function demandAckedBy(d, name){ return !!name && demandAcks(d).some(a => a.by === name); }
+function demandFullyAcked(c, d){
+  const prim = (c.attorney||'').trim(), bk = (c.backupAttorney||'').trim();
+  const needP = prim && prim !== 'Unassigned', needB = !backupMissing(c);
+  if (!needP && !needB) return demandAcks(d).length > 0;
+  return (!needP || demandAckedBy(d, prim)) && (!needB || demandAckedBy(d, bk));
+}
+function ackDemand(caseId, id){
+  const {c, d} = demandFind(caseId, id); if (!c || !d) return;
+  const me = demandMe() || 'User';
+  if (demandAckedBy(d, me)) return;
+  const role = c.attorney === me ? 'primary' : (c.backupAttorney === me ? 'backup' : 'other');
+  d.acks = demandAcks(d).concat([{by:me, role, byId:(S.currentUser && S.currentUser.id) || null, at:new Date().toISOString()}]);
+  demandLog(d, 'Acknowledged by '+me+(role==='other'?'':' ('+role+')')+'.');
+  demandCaseNote(c, 'Time-limit demand acknowledged by '+me+'.');
+  sc(c); render();
+}
+function demandAckLineV(c, d){
+  const prim = (c.attorney||'').trim(), bk = (c.backupAttorney||'').trim(), me = demandMe();
+  const chip = (label, name) => {
+    const a = demandAcks(d).find(x => x.by === name);
+    return a ? '<span style="color:#166534;font-weight:700;">✔ '+label+' '+esc(name)+' <span style="font-weight:500;color:var(--dim);">'+esc(new Date(a.at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:'America/New_York'}))+' ET</span></span>'
+             : '<span style="color:#B91C1C;font-weight:700;">✘ '+label+' '+esc(name)+' has not acknowledged</span>';
+  };
+  const parts = [];
+  if (prim && prim !== 'Unassigned') parts.push(chip('Primary', prim));
+  if (!backupMissing(c)) parts.push(chip('Backup', bk));
+  let h = '<div style="font-size:12px;margin-top:5px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">'+(parts.join('') ? parts.join('<span style="color:var(--dim);">·</span>') : '<span style="color:#B91C1C;font-weight:700;">Nobody is assigned to acknowledge this</span>');
+  if (me && !demandAckedBy(d, me)) h += '<button class="btn btn-out" style="padding:3px 10px;font-size:11.5px;border-color:#15803D;color:#166534;font-weight:800;" onclick="ackDemand(\''+esc(c.id)+'\',\''+esc(d.id)+'\')">✔ I have seen this</button>';
+  return h + '</div>';
+}
+
+/* ── Escalation ladder ──
+   If a demand is not acknowledged by 72 hours out, a manager is notified; at 48 hours a director; at 24 hours
+   the VP / Chief Claims. Only the first rung is skipped when everyone has acknowledged. Responding to the demand
+   ends the ladder. Rungs, hours and people are set by an owner or admin. Emails go out only when email alerts are on. */
+const DEMAND_LADDER_DEFAULT = [
+  {hours:72, label:'Manager', userIds:[], roles:['admin','owner'], unlessAcked:true},
+  {hours:48, label:'Director', userIds:[], roles:['admin','owner'], unlessAcked:false},
+  {hours:24, label:'VP / Chief Claims', userIds:[], roles:['owner'], unlessAcked:false}];
+function demandLadder(){ return (S.demandEmails && Array.isArray(S.demandEmails.ladder) && S.demandEmails.ladder.length) ? S.demandEmails.ladder : DEMAND_LADDER_DEFAULT; }
+function demandRungWho(rung){
+  const people = (S.demandEmails && S.demandEmails.people) || [];
+  const picked = (rung.userIds||[]).map(id => (people.find(x => x.id === id)||{}).name).filter(Boolean);
+  if (picked.length) return picked.join(', ');
+  return (rung.roles||[]).map(r => r === 'owner' ? 'owners' : 'admins').join(' and ');
+}
+function demandLadderStatus(c, d){
+  const hrs = demandHours(d); if (hrs === null) return [];
+  const sent = (S.demandEmails && S.demandEmails.sent && S.demandEmails.sent[d.id]) || {};
+  const acked = demandFullyAcked(c, d);
+  const rungs = demandLadder().slice().sort((a,b) => b.hours - a.hours);
+  return rungs.map(r => {
+    const key = String(r.hours), reached = hrs <= r.hours, rec = sent[key];
+    let state = 'upcoming', note = 'in '+Math.max(0, Math.ceil(hrs - r.hours))+'h';
+    if (reached) {
+      if (rec && rec.skipped) { state = 'skipped'; note = rec.merged ? 'covered by the next notice' : 'skipped, everyone had acknowledged'; }
+      else if (rec) { state = 'notified'; note = 'notified '+new Date(rec.at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:'America/New_York'})+' ET'; }
+      else if (r.unlessAcked && acked) { state = 'skipped'; note = 'not needed, everyone has acknowledged'; }
+      else { state = 'due'; note = (S.demandEmails && S.demandEmails.enabled) ? 'notifying' : 'would notify (email alerts are off)'; }
+    }
+    return {rung:r, state, note};
+  });
+}
+function demandLadderV(c, d){
+  const st2 = demandLadderStatus(c, d); if (!st2.length) return '';
+  const col = {upcoming:'#64748B', notified:'#991B1B', due:'#B45309', skipped:'#166534'}, ic = {upcoming:'○', notified:'●', due:'◐', skipped:'✔'};
+  return '<div style="margin-top:8px;padding:8px 10px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;font-size:11.5px;"><div style="font-weight:800;margin-bottom:4px;color:var(--ink);">Escalation</div>'+
+    st2.map(x => '<div style="color:'+col[x.state]+';margin-top:2px;">'+ic[x.state]+' <strong>'+x.rung.hours+' hours: '+esc(x.rung.label)+'</strong> ('+esc(demandRungWho(x.rung))+') — '+esc(x.note)+'</div>').join('')+'</div>';
+}
+
+/* Ladder editor (owner / admin, real accounts). */
+function ladderEditStart(){ st({ladderEdit: JSON.parse(JSON.stringify(demandLadder())), ladderMsg:''}); }
+function ladderSet(i, field, val){ const L = S.ladderEdit; if (!L) return; L[i][field] = field === 'hours' ? Math.max(1, Math.min(720, parseInt(val,10)||1)) : (field === 'unlessAcked' ? !!val : val); }
+function ladderToggle(i, id){ const L = S.ladderEdit; if (!L) return; const u = L[i].userIds = L[i].userIds || []; const k = u.indexOf(id); if (k >= 0) u.splice(k,1); else u.push(id); render(); }
+async function saveLadder(){
+  const L = S.ladderEdit; if (!L) return;
+  const hs = L.map(x => x.hours); if (new Set(hs).size !== hs.length) { st({ladderMsg:'Each step needs a different number of hours.'}); return; }
+  try {
+    const r = await apiFetch('/api/org/demand-ladder', {method:'POST', body: JSON.stringify({ladder:L})});
+    st({demandEmails: Object.assign({}, S.demandEmails, {ladder:r.ladder}), ladderEdit:null, ladderMsg:''});
+  } catch (e) { st({ladderMsg:'Could not save: '+e.message}); }
+}
+function demandLadderCardV(){
+  const de = S.demandEmails, canEdit = canSeeAssignAlert() && !DEMO_MODE && authToken;
+  const L = S.ladderEdit;
+  let h = '<div class="card" style="padding:12px 16px;margin-bottom:14px;"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;"><div style="font-weight:700;font-size:13px;">Escalation ladder</div>';
+  if (canEdit && !L && de) h += '<button class="btn btn-out" onclick="ladderEditStart()">Edit the ladder</button>';
+  h += '</div><div style="font-size:12px;color:var(--muted);margin:3px 0 8px;line-height:1.55;max-width:760px;">When a demand gets close, the right people are told automatically. Everyone on the matter (primary and backup) is included at every step. Responding to the demand ends the ladder. The first step is skipped when both the primary and backup have acknowledged.</div>';
+  if (!L) {
+    h += demandLadder().slice().sort((a,b)=>b.hours-a.hours).map(r => '<div style="font-size:12.5px;margin-top:3px;"><strong>'+r.hours+' hours left: '+esc(r.label)+'</strong> — '+esc(demandRungWho(r))+(r.unlessAcked?' <span style="color:var(--dim);">(only if not acknowledged)</span>':'')+'</div>').join('');
+  } else {
+    const people = (de && de.people) || [];
+    L.forEach((r, i) => {
+      h += '<div style="border:1px solid #E2E8F0;border-radius:8px;padding:10px;margin-top:8px;"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">'+
+        '<div><label class="lbl">Hours before deadline</label><input class="inp" type="number" min="1" max="720" style="width:110px;" value="'+r.hours+'" onchange="ladderSet('+i+',\'hours\',this.value)"></div>'+
+        '<div><label class="lbl">Who this is</label><input class="inp" style="width:200px;" value="'+esc(r.label)+'" onchange="ladderSet('+i+',\'label\',this.value)"></div>'+
+        '<label style="font-size:12px;display:flex;gap:5px;align-items:center;"><input type="checkbox" '+(r.unlessAcked?'checked':'')+' onchange="ladderSet('+i+',\'unlessAcked\',this.checked)"> Skip if everyone acknowledged</label></div>'+
+        '<div style="font-size:11.5px;color:var(--muted);margin:8px 0 3px;">People to notify (leave empty to use all '+((r.roles||[]).map(x=>x==='owner'?'owners':'admins').join(' and ')||'admins and owners')+'):</div><div style="display:flex;gap:10px;flex-wrap:wrap;">'+
+        (people.length ? people.map(u => '<label style="font-size:12px;display:flex;gap:4px;align-items:center;"><input type="checkbox" '+((r.userIds||[]).includes(u.id)?'checked':'')+' onchange="ladderToggle('+i+',\''+esc(u.id)+'\')"> '+esc(u.name||'Unnamed')+' <span style="color:var(--dim);">('+esc(u.role)+')</span></label>').join('') : '<span style="font-size:12px;color:var(--dim);">No team members loaded.</span>')+'</div></div>';
+    });
+    if (S.ladderMsg) h += '<div class="alert-bad" style="margin-top:8px;font-size:12px;">'+esc(S.ladderMsg)+'</div>';
+    h += '<div style="margin-top:10px;display:flex;gap:8px;"><button class="btn btn-pri" onclick="saveLadder()">Save the ladder</button><button class="btn btn-out" onclick="st({ladderEdit:null,ladderMsg:\'\'})">Cancel</button></div>';
+  }
+  return h + '</div>';
+}
+
+function demandCardV(c, d, showCase){
+  const open = d.status === 'open', hrs = open ? demandHours(d) : null, left = open && hrs !== null ? demandLeftFromHours(hrs) : null;
+  const tone = open ? demandTone(left) : null;
+  let h = '<div class="card" style="padding:14px 16px;margin-bottom:10px;border-left:5px solid '+(open?tone.bd:'#94A3B8')+';'+(open&&left<0?'background:#FFF1F2;':'')+'">';
+  h += '<div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;"><div style="flex:1;min-width:240px;">';
+  if (showCase) h += '<div style="font-weight:800;font-size:14px;cursor:pointer;" onclick="stCase(\''+esc(c.id)+'\',\'demands\')">'+esc(c.client)+' <span style="font-weight:500;color:var(--dim);font-size:11.5px;">'+esc(c.matterNo||c.id)+' · '+esc(c.attorney||'No attorney assigned')+'</span></div>';
+  h += '<div style="font-size:12.5px;margin-top:'+(showCase?4:0)+'px;"><strong>Deadline '+esc(demandEff(d))+' '+esc(demandTimeLabel(d))+'</strong>'+(d.extendedDeadline?' <span style="color:var(--dim);">(extended from '+esc(d.deadline)+')</span>':'')+' · received '+esc(d.receivedDate||'?')+(d.method?' by '+esc(d.method.toLowerCase()):'')+(d.state?' · '+esc(d.state):'')+'</div>';
+  h += teamLineV(c);
+  h += '<div style="font-size:12px;color:var(--muted);margin-top:3px;">'+(d.demandAmount?'Demand '+fM(d.demandAmount):'Amount not recorded')+(d.policyLimits?' · limits '+fM(d.policyLimits):'')+(d.claimantFirm?' · '+esc(d.claimantFirm):'')+'</div></div>';
+  h += '<div style="text-align:right;">'+(open ? demandPillV(left, hrs) : '<span class="tag tag-info" style="text-transform:capitalize;">'+esc(d.status)+(d.respondedDate?' · '+esc(d.respondedDate):'')+'</span>')+'</div></div>';
+  if (open) {
+    h += demandAckLineV(c, d); h += demandLadderV(c, d);
+    const flag = demandExposureFlag(c, d); if (flag) h += '<div style="font-size:12px;color:#991B1B;margin-top:8px;font-weight:600;">⚠ '+esc(flag)+'</div>';
+    demandChecks(d).forEach(k => { h += '<div style="font-size:12px;margin-top:6px;padding:7px 10px;border-radius:6px;background:'+(k.sev==='warn'?'#FFFBEB':'#F1F5F9')+';color:'+(k.sev==='warn'?'#92400E':'var(--muted)')+';">'+(k.sev==='warn'?'⚠ ':'ℹ ')+esc(k.t)+'</div>'; });
+    h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;"><button class="btn btn-pri" onclick="openDemandPanel(\''+esc(c.id)+'\',\''+esc(d.id)+'\',\'response\')">Record response</button><button class="btn btn-out" onclick="openDemandPanel(\''+esc(c.id)+'\',\''+esc(d.id)+'\',\'extension\')">Extension granted</button><button class="btn btn-out" onclick="openDemandPanel(\''+esc(c.id)+'\',\''+esc(d.id)+'\',\'clarify\')">Clarification sent</button><button class="btn btn-out" onclick="removeDemand(\''+esc(c.id)+'\',\''+esc(d.id)+'\')">Delete</button></div>';
+  } else {
+    h += '<div style="font-size:12px;color:var(--muted);margin-top:6px;">'+esc(d.responseNote||'')+'</div><div style="margin-top:6px;"><span class="muted-link" style="cursor:pointer;" onclick="reopenDemand(\''+esc(c.id)+'\',\''+esc(d.id)+'\')">Reopen</span></div>';
+  }
+  h += demandPanelV(c, d);
+  if ((d.log||[]).length) h += '<details style="margin-top:8px;"><summary style="font-size:11.5px;color:var(--dim);cursor:pointer;">History ('+d.log.length+')</summary>'+d.log.map(l=>'<div style="font-size:11.5px;color:var(--muted);margin-top:3px;">'+esc(l.date)+' · '+esc(l.by)+': '+esc(l.text)+'</div>').join('')+'</details>';
+  return h + '</div>';
+}
+function stateRuleCardV(state, compact){
+  const r = STATE_RULES[state];
+  if (!r) return '<div class="card" style="padding:14px 16px;font-size:12.5px;color:var(--muted);">No rule is loaded for '+(state?esc(state):'this state')+' yet. Use the deadline written in the demand letter and ask counsel. Tell us which states you need next.</div>';
+  let h = '<div class="card" style="padding:16px 18px;border-top:3px solid '+(r.hot?'#B91C1C':'#1D4ED8')+';">';
+  h += '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;"><div class="serif" style="font-size:18px;font-weight:700;">'+esc(state)+(r.hot?' <span style="font-size:11px;font-weight:800;color:#B91C1C;">HIGH RISK</span>':'')+'</div><div style="font-size:11.5px;color:var(--dim);">'+esc(r.cite)+'</div></div>';
+  h += '<div style="font-size:12.5px;line-height:1.6;margin:8px 0;">'+esc(r.headline)+'</div>';
+  if (r.minDays) h += '<div style="font-size:12.5px;margin-bottom:6px;"><strong>Minimum time to respond:</strong> '+r.minDays+' days from '+esc(r.minFrom)+'</div>';
+  if (r.methods) h += '<div style="font-size:12.5px;margin-bottom:6px;"><strong>Delivery:</strong> '+esc(r.methods)+'</div>';
+  h += '<ul style="margin:6px 0 8px 18px;padding:0;font-size:12.5px;line-height:1.6;">'+r.points.map(x=>'<li style="margin-bottom:3px;">'+esc(x)+'</li>').join('')+'</ul>';
+  if (!compact && r.nuclear && r.nuclear.length) h += '<div style="font-weight:700;font-size:12.5px;margin:10px 0 4px;">Other rules that drive verdict size</div><ul style="margin:0 0 8px 18px;padding:0;font-size:12.5px;line-height:1.6;">'+r.nuclear.map(x=>'<li style="margin-bottom:3px;">'+esc(x)+'</li>').join('')+'</ul>';
+  if (r.verify && r.verify.length) h += '<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:9px 12px;font-size:12px;color:#92400E;"><strong>Confirm before relying on this:</strong> '+r.verify.map(esc).join('; ')+'.</div>';
+  if (r.src && r.src.length) h += '<div style="font-size:11px;color:var(--dim);margin-top:8px;">Sources: '+r.src.map(k=>'<a href="'+DEMAND_SRC[k][1]+'" target="_blank" rel="noopener" style="color:var(--pri2);">'+esc(DEMAND_SRC[k][0])+'</a>').join(' · ')+'</div>';
+  return h + '</div>';
+}
+function demandDisclaimerV(){
+  return '<div style="font-size:11px;color:var(--dim);margin-top:10px;max-width:880px;line-height:1.5;">Informational summaries last reviewed '+DEMAND_REVIEWED+'. Statutes change and courts interpret them. This is not legal advice. Confirm every rule against the current statute and with counsel, and always work from the deadline written in the demand letter itself.</div>';
+}
+function tabDemands(c){
+  let h = '<div class="section-band">Time-Limit Demands</div>';
+  const list = demandsOf(c), openN = list.filter(d => d.status === 'open').length;
+  h += '<div style="font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:12px;max-width:760px;">Log every time-limited demand the day it arrives. It stays open, and the loudest alert in the system, until you record how it was answered.</div>';
+  h += backupPickerV(c);
+  if (!openN && list.length) h += '<div class="alert-good" style="margin-bottom:12px;">No open demands on this matter.</div>';
+  list.slice().sort((a,b) => (a.status==='open'?0:1)-(b.status==='open'?0:1) || demandEff(a).localeCompare(demandEff(b))).forEach(d => { h += demandCardV(c, d, false); });
+  const stSel = demandStateOf(c);
+  h += '<div class="card" style="padding:14px 16px;margin-top:12px;"><div style="font-weight:700;font-size:13.5px;margin-bottom:8px;">Log a new demand</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;">';
+  h += '<div><label class="lbl">Date received</label><input id="dmRecv" type="date" class="inp" value="'+demandToday()+'"></div>';
+  h += '<div><label class="lbl">Deadline in the letter</label><input id="dmDue" type="date" class="inp"></div>';
+  h += '<div><label class="lbl">Time in the letter</label><input id="dmTime" type="time" class="inp"><div style="font-size:10.5px;color:var(--dim);margin-top:2px;">Blank = assumed 5:00 PM</div></div>';
+  h += '<div><label class="lbl">Time zone</label><select id="dmTz" class="inp">'+DEMAND_TZ.map(z=>'<option value="'+z[0]+'">'+z[1]+'</option>').join('')+'</select></div>';
+  h += '<div><label class="lbl">Demand amount</label><input id="dmAmt" class="inp" placeholder="1,000,000"></div>';
+  h += '<div><label class="lbl">Policy limits</label><input id="dmLim" class="inp" placeholder="1,000,000"></div>';
+  h += '<div><label class="lbl">Claimant\'s counsel</label><input id="dmFirm" class="inp"></div>';
+  h += '<div><label class="lbl">Delivered by</label><select id="dmMethod" class="inp">'+DEMAND_METHODS.map(m=>'<option>'+m+'</option>').join('')+'</select></div>';
+  h += '<div><label class="lbl">State rules</label><select id="dmState" class="inp"><option value="">Other / not loaded</option>'+DEMAND_STATE_NAMES.map(s=>'<option'+(s===stSel?' selected':'')+'>'+s+'</option>').join('')+'</select></div></div>';
+  h += '<div style="margin-top:10px;max-width:340px;"><label class="lbl">Backup claims person (required)</label><select id="dmBackup" class="inp"><option value="">Choose a backup…</option>'+ATTY.filter(a => a !== c.attorney).map(a=>'<option'+(c.backupAttorney===a?' selected':'')+'>'+esc(a)+'</option>').join('')+'</select></div>';
+  h += '<div style="margin-top:10px;"><label class="lbl">Notes</label><input id="dmNotes" class="inp" placeholder="Where the letter is saved, who was told"></div>';
+  if (S.dmError && !S.dmPanel) h += '<div class="alert-bad" style="margin-top:8px;font-size:12px;">'+esc(S.dmError)+'</div>';
+  h += '<div style="margin-top:10px;"><button class="btn btn-pri" onclick="addDemand(\''+esc(c.id)+'\')">Log demand and start the clock</button></div></div>';
+  if (stSel) h += '<div style="margin-top:14px;">'+stateRuleCardV(stSel, true)+'</div>';
+  return h + demandDisclaimerV();
+}
+
+/* ── Verdict Shield desk: the front-and-center panel on the main page and My Cases. Built for the
+   adjuster who moves these forward: your demands first, days left, and the next click right there. ── */
+function demandMe(){ return S.attorneyName || (S.currentUser && S.currentUser.name) || ''; }
+function demandIsMine(c){ const me = demandMe(); return !!me && (c.attorney === me || c.backupAttorney === me); }
+function demandDeskScope(forceMine){
+  if (forceMine) return 'mine';
+  if (S.demandScope) return S.demandScope;
+  return (S.currentUser && S.currentUser.role === 'member' && !S.currentUser.platformAdmin) ? 'mine' : 'all';
+}
+function demandDeskLog(){
+  const el = document.getElementById('dkLogCase'); if (!el || !el.value) { alert('Choose the matter the demand is on.'); return; }
+  stCase(el.value, 'demands');
+}
+function demandDeskRowV(r){
+  const c = r.c, d = r.d, tone = demandTone(r.left), me = demandMe();
+  const role = c.attorney === me ? 'You are the primary' : (c.backupAttorney === me ? 'You are the backup' : '');
+  const mid = esc(c.id), did = esc(d.id);
+  let h = '<div class="card" style="padding:11px 14px;margin-bottom:8px;border-left:5px solid '+tone.bd+';'+(r.left<0?'background:#FFF1F2;':'')+'">';
+  h += '<div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;"><div style="flex:1;min-width:230px;">';
+  h += '<div style="font-weight:800;font-size:14px;cursor:pointer;" onclick="stCase(\''+mid+'\',\'demands\')">'+esc(c.client)+' <span style="font-weight:500;color:var(--dim);font-size:11.5px;">'+esc(c.matterNo||c.id)+(d.state?' · '+esc(d.state):'')+'</span></div>';
+  h += '<div style="font-size:12.5px;margin-top:2px;"><strong>Respond by '+esc(demandEff(d))+' '+esc(demandTimeLabel(d))+'</strong>'+(d.demandAmount?' · demand '+fM(d.demandAmount):'')+(d.policyLimits?' · limits '+fM(d.policyLimits):'')+'</div>';
+  h += teamLineV(c);
+  if (role) h += '<div style="font-size:11.5px;color:var(--pri2);font-weight:700;margin-top:2px;">'+role+'</div>';
+  h += demandAckLineV(c, d);
+  { const ls = demandLadderStatus(c, d);
+    const nx = ls.find(x => x.state === 'upcoming');
+    const last = ls.filter(x => x.state === 'notified' || x.state === 'due').pop();
+    if (last) h += '<div style="font-size:11.5px;color:#991B1B;font-weight:700;margin-top:3px;">Escalation reached: '+esc(last.rung.label)+(last.state==='notified'?' notified':'')+'</div>';
+    if (nx) h += '<div style="font-size:11.5px;color:var(--dim);margin-top:2px;">Next: '+esc(nx.rung.label)+' is notified in '+nx.note.replace('in ','')+(nx.rung.unlessAcked?' unless acknowledged':'')+'</div>'; }
+  h += '</div><div style="text-align:right;">'+demandPillV(r.left, r.hrs)+'</div></div>';
+  h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">'+
+    '<button class="btn btn-pri" onclick="openDemandPanel(\''+mid+'\',\''+did+'\',\'response\')">Record response</button>'+
+    '<button class="btn btn-out" onclick="openDemandPanel(\''+mid+'\',\''+did+'\',\'extension\')">Extension granted</button>'+
+    '<button class="btn btn-out" onclick="openDemandPanel(\''+mid+'\',\''+did+'\',\'clarify\')">Clarification sent</button>'+
+    '<button class="btn btn-out" onclick="stCase(\''+mid+'\',\'demands\')">Open matter</button></div>';
+  h += demandPanelV(c, d);
+  return h + '</div>';
+}
+function demandDeskV(opts){
+  opts = opts || {};
+  loadDemandEmails();
+  const scope = demandDeskScope(opts.forceMine);
+  const all = demandCounts().rows;
+  const rows = scope === 'mine' ? all.filter(r => demandIsMine(r.c)) : all;
+  const late = rows.filter(r => r.left < 0).length, crit = rows.filter(r => r.left >= 0 && r.left <= 3).length;
+  const hot = late > 0, warm = !hot && crit > 0;
+  const bg = hot ? '#7F1D1D' : warm ? '#FEF2F2' : '#F0FDF4', bd = hot ? '#450A0A' : warm ? '#FCA5A5' : '#BBF7D0', fg = hot ? '#fff' : warm ? '#991B1B' : '#166534', sub = hot ? '#FECACA' : 'var(--muted)';
+  const open = CASES.filter(c => c.status !== 'Closed').slice().sort((a,b) => (demandIsMine(b)?1:0) - (demandIsMine(a)?1:0));
+  let h = '<div style="order:-2;border:2px solid '+bd+';border-radius:12px;margin-bottom:16px;overflow:hidden;background:#fff;">';
+  h += '<div style="background:'+bg+';padding:12px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">';
+  h += '<div style="font-size:24px;">🛡</div><div style="flex:1;min-width:240px;"><div style="font-weight:800;font-size:15px;color:'+fg+';">Verdict Shield: time-limit demands'+(scope==='mine'?' on your matters':'')+'</div>'+
+    '<div style="font-size:12.5px;color:'+sub+';margin-top:2px;">'+(hot ? late+' PAST DEADLINE with no response recorded. Escalate to counsel now.' : rows.length ? rows.length+' open'+(crit?' · '+crit+' due within 3 days':'')+'. Record the response to clear each one.' : 'No open time-limit demands. When one arrives, log it the same day.')+'</div></div>';
+  h += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><select id="dkLogCase" class="inp" style="width:auto;min-width:170px;font-size:12px;"><option value="">Matter…</option>'+open.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.client)+' ('+esc(c.matterNo||c.id)+')</option>').join('')+'</select>'+
+    '<button class="btn btn-pri" style="background:'+(hot?'#fff':'#DC2626')+';color:'+(hot?'#7F1D1D':'#fff')+';border-color:'+(hot?'#fff':'#DC2626')+';" onclick="demandDeskLog()">+ Log a demand</button></div></div>';
+  if (!opts.forceMine) h += '<div style="padding:8px 16px 0;font-size:12px;color:var(--muted);">Showing: '+
+    '<span class="muted-link" style="cursor:pointer;'+(scope==='mine'?'font-weight:800;color:var(--ink);text-decoration:underline;':'')+'" onclick="st({demandScope:\'mine\'})">My matters</span> · '+
+    '<span class="muted-link" style="cursor:pointer;'+(scope==='all'?'font-weight:800;color:var(--ink);text-decoration:underline;':'')+'" onclick="st({demandScope:\'all\'})">Everyone</span></div>';
+  if (rows.length) {
+    const limit = S.demandDeskAll ? rows.length : 5;
+    h += '<div style="padding:10px 16px 6px;">'+rows.slice(0, limit).map(demandDeskRowV).join('');
+    if (rows.length > 5) h += '<div style="margin-bottom:8px;"><span class="muted-link" style="cursor:pointer;" onclick="st({demandDeskAll:'+(!S.demandDeskAll)+'})">'+(S.demandDeskAll?'Show fewer':'Show all '+rows.length)+' ↓</span></div>';
+    h += '</div>';
+  } else h += '<div style="height:10px;"></div>';
+  return h + '</div>';
+}
+
+function demandBannerV(){
+  const n = demandCounts();
+  if (!n.late && !n.crit) return '';
+  const rows = n.rows.filter(r => r.left <= 3).slice(0,3);
+  const late = n.late > 0;
+  return '<div class="attn-banner" role="alert" style="background:'+(late?'#7F1D1D':'#FEF2F2')+';border-color:'+(late?'#450A0A':'#FCA5A5')+';">'+
+    '<div class="attn-icon">⏱</div><div style="flex:1;min-width:240px;"><div style="font-weight:800;font-size:15px;color:'+(late?'#fff':'#991B1B')+';">'+(late ? n.late+' time-limit demand'+(n.late!==1?'s are':' is')+' PAST DEADLINE with no response recorded' : (n.crit)+' time-limit demand'+(n.crit!==1?'s':'')+' due within 3 days')+'</div>'+
+    '<div style="font-size:12.5px;color:'+(late?'#FECACA':'var(--muted)')+';margin-top:2px;">'+rows.map(r => esc(r.c.client)+' ('+demandWhen(r.left).toLowerCase()+')').join(' · ')+(late?'. Escalate to counsel now.':'. Open Verdict Shield to respond.')+'</div></div>'+
+    '<button onclick="st({role:\'demands\',caseId:null,showWelcome:false})" class="btn btn-pri" style="background:'+(late?'#fff':'#DC2626')+';color:'+(late?'#7F1D1D':'#fff')+';border-color:'+(late?'#fff':'#DC2626')+';font-weight:800;white-space:nowrap;">Open Verdict Shield →</button></div>';
+}
+function demandWatchV(){
+  const n = demandCounts();
+  let h = '<div class="wrap" style="padding-top:18px;">';
+  h += '<div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">Verdict Shield</div>';
+  h += '<div style="font-size:13px;color:var(--muted);margin:4px 0 16px;max-width:780px;line-height:1.6;">Every open time-limit demand across the caseload, most urgent first. A demand stays here until someone records the response.</div>';
+  h += demandEmailsV();
+  h += demandLadderCardV();
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">';
+  const kpi = (label, v, col) => '<div style="flex:1 1 150px;border:1px solid #E5E7EB;border-radius:10px;padding:10px 14px;background:#fff;"><div style="font-size:11px;color:var(--muted);">'+label+'</div><div style="font-size:26px;font-weight:800;color:'+col+';">'+v+'</div></div>';
+  h += kpi('Past deadline, no response', n.late, n.late?'#7F1D1D':'#15803D')+kpi('Due within 3 days', n.crit, n.crit?'#B91C1C':'#15803D')+kpi('Due in 4 to '+DEMAND_WARN_DAYS+' days', n.soon, n.soon?'#B45309':'#15803D')+kpi('All open demands', n.all, 'var(--ink)')+kpi('Not fully acknowledged', n.rows.filter(r=>!demandFullyAcked(r.c,r.d)).length, n.rows.some(r=>!demandFullyAcked(r.c,r.d))?'#B45309':'#15803D');
+  h += '</div>';
+  if (!n.all) h += '<div class="alert-good" style="margin-bottom:16px;">No open time-limit demands. Log one from a case\'s Time-Limit Demands tab the day it arrives.</div>';
+  n.rows.forEach(r => { h += demandCardV(r.c, r.d, true); });
+  const closed = []; CASES.forEach(c => demandsOf(c).forEach(d => { if (d.status !== 'open') closed.push({c, d}); }));
+  if (closed.length) { h += '<details style="margin:10px 0 18px;"><summary style="font-size:13px;font-weight:700;cursor:pointer;">Answered demands ('+closed.length+')</summary><div style="margin-top:8px;">'+closed.map(x=>demandCardV(x.c, x.d, true)).join('')+'</div></details>'; }
+  h += '<div class="serif" style="font-size:22px;font-weight:700;margin:26px 0 4px;">State law library</div>';
+  h += '<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;max-width:780px;">The rules that decide how dangerous a demand is, and the laws that drive verdict size. Georgia is shown first.</div>';
+  const sel = S.demandState || 'Georgia';
+  h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">'+DEMAND_STATE_NAMES.map(s=>'<button class="tab-btn '+(sel===s?'on':'')+'" onclick="st({demandState:\''+s+'\'})">'+s+'</button>').join('')+'</div>';
+  h += '<div style="max-width:900px;">'+stateRuleCardV(sel, false)+'</div>';
+  h += '<div class="card" style="padding:14px 16px;margin-top:12px;max-width:900px;"><div style="font-weight:700;font-size:13.5px;margin-bottom:6px;">When a demand arrives: the same-day routine</div><ol style="margin:0 0 0 18px;padding:0;font-size:12.5px;line-height:1.7;"><li>Log it on the case with the date and method it was received, and the deadline exactly as written.</li><li>Send the letter to defense or coverage counsel the same day.</li><li>Notify the insured in writing, including the possibility of exposure above limits.</li><li>Decide who owns the response, and put an interim check on the calendar well before the deadline.</li><li>If something is unclear, ask in writing right away. Asking a question does not stop the clock unless an extension is granted in writing.</li><li>Record the response here so the alert stops.</li></ol><div style="font-size:11px;color:var(--dim);margin-top:6px;">General practice, not legal advice. Confirm with counsel.</div></div>';
+  h += demandDisclaimerV();
+  return h + '</div>';
+}
+
+
 function attentionData(scopeCases, opts){
   opts = opts || {};
   const now = Date.now(), day = 864e5;
@@ -3223,6 +3851,17 @@ function attentionData(scopeCases, opts){
   const add = (o) => { if (o.cases ? o.cases.length : o.count) items.push(Object.assign({count:o.cases?o.cases.length:0}, o)); };
   const dLabel = d => d < 0 ? Math.abs(d)+'d past due' : d === 0 ? 'today' : 'in '+d+'d';
   const first = (arr, fn) => arr.slice(0,2).map(fn).join(' · ') + (arr.length > 2 ? ' · +' + (arr.length-2) + ' more' : '');
+
+  // 0. Time-limit demands — an unanswered one can turn a defensible claim into an excess verdict
+  { const dc = demandCounts(); const scoped = new Set(open.map(c=>c.id)); const rows = dc.rows.filter(r => scoped.has(r.c.id) && r.left <= DEMAND_WARN_DAYS);
+    if (rows.length) { const late = rows.filter(r=>r.left<0).length;
+      items.push({key:'demands', sev:'red', icon:'⏱', title: late ? 'Time-limit demand PAST DEADLINE' : 'Time-limit demands due soon', count:rows.length, cases:null,
+        detail: rows.slice(0,2).map(r => esc(r.c.client)+' '+demandWhen(r.left).toLowerCase()).join(' · ')+(rows.length>2?' · +'+(rows.length-2)+' more':''),
+        go:"st({role:'demands',caseId:null,showWelcome:false})"}); } }
+
+  { const nb = open.filter(c => caseNeedsBackup(c) && backupMissing(c));
+    if (nb.length) items.push({key:'nobackup', sev:'red', icon:'👥', title:'Time-critical matters with no backup claims person', count:nb.length, cases:nb,
+      detail: first(nb, c => esc(c.client))}); }
 
   // 1. Statute of limitations — the one missed date that becomes a claim against you
   const sol = open.filter(c => c.keyDates && c.keyDates.sol && new Date(c.keyDates.sol).getTime() <= now + ATTN.SOL_DAYS*day)
@@ -3282,11 +3921,11 @@ function attentionData(scopeCases, opts){
     add({key:'ready', sev:'blue', icon:'🏁', title:'Ready to close', cases:ready, detail:'All closing steps are done — hand these off to claims'});
   }
   const rank = {red:0, amber:1, blue:2};
-  items.sort((a,b) => rank[a.sev] - rank[b.sev] || b.count - a.count);
+  items.sort((a,b) => rank[a.sev] - rank[b.sev] || (a.key==='demands'?-1:b.key==='demands'?1:0) || b.count - a.count);
   return items;
 }
 function attnGo(key, scope){
-  const it = attentionData(scope === 'mine' ? CASES.filter(c => c.attorney === (S.attorneyName || S.currentUser?.name)) : null, {personal: scope === 'mine'}).find(x => x.key === key);
+  const it = attentionData(scope === 'mine' ? myAttnCases() : null, {personal: scope === 'mine'}).find(x => x.key === key);
   if (it && it.go) { new Function(it.go)(); return; }
   st({showDrill:true, drillType:'attn-'+key, drillValue:scope||'', drillLabel:(it ? it.title : 'Cases'), caseId:null});
 }
@@ -3345,6 +3984,10 @@ function unassignedOpenCases(){
 /* Members (attorneys) can't assign matters, so only owners/admins/demo users see the alert. */
 function canSeeAssignAlert(){
   return !(S.currentUser && S.currentUser.role === 'member' && !S.currentUser.platformAdmin);
+}
+function demandBadgeV(){
+  const n = demandCounts(), k = n.late + n.crit;
+  return k ? '<span class="attn-badge" style="background:#B91C1C;" title="'+k+' time-limit demand'+(k!==1?'s':'')+' late or due within 3 days">'+k+'</span>' : '';
 }
 function attnBadgeV(){
   const n = canSeeAssignAlert() ? unassignedOpenCases().length : 0;
@@ -3503,7 +4146,7 @@ function drillDownV() {
     default:
       if (type && type.indexOf('attn-') === 0) {
         const mine = value === 'mine';
-        const it = attentionData(mine ? CASES.filter(c => c.attorney === (S.attorneyName || S.currentUser?.name)) : null, {personal: mine}).find(x => x.key === type.slice(5));
+        const it = attentionData(mine ? myAttnCases() : null, {personal: mine}).find(x => x.key === type.slice(5));
         filteredCases = (it && it.cases) || [];
       }
   }
@@ -3638,6 +4281,7 @@ function litigationDashV(){
   const trialCandidates = open.filter(c => c.potentialTrialCandidate).length;
 
   let h = '<div style="padding:18px 22px;max-width:1500px;margin:0 auto;display:flex;flex-direction:column;">';
+  h += demandDeskV();
   h += unassignedAlertV();
   h += needsAttentionV();
 
@@ -9424,7 +10068,7 @@ function ws(){
     { label:'Matter Info', tabs:[['overview','Overview'],['claimfacts','Claim Facts'],['court','Court'],['insurance','Insurance'],['dates','Key Dates']] },
     { label:'Financials', tabs:[['exposure','Exposure'],['billing','Billing']] },
     { label:'Evidence', tabs:[['evidence','Evidence'],['experts','Experts']] },
-    { label:'Resolution', tabs:[['settlement','Settlement'],['closing','Closing & Handoff']] },
+    { label:'Resolution', tabs:[['demands','Time-Limit Demands'],['settlement','Settlement'],['closing','Closing & Handoff']] },
     { label:'Premium', tabs:[['sentinel','Sentinel Suite']] },
     { label:'Records', tabs:[['tasks','Tasks'],['documents','Documents'],['audit','Audit Trail'],['ai','AI Assistant']] }
   ];
@@ -9470,6 +10114,7 @@ function ws(){
   else if (S.tab === 'tasks') h += tabTasks(c);
   else if (S.tab === 'documents') h += tabDocuments(c);
   else if (S.tab === 'audit') h += tabAudit(c);
+  else if (S.tab === 'demands') h += tabDemands(c);
   else if (S.tab === 'sentinel') h += tabSentinel(c);
   else if (S.tab === 'ai') h += tabAI(c);
   h += '</div></div></div>';
@@ -9642,6 +10287,7 @@ function tabInsurance(c){
 /* ── TAB: KEY DATES ────────────────────────────────────── */
 function tabDates(c){
   let h = '<div class="section-band">Statute of Limitations</div>';
+  h += backupPickerV(c);
   h += '<div class="grid-2">';
   h += '<div>'+inp('SOL Date', c.keyDates.sol, 'un(\'keyDates\',\'sol\',this.value)','date')+'</div>';
   h += '<div>'+sel('SOL Status', 'un(\'keyDates\',\'solStatus\',this.value)', SOL_STATUSES, c.keyDates.solStatus)+'</div>';
