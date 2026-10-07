@@ -156,6 +156,7 @@ tr.row-link{cursor:pointer;}
 .tag-warn{background:#FEF3C7;color:#92400E;}
 .tag-danger{background:#FEE2E2;color:#991B1B;}
 .tag-info{background:#DBEAFE;color:#1E40AF;}
+.tag-ok{background:#DCFCE7;color:#166534;}
 .grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:11px;margin-bottom:11px;}
 .grid-3{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:11px;margin-bottom:11px;}
 .modal-bg{position:fixed;inset:0;background:rgba(11,18,32,.55);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;}
@@ -1024,10 +1025,11 @@ CASES.forEach(c => {
 (function(){
   const iso = n => { const d = new Date(Date.now() + n*864e5); return d.toLocaleDateString('en-CA',{timeZone:'America/New_York'}); };
   const set = (id, jur, list) => { const c = CASES.find(x => x.id === id); if (!c) return; c.court = c.court || {}; c.court.jurisdiction = jur; c.timeLimitDemands = list; };
-  const bk = {'CC-012':'Chase Meidroth','CC-004':'James Ortega'};
-  Object.keys(bk).forEach(id => { const c = CASES.find(x => x.id === id); if (c) c.backupAttorney = bk[id]; });
+  const team = {'CC-012':['James Wong','Priya Nair'], 'CC-004':['Rebecca Thornton','Marcus Bell'], 'CC-014':['Frank Toomey','']};
+  Object.keys(team).forEach(id => { const c = CASES.find(x => x.id === id); if (c) { c.adjusterPrimary = team[id][0]; c.adjusterBackup = team[id][1]; } });
+  const dcDemo = CASES.find(x => x.id === 'CC-012'); if (dcDemo) dcDemo.defenseCounsel = {panelId:'demo-ac-1', name:'Dana Whitfield', firm:'Whitfield & Burke LLP', email:'dwhitfield@whitfieldburke.com', phone:''};
   set('CC-012','State - Georgia',[
-    {id:'TLD-demo1', receivedDate:iso(-26), deadline:iso(2), deadlineHM:'17:00', tz:'America/New_York', acks:[{by:'Maria Santos', role:'primary', at:new Date(Date.now()-5*36e5).toISOString()}], demandAmount:1000000, policyLimits:1000000, claimantFirm:'Harlan & Pike, LLP', method:'Certified mail', state:'Georgia', notes:'Policy-limits demand, pre-suit. Offer letter requires written acceptance and a release of the insured.', status:'open',
+    {id:'TLD-demo1', receivedDate:iso(-26), deadline:iso(2), deadlineHM:'17:00', tz:'America/New_York', acks:[{by:'James Wong', role:'primary', at:new Date(Date.now()-5*36e5).toISOString()}], demandAmount:1000000, policyLimits:1000000, claimantFirm:'Harlan & Pike, LLP', method:'Certified mail', state:'Georgia', notes:'Policy-limits demand, pre-suit. Offer letter requires written acceptance and a release of the insured.', status:'open',
      log:[{date:iso(-26), by:'Maria Santos', text:'Demand recorded. Received '+iso(-26)+', deadline '+iso(2)+' 5:00 PM.'}]}]);
   set('CC-014','State - California',[
     {id:'TLD-demo2', receivedDate:iso(-21), deadline:iso(9), deadlineTime:'', demandAmount:2000000, policyLimits:2000000, claimantFirm:'Brandt Injury Law', method:'Email', state:'California', notes:'Time-limited demand under CCP 999.', status:'open',
@@ -2301,7 +2303,7 @@ function myCasesV() {
   // filtering against nothing and looked broken. Now it defaults to
   // whoever's actually signed in.
   const attorneyName = S.attorneyName || S.currentUser?.name;
-  const myCases = CASES.filter(c => c.attorney === attorneyName);
+  const myCases = CASES.filter(c => c.attorney === attorneyName || (attorneyName && (claimsPrimary(c) === attorneyName || claimsBackup(c) === attorneyName)));
 
   let h = '<div style="padding:20px;">';
   h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid var(--line);padding-bottom:15px;">';
@@ -2551,6 +2553,7 @@ function render(){
   else if (S.role === 'tpa') html += tpaV();
   else if (S.role === 'premium') html += premiumHubV();
   else if (S.role === 'demands') html += demandWatchV();
+  else if (S.role === 'counsel') html += counselV();
   else if (S.role === 'partner') html += partV();
   else if (S.role === 'executive') html += execV();
   else if (S.role === 'scorecard') html += (S.scorecardDetail ? attorneyDetailV(S.scorecardDetail) : scorecardV());
@@ -2692,6 +2695,7 @@ function hdr(){
       ['premium','★ Premium Features']
     ]},
     { label:'Admin', items:[
+      ['counsel','Approved Counsel'],
       ['tpa','Account Executive'],
       ['carrier','Carrier Portal'],
       ['partner','TPA Leadership'],
@@ -3428,10 +3432,12 @@ function addDemand(caseId){
   if (!recv || !due) { st({dmError:'Enter both the date the demand was received and the deadline in the letter.'}); return; }
   if (demandDaysBetween(recv, due) === null) { st({dmError:'Dates must be valid.'}); return; }
   if (demandDaysBetween(recv, due) < 0) { st({dmError:'The deadline is before the received date. Check both dates.'}); return; }
-  const bk = demandVal('dmBackup') || (backupMissing(c) ? '' : c.backupAttorney);
-  if (!bk) { st({dmError:'Choose a backup claims person. Every time-limit demand needs a second person tracking it.'}); return; }
-  if (bk === (c.attorney||'').trim()) { st({dmError:'The backup has to be a different person from the primary attorney.'}); return; }
-  c.backupAttorney = bk;
+  const pr = demandVal('dmPrimary') || claimsPrimary(c);
+  if (!pr) { st({dmError:'Choose the adjuster handling this claim.'}); return; }
+  const bk = demandVal('dmBackup') || (backupMissing(c) ? '' : claimsBackup(c));
+  if (!bk) { st({dmError:'Choose a backup adjuster. Every time-limit demand needs a second person tracking it.'}); return; }
+  if (bk === pr) { st({dmError:'The adjuster and the backup have to be two different people.'}); return; }
+  c.adjusterPrimary = pr; c.adjusterBackup = bk; c.backupAttorney = '';
   const money = v => { const n = parseFloat(String(v||'').replace(/[^0-9.]/g,'')); return isNaN(n) ? 0 : n; };
   const d = {id:'TLD-'+Date.now().toString(36), receivedDate:recv, deadline:due, deadlineHM:demandVal('dmTime'), tz:demandVal('dmTz') || 'America/New_York', demandAmount:money(demandVal('dmAmt')), policyLimits:money(demandVal('dmLim')),
     claimantFirm:demandVal('dmFirm'), method:demandVal('dmMethod'), state:demandVal('dmState'), notes:demandVal('dmNotes'), status:'open', log:[]};
@@ -3503,37 +3509,73 @@ function caseNeedsBackup(c){
   const sol = c.keyDates && c.keyDates.sol ? Date.parse(String(c.keyDates.sol).slice(0,10)+'T00:00:00Z') : NaN;
   return isFinite(sol) && sol <= Date.now() + 120*864e5;
 }
+/* Verdict Shield works on CLAIMS people. Primary adjuster = the one set on the matter, else the carrier
+   adjuster already on the file. Backup adjuster is a second person. Defense counsel is separate. */
+function claimsPrimary(c){ return String(c.adjusterPrimary || (c.insurance && c.insurance.adjuster) || '').trim(); }
+function claimsBackup(c){ return String(c.adjusterBackup || c.backupAttorney || '').trim(); }
+function claimsRoster(){
+  const names = [], add = n => { n = (n||'').trim(); if (n && n !== 'Unassigned' && !names.includes(n)) names.push(n); };
+  ((S.demandEmails && S.demandEmails.people) || []).forEach(x => add(x.name));
+  if (DEMO_MODE) { ADJUSTER_POOL.forEach(add); }
+  CASES.forEach(c => { add(c.adjusterPrimary); add(c.adjusterBackup); add(c.insurance && c.insurance.adjuster); });
+  if (!DEMO_MODE) ATTY.forEach(add);
+  return names.sort((a,b) => a.localeCompare(b));
+}
 function backupMissing(c){
-  const p = (c.attorney||'').trim().toLowerCase(), b = (c.backupAttorney||'').trim().toLowerCase();
+  const p = claimsPrimary(c).toLowerCase(), b = claimsBackup(c).toLowerCase();
   return !b || b === 'unassigned' || b === p;
 }
+function primaryMissing(c){ return !claimsPrimary(c); }
 function myAttnCases(){
   const me = S.attorneyName || (S.currentUser && S.currentUser.name);
-  return CASES.filter(c => c.attorney === me || (me && c.backupAttorney === me));
+  return CASES.filter(c => c.attorney === me || (me && (claimsPrimary(c) === me || claimsBackup(c) === me)));
 }
-function setBackup(caseId, name){
+function setClaimsPerson(caseId, which, name){
   const c = CASES.find(x => x.id === caseId); if (!c) return;
-  if (name && name === c.attorney) { alert('The backup has to be a different person from the primary attorney.'); render(); return; }
-  c.backupAttorney = name || '';
+  const other = which === 'primary' ? claimsBackup(c) : claimsPrimary(c);
+  if (name && name === other) { alert('The primary and backup adjuster have to be two different people.'); render(); return; }
+  if (which === 'primary') c.adjusterPrimary = name || ''; else { c.adjusterBackup = name || ''; c.backupAttorney = ''; }
   c.updates = c.updates || [];
-  c.updates.push({date:demandToday(), author:(S.currentUser && S.currentUser.name) || 'User', type:'Backup Claims Person', text: name ? 'Backup claims person set to '+name+' for time-limit and statute-of-limitations dates.' : 'Backup claims person removed.'});
+  const lab = which === 'primary' ? 'Adjuster' : 'Backup adjuster';
+  c.updates.push({date:demandToday(), author:(S.currentUser && S.currentUser.name) || 'User', type:'Claims Team', text: name ? lab+' set to '+name+' for time-limit and statute-of-limitations dates.' : lab+' removed.'});
+  sc(c); render();
+}
+function setDefenseCounsel(caseId, panelId){
+  const c = CASES.find(x => x.id === caseId); if (!c) return;
+  const row = counselAll().find(x => x.id === panelId);
+  c.defenseCounsel = row ? {panelId:row.id, name:row.name, firm:row.firm||'', email:row.email||'', phone:row.phone||''} : null;
+  c.updates = c.updates || [];
+  c.updates.push({date:demandToday(), author:(S.currentUser && S.currentUser.name) || 'User', type:'Defense Counsel', text: row ? 'Defense counsel set to '+row.name+(row.firm?' ('+row.firm+')':'')+'.' : 'Defense counsel removed.'});
   sc(c); render();
 }
 function teamLineV(c){
-  const p = (c.attorney||'').trim(), miss = backupMissing(c);
-  return '<div style="font-size:12px;margin-top:4px;">Primary: <strong>'+esc(p && p !== 'Unassigned' ? p : 'none assigned')+'</strong> · Backup: '+
-    (miss ? '<strong style="color:#B91C1C;">none assigned</strong>' : '<strong>'+esc(c.backupAttorney)+'</strong>')+'</div>';
+  const p = claimsPrimary(c), b = claimsBackup(c), dc = c.defenseCounsel && c.defenseCounsel.name, at = (c.attorney||'').trim();
+  return '<div style="font-size:12px;margin-top:4px;">Adjuster: '+(p ? '<strong>'+esc(p)+'</strong>' : '<strong style="color:#B91C1C;">none assigned</strong>')+
+    ' · Backup: '+(backupMissing(c) ? '<strong style="color:#B91C1C;">none assigned</strong>' : '<strong>'+esc(b)+'</strong>')+
+    (dc ? ' · Defense counsel: <strong>'+esc(c.defenseCounsel.name)+'</strong>'+(c.defenseCounsel.firm?' <span style="color:var(--dim);">'+esc(c.defenseCounsel.firm)+'</span>':'') : (at && at !== 'Unassigned' ? ' · Attorney: '+esc(at) : ''))+'</div>';
 }
 function backupPickerV(c){
-  const opts = ATTY.filter(a => a !== c.attorney);
-  const miss = backupMissing(c), need = caseNeedsBackup(c);
-  return '<div class="card" style="padding:12px 14px;margin-bottom:12px;border-left:4px solid '+(miss&&need?'#DC2626':'#15803D')+';">'+
-    '<div style="font-weight:700;font-size:13px;">Backup claims person</div>'+
-    '<div style="font-size:12px;color:var(--muted);margin:3px 0 8px;max-width:720px;line-height:1.55;">A second person tracks every time-limit demand and statute of limitations on this matter. They get the same alerts and emails as the primary, so the date is covered if one person is out or misses it.</div>'+
-    '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><span style="font-size:12px;">Primary: <strong>'+esc(c.attorney && c.attorney !== 'Unassigned' ? c.attorney : 'none assigned')+'</strong></span>'+
-    '<select class="inp" style="width:auto;min-width:200px;" onchange="setBackup(\''+esc(c.id)+'\',this.value)"><option value="">Choose a backup…</option>'+
-    opts.map(a => '<option'+(c.backupAttorney===a?' selected':'')+'>'+esc(a)+'</option>').join('')+'</select></div>'+
-    (miss&&need ? '<div style="font-size:12px;color:#B91C1C;font-weight:700;margin-top:8px;">⚠ No backup assigned. This matter has a time-critical date.</div>' : '')+'</div>';
+  const roster = claimsRoster(), miss = backupMissing(c), pmiss = primaryMissing(c), need = caseNeedsBackup(c);
+  const optsFor = (cur, other) => roster.filter(n => n !== other).map(a => '<option'+(cur===a?' selected':'')+'>'+esc(a)+'</option>').join('');
+  const pri = claimsPrimary(c), bk = claimsBackup(c);
+  let h = '<div class="card" style="padding:12px 14px;margin-bottom:12px;border-left:4px solid '+((miss||pmiss)&&need?'#DC2626':'#15803D')+';">'+
+    '<div style="font-weight:700;font-size:13px;">Claims team for time-critical dates</div>'+
+    '<div style="font-size:12px;color:var(--muted);margin:3px 0 8px;max-width:760px;line-height:1.55;">The adjuster handling the claim and a second adjuster both track every time-limit demand and statute of limitations on this matter. They get the same alerts and emails, so the date is covered if one person is out or misses it. Defense counsel is told when a demand is logged.</div>'+
+    '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">'+
+    '<div><label class="lbl">Adjuster (primary)</label><select class="inp" style="min-width:200px;" onchange="setClaimsPerson(\''+esc(c.id)+'\',\'primary\',this.value)"><option value="">Choose an adjuster…</option>'+(pri && !roster.includes(pri) ? '<option selected>'+esc(pri)+'</option>' : '')+optsFor(pri, bk)+'</select></div>'+
+    '<div><label class="lbl">Backup adjuster</label><select class="inp" style="min-width:200px;" onchange="setClaimsPerson(\''+esc(c.id)+'\',\'backup\',this.value)"><option value="">Choose a backup…</option>'+(bk && !roster.includes(bk) ? '<option selected>'+esc(bk)+'</option>' : '')+optsFor(bk, pri)+'</select></div>'+
+    '<div><label class="lbl">Defense counsel (approved panel)</label>'+defenseCounselSelectV(c)+'</div></div>'+
+    ((miss||pmiss)&&need ? '<div style="font-size:12px;color:#B91C1C;font-weight:700;margin-top:8px;">⚠ '+(pmiss?'No adjuster is assigned. ':'')+(miss?'No backup adjuster is assigned. ':'')+'This matter has a time-critical date.</div>' : '')+'</div>';
+  return h;
+}
+function defenseCounselSelectV(c){
+  const list = counselAll().filter(x => x.status !== 'Inactive'), cur = c.defenseCounsel && c.defenseCounsel.panelId;
+  if (!counselLoaded()) { loadCounsel(); return '<span style="font-size:12px;color:var(--dim);">Loading the panel…</span>'; }
+  if (!list.length) return '<span style="font-size:12px;color:var(--dim);">No approved counsel loaded yet. <span class="muted-link" style="cursor:pointer;" onclick="st({caseId:null,role:\'counsel\',showWelcome:false})">Upload your panel</span></span>';
+  const stt = stateFromJurisdiction(c.court && c.court.jurisdiction), abbr = stt ? (DEMAND_STATE_ABBR[stt] || '') : '';
+  const sorted = list.slice().sort((a,b) => ((abbr && (b.states||[]).includes(abbr))?1:0) - ((abbr && (a.states||[]).includes(abbr))?1:0) || a.name.localeCompare(b.name));
+  return '<select class="inp" style="min-width:260px;max-width:340px;" onchange="setDefenseCounsel(\''+esc(c.id)+'\',this.value)"><option value="">Choose from the panel…</option>'+
+    sorted.map(x => '<option value="'+esc(x.id)+'"'+(cur===x.id?' selected':'')+'>'+esc(x.name)+(x.firm?' — '+esc(x.firm):'')+((x.states||[]).length?' ('+x.states.slice(0,4).join(', ')+')':'')+(abbr && (x.states||[]).includes(abbr)?' ✓ '+abbr:'')+'</option>').join('')+'</select>';
 }
 
 /* ── Opt-in email alerts for time-limit demands and statute-of-limitations dates ── */
@@ -3571,8 +3613,8 @@ function demandEmailsV(){
 function demandAcks(d){ return Array.isArray(d.acks) ? d.acks : []; }
 function demandAckedBy(d, name){ return !!name && demandAcks(d).some(a => a.by === name); }
 function demandFullyAcked(c, d){
-  const prim = (c.attorney||'').trim(), bk = (c.backupAttorney||'').trim();
-  const needP = prim && prim !== 'Unassigned', needB = !backupMissing(c);
+  const prim = claimsPrimary(c), bk = claimsBackup(c);
+  const needP = !!prim, needB = !backupMissing(c);
   if (!needP && !needB) return demandAcks(d).length > 0;
   return (!needP || demandAckedBy(d, prim)) && (!needB || demandAckedBy(d, bk));
 }
@@ -3580,23 +3622,23 @@ function ackDemand(caseId, id){
   const {c, d} = demandFind(caseId, id); if (!c || !d) return;
   const me = demandMe() || 'User';
   if (demandAckedBy(d, me)) return;
-  const role = c.attorney === me ? 'primary' : (c.backupAttorney === me ? 'backup' : 'other');
+  const role = claimsPrimary(c) === me ? 'primary' : (claimsBackup(c) === me ? 'backup' : 'other');
   d.acks = demandAcks(d).concat([{by:me, role, byId:(S.currentUser && S.currentUser.id) || null, at:new Date().toISOString()}]);
   demandLog(d, 'Acknowledged by '+me+(role==='other'?'':' ('+role+')')+'.');
   demandCaseNote(c, 'Time-limit demand acknowledged by '+me+'.');
   sc(c); render();
 }
 function demandAckLineV(c, d){
-  const prim = (c.attorney||'').trim(), bk = (c.backupAttorney||'').trim(), me = demandMe();
+  const prim = claimsPrimary(c), bk = claimsBackup(c), me = demandMe();
   const chip = (label, name) => {
     const a = demandAcks(d).find(x => x.by === name);
     return a ? '<span style="color:#166534;font-weight:700;">✔ '+label+' '+esc(name)+' <span style="font-weight:500;color:var(--dim);">'+esc(new Date(a.at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:'America/New_York'}))+' ET</span></span>'
              : '<span style="color:#B91C1C;font-weight:700;">✘ '+label+' '+esc(name)+' has not acknowledged</span>';
   };
   const parts = [];
-  if (prim && prim !== 'Unassigned') parts.push(chip('Primary', prim));
-  if (!backupMissing(c)) parts.push(chip('Backup', bk));
-  let h = '<div style="font-size:12px;margin-top:5px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">'+(parts.join('') ? parts.join('<span style="color:var(--dim);">·</span>') : '<span style="color:#B91C1C;font-weight:700;">Nobody is assigned to acknowledge this</span>');
+  if (prim) parts.push(chip('Adjuster', prim));
+  if (!backupMissing(c)) parts.push(chip('Backup adjuster', bk));
+  let h = '<div style="font-size:12px;margin-top:5px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">'+(parts.join('') ? parts.join('<span style="color:var(--dim);">·</span>') : '<span style="color:#B91C1C;font-weight:700;">No adjuster is assigned to acknowledge this</span>');
   if (me && !demandAckedBy(d, me)) h += '<button class="btn btn-out" style="padding:3px 10px;font-size:11.5px;border-color:#15803D;color:#166534;font-weight:800;" onclick="ackDemand(\''+esc(c.id)+'\',\''+esc(d.id)+'\')">✔ I have seen this</button>';
   return h + '</div>';
 }
@@ -3681,7 +3723,7 @@ function demandCardV(c, d, showCase){
   const tone = open ? demandTone(left) : null;
   let h = '<div class="card" style="padding:14px 16px;margin-bottom:10px;border-left:5px solid '+(open?tone.bd:'#94A3B8')+';'+(open&&left<0?'background:#FFF1F2;':'')+'">';
   h += '<div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;"><div style="flex:1;min-width:240px;">';
-  if (showCase) h += '<div style="font-weight:800;font-size:14px;cursor:pointer;" onclick="stCase(\''+esc(c.id)+'\',\'demands\')">'+esc(c.client)+' <span style="font-weight:500;color:var(--dim);font-size:11.5px;">'+esc(c.matterNo||c.id)+' · '+esc(c.attorney||'No attorney assigned')+'</span></div>';
+  if (showCase) h += '<div style="font-weight:800;font-size:14px;cursor:pointer;" onclick="stCase(\''+esc(c.id)+'\',\'demands\')">'+esc(c.client)+' <span style="font-weight:500;color:var(--dim);font-size:11.5px;">'+esc(c.matterNo||c.id)+' · '+esc(claimsPrimary(c)||'No adjuster assigned')+'</span></div>';
   h += '<div style="font-size:12.5px;margin-top:'+(showCase?4:0)+'px;"><strong>Deadline '+esc(demandEff(d))+' '+esc(demandTimeLabel(d))+'</strong>'+(d.extendedDeadline?' <span style="color:var(--dim);">(extended from '+esc(d.deadline)+')</span>':'')+' · received '+esc(d.receivedDate||'?')+(d.method?' by '+esc(d.method.toLowerCase()):'')+(d.state?' · '+esc(d.state):'')+'</div>';
   h += teamLineV(c);
   h += '<div style="font-size:12px;color:var(--muted);margin-top:3px;">'+(d.demandAmount?'Demand '+fM(d.demandAmount):'Amount not recorded')+(d.policyLimits?' · limits '+fM(d.policyLimits):'')+(d.claimantFirm?' · '+esc(d.claimantFirm):'')+'</div></div>';
@@ -3733,7 +3775,9 @@ function tabDemands(c){
   h += '<div><label class="lbl">Claimant\'s counsel</label><input id="dmFirm" class="inp"></div>';
   h += '<div><label class="lbl">Delivered by</label><select id="dmMethod" class="inp">'+DEMAND_METHODS.map(m=>'<option>'+m+'</option>').join('')+'</select></div>';
   h += '<div><label class="lbl">State rules</label><select id="dmState" class="inp"><option value="">Other / not loaded</option>'+DEMAND_STATE_NAMES.map(s=>'<option'+(s===stSel?' selected':'')+'>'+s+'</option>').join('')+'</select></div></div>';
-  h += '<div style="margin-top:10px;max-width:340px;"><label class="lbl">Backup claims person (required)</label><select id="dmBackup" class="inp"><option value="">Choose a backup…</option>'+ATTY.filter(a => a !== c.attorney).map(a=>'<option'+(c.backupAttorney===a?' selected':'')+'>'+esc(a)+'</option>').join('')+'</select></div>';
+  { const roster = claimsRoster(), pr0 = claimsPrimary(c), bk0 = claimsBackup(c);
+    const sel2 = (id, cur) => '<select id="'+id+'" class="inp"><option value="">Choose…</option>'+roster.map(a=>'<option'+(cur===a?' selected':'')+'>'+esc(a)+'</option>').join('')+'</select>';
+    h += '<div style="margin-top:10px;display:flex;gap:12px;flex-wrap:wrap;"><div style="min-width:220px;"><label class="lbl">Adjuster handling the claim (required)</label>'+sel2('dmPrimary', pr0)+'</div><div style="min-width:220px;"><label class="lbl">Backup adjuster (required)</label>'+sel2('dmBackup', bk0)+'</div></div>'; }
   h += '<div style="margin-top:10px;"><label class="lbl">Notes</label><input id="dmNotes" class="inp" placeholder="Where the letter is saved, who was told"></div>';
   if (S.dmError && !S.dmPanel) h += '<div class="alert-bad" style="margin-top:8px;font-size:12px;">'+esc(S.dmError)+'</div>';
   h += '<div style="margin-top:10px;"><button class="btn btn-pri" onclick="addDemand(\''+esc(c.id)+'\')">Log demand and start the clock</button></div></div>';
@@ -3744,7 +3788,7 @@ function tabDemands(c){
 /* ── Verdict Shield desk: the front-and-center panel on the main page and My Cases. Built for the
    adjuster who moves these forward: your demands first, days left, and the next click right there. ── */
 function demandMe(){ return S.attorneyName || (S.currentUser && S.currentUser.name) || ''; }
-function demandIsMine(c){ const me = demandMe(); return !!me && (c.attorney === me || c.backupAttorney === me); }
+function demandIsMine(c){ const me = demandMe(); return !!me && (claimsPrimary(c) === me || claimsBackup(c) === me || c.attorney === me); }
 function demandDeskScope(forceMine){
   if (forceMine) return 'mine';
   if (S.demandScope) return S.demandScope;
@@ -3754,9 +3798,180 @@ function demandDeskLog(){
   const el = document.getElementById('dkLogCase'); if (!el || !el.value) { alert('Choose the matter the demand is on.'); return; }
   stCase(el.value, 'demands');
 }
+
+/* ══ APPROVED COUNSEL: a customer's panel of approved defense attorneys, loaded in bulk from a CSV ══ */
+const US_STATE_CODES = {AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',CO:'Colorado',CT:'Connecticut',DE:'Delaware',DC:'District of Columbia',FL:'Florida',GA:'Georgia',HI:'Hawaii',ID:'Idaho',IL:'Illinois',IN:'Indiana',IA:'Iowa',KS:'Kansas',KY:'Kentucky',LA:'Louisiana',ME:'Maine',MD:'Maryland',MA:'Massachusetts',MI:'Michigan',MN:'Minnesota',MS:'Mississippi',MO:'Missouri',MT:'Montana',NE:'Nebraska',NV:'Nevada',NH:'New Hampshire',NJ:'New Jersey',NM:'New Mexico',NY:'New York',NC:'North Carolina',ND:'North Dakota',OH:'Ohio',OK:'Oklahoma',OR:'Oregon',PA:'Pennsylvania',RI:'Rhode Island',SC:'South Carolina',SD:'South Dakota',TN:'Tennessee',TX:'Texas',UT:'Utah',VT:'Vermont',VA:'Virginia',WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming',PR:'Puerto Rico'};
+const DEMAND_STATE_ABBR = Object.fromEntries(Object.entries(US_STATE_CODES).map(([k,v]) => [v,k]));
+const COUNSEL_HEADERS = {
+  name:['name','attorney','attorney name','full name','counsel'], firstName:['first name','firstname','first'], lastName:['last name','lastname','last','surname'],
+  firm:['firm','firm name','law firm','company'], email:['email','e-mail','email address'], phone:['phone','telephone','phone number','tel'], city:['city','office city'],
+  states:['states','state','licensed states','jurisdictions','state(s)','licensed in'], practiceAreas:['practice areas','practice area','practice','specialties'],
+  hourlyRate:['hourly rate','rate','hourly','billing rate'], status:['status','panel status'], externalId:['your id','id','external id','vendor id','attorney id','panel id'], notes:['notes','comments']};
+const COUNSEL_TEMPLATE_COLS = ['Name','Firm','Email','Phone','City','States','Practice Areas','Hourly Rate','Status','Your ID','Notes'];
+function counselDemoSeed(){
+  const mk = (i,name,firm,email,states,areas,rate,status) => ({id:'demo-ac-'+i,name,firm,email,phone:'(404) 555-01'+String(i).padStart(2,'0'),city:'',states,practiceAreas:areas,hourlyRate:rate,status,externalId:'AC-'+(1000+i)});
+  return [mk(1,'Dana Whitfield','Whitfield & Burke LLP','dwhitfield@whitfieldburke.com',['GA'],'Auto liability; trucking',215,'Preferred'),
+    mk(2,'Marcus Hale','Hale Defense Group','mhale@haledefense.com',['GA','AL'],'Auto liability; premises',195,'Approved'),
+    mk(3,'Priscilla Okafor','Okafor Rivera PA','pokafor@okaforrivera.com',['FL'],'Premises; general liability',205,'Approved'),
+    mk(4,'Gregory Lang','Lang Sutter LLP','glang@langsutter.com',['CA'],'Auto liability; employment',265,'Approved'),
+    mk(5,'Helen Brandt','Brandt & Moss','hbrandt@brandtmoss.com',['TX','OK'],'Trucking; product liability',230,'Preferred'),
+    mk(6,'Samuel Reyes','Reyes Cole LLP','sreyes@reyescole.com',['MO','KS'],'General liability',185,'Pending')];
+}
+function counselAll(){ if (DEMO_MODE || !authToken) { if (!S.demoCounsel) S.demoCounsel = counselDemoSeed(); return S.demoCounsel; } return S.counselList || []; }
+function counselLoaded(){ return DEMO_MODE || !authToken || Array.isArray(S.counselList); }
+async function loadCounsel(force){
+  if (DEMO_MODE || !authToken || S.counselLoading || (Array.isArray(S.counselList) && !force)) return;
+  S.counselLoading = true;
+  try { const r = await apiFetch('/api/approved-counsel?limit=1000'); st({counselList:r.counsel||[], counselTotal:r.total||0, counselBy:r.byStatus||{}, counselLoading:false, counselErr:''}); }
+  catch (e) { st({counselList:[], counselLoading:false, counselErr:e.message}); }
+}
+/* Whole-file CSV parser (handles quoted commas, quotes and line breaks inside cells). */
+function parseCsvText(text){
+  const rows = []; let row = [], cur = '', q = false;
+  text = String(text||'').replace(/^﻿/, '');
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"' && text[i+1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ',') { row.push(cur); cur = ''; }
+    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i+1] === '\n') i++; row.push(cur); cur = ''; if (row.some(v => v.trim() !== '')) rows.push(row); row = []; }
+    else cur += ch;
+  }
+  row.push(cur); if (row.some(v => v.trim() !== '')) rows.push(row);
+  return rows;
+}
+function counselParse(text){
+  const rows = parseCsvText(text);
+  if (rows.length < 2) throw new Error('The file needs a header row and at least one attorney.');
+  const heads = rows[0].map(h => h.trim().toLowerCase().replace(/[_\s]+/g,' '));
+  const map = {}, unknown = [];
+  heads.forEach((h, i) => { const k = Object.keys(COUNSEL_HEADERS).find(key => COUNSEL_HEADERS[key].includes(h)); if (k && map[k] === undefined) map[k] = i; else if (h) unknown.push(rows[0][i].trim()); });
+  if (map.name === undefined && !(map.firstName !== undefined && map.lastName !== undefined)) throw new Error('Could not find a Name column. The first row must be column names, like Name, Firm, Email, States.');
+  const recs = rows.slice(1).map(r => { const o = {}; Object.keys(map).forEach(k => { o[k] = (r[map[k]] || '').trim(); }); return o; });
+  return {recs, unknown};
+}
+/* Same rules as the server, for the demo (the real account always checks on the server). */
+function counselNormClient(r){
+  const name = r.name || [r.firstName, r.lastName].filter(Boolean).join(' ');
+  if (!name) return {error:'Attorney name is missing.'};
+  const email = (r.email||'').toLowerCase();
+  if (email && !/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(email)) return {error:'"'+email.slice(0,60)+'" is not a valid email address.'};
+  const st2 = [], bad = [];
+  String(r.states||'').split(/[,;\/|\n]+/).map(x=>x.trim()).filter(Boolean).forEach(t => { const up = t.toUpperCase(), code = US_STATE_CODES[up] ? up : DEMAND_STATE_ABBR[Object.keys(DEMAND_STATE_ABBR).find(n => n.toLowerCase() === t.toLowerCase())]; if (code) { if (!st2.includes(code)) st2.push(code); } else bad.push(t); });
+  if (bad.length) return {error:'Unrecognized state: '+bad.slice(0,3).join(', ')+'. Use two-letter codes like GA, FL.'};
+  let rate = null; if (r.hourlyRate) { rate = parseFloat(String(r.hourlyRate).replace(/[$,\s]/g,'')); if (!isFinite(rate) || rate < 0 || rate > 5000) return {error:'Hourly rate "'+String(r.hourlyRate).slice(0,20)+'" is not a number between 0 and 5000.'}; }
+  const sm = {'':'Approved',approved:'Approved',active:'Approved',preferred:'Preferred',pending:'Pending',inactive:'Inactive',suspended:'Inactive',removed:'Inactive'}, status = sm[(r.status||'').toLowerCase()];
+  if (!status) return {error:'Status "'+String(r.status).slice(0,20)+'" must be Approved, Preferred, Pending or Inactive.'};
+  return {row:{externalId:r.externalId||'', name, firm:r.firm||'', email, phone:r.phone||'', city:r.city||'', states:st2, practiceAreas:r.practiceAreas||'', hourlyRate:rate, status, notes:r.notes||''}};
+}
+function counselSimImport(recs, commit, markMissing){
+  const key = r => r.externalId ? 'x:'+r.externalId.toLowerCase() : r.email ? 'e:'+r.email : 'n:'+r.name.toLowerCase()+'|'+(r.firm||'').toLowerCase();
+  const errors = [], good = new Map(); let dup = 0;
+  recs.forEach((rec, i) => { const n = counselNormClient(rec); if (n.error) { errors.push({row:i+2, name:(rec.name||rec.lastName||'').slice(0,60), reason:n.error}); return; } const k = key(n.row); if (good.has(k)) dup++; good.set(k, n.row); });
+  const list = counselAll(), find = r => list.find(x => (r.externalId && x.externalId && x.externalId.toLowerCase() === r.externalId.toLowerCase()) || (r.email && x.email && x.email.toLowerCase() === r.email) || (x.name.toLowerCase() === r.name.toLowerCase() && (x.firm||'').toLowerCase() === (r.firm||'').toLowerCase()));
+  let created = 0, updated = 0; const touched = new Set();
+  good.forEach(r => { const hit = find(r); if (hit) { updated++; touched.add(hit.id); if (commit) Object.assign(hit, r); } else { created++; if (commit) { const row = Object.assign({id:'demo-ac-'+Date.now()+'-'+created}, r); list.push(row); touched.add(row.id); } } });
+  const gone = markMissing ? list.filter(x => !touched.has(x.id) && x.status !== 'Inactive') : [];
+  if (commit) gone.forEach(x => { x.status = 'Inactive'; });
+  return {dryRun:!commit, rows:recs.length, created, updated, skipped:errors.length, duplicatesInFile:dup, deactivated:gone.length, errors:errors.slice(0,200), moreErrors:Math.max(0, errors.length-200)};
+}
+function counselTemplateDownload(){
+  downloadCSV('approved-counsel-template.csv', COUNSEL_TEMPLATE_COLS, [
+    ['Dana Whitfield','Whitfield & Burke LLP','dwhitfield@whitfieldburke.com','(404) 555-0101','Atlanta','GA, AL','Auto liability; trucking','215','Preferred','AC-1001',''],
+    ['Priscilla Okafor','Okafor Rivera PA','pokafor@okaforrivera.com','(305) 555-0102','Miami','FL','Premises; general liability','205','Approved','AC-1002','']]);
+}
+function counselFile(input){
+  const f = input.files && input.files[0]; if (!f) return;
+  if (f.size > 8*1024*1024) { alert('That file is over 8 MB. Split it into smaller files.'); return; }
+  const r = new FileReader();
+  r.onload = () => st({cImp:{text:String(r.result||''), fileName:f.name, markMissing:!!(S.cImp&&S.cImp.markMissing)}});
+  r.readAsText(f); input.value = '';
+}
+async function counselPreview(){
+  const ci = S.cImp || {};
+  try {
+    const {recs, unknown} = counselParse(ci.text || '');
+    if (recs.length > 5000) throw new Error('That file has '+recs.length+' rows. The limit is 5,000 per upload, so split it into parts.');
+    st({cImp:Object.assign({}, ci, {busy:true, error:'', result:null, preview:null})});
+    const res = (DEMO_MODE || !authToken) ? counselSimImport(recs, false, ci.markMissing)
+      : await apiFetch('/api/approved-counsel/import', {method:'POST', body:JSON.stringify({rows:recs, dryRun:true, markMissingInactive:!!ci.markMissing})});
+    st({cImp:Object.assign({}, S.cImp, {busy:false, preview:res, recs, unknown})});
+  } catch (e) { st({cImp:Object.assign({}, S.cImp||{}, {busy:false, error:e.message, preview:null})}); }
+}
+async function counselCommit(){
+  const ci = S.cImp || {}; if (!ci.recs) return;
+  st({cImp:Object.assign({}, ci, {busy:true, error:''})});
+  try {
+    const res = (DEMO_MODE || !authToken) ? counselSimImport(ci.recs, true, ci.markMissing)
+      : await apiFetch('/api/approved-counsel/import', {method:'POST', body:JSON.stringify({rows:ci.recs, dryRun:false, markMissingInactive:!!ci.markMissing})});
+    if (!DEMO_MODE && authToken) { S.counselList = null; await loadCounsel(true); }
+    st({cImp:{text:'', fileName:'', markMissing:false, busy:false, result:res}});
+  } catch (e) { st({cImp:Object.assign({}, S.cImp, {busy:false, error:e.message})}); }
+}
+async function counselRemove(id){
+  if (!confirm('Remove this attorney from the approved panel? Matters that already name them keep the name.')) return;
+  if (DEMO_MODE || !authToken) { S.demoCounsel = counselAll().filter(x => x.id !== id); render(); return; }
+  try { await apiFetch('/api/approved-counsel/'+id, {method:'DELETE'}); S.counselList = null; await loadCounsel(true); render(); } catch (e) { alert(e.message); }
+}
+function counselErrorsCsv(){
+  const pv = S.cImp && S.cImp.preview; if (!pv) return;
+  downloadCSV('approved-counsel-rows-to-fix.csv', ['Row in your file','Attorney','Problem'], pv.errors.map(e => [e.row, e.name, e.reason]));
+}
+function counselV(){
+  const canUpload = canSeeAssignAlert(); loadCounsel();
+  const ci = S.cImp || {}, list = counselAll(), pv = ci.preview, res = ci.result;
+  let h = '<div class="wrap" style="padding-top:18px;max-width:1100px;">';
+  h += '<div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">Approved Counsel</div>';
+  h += '<div style="font-size:13px;color:var(--muted);margin:4px 0 16px;max-width:780px;line-height:1.6;">Your approved defense attorneys. Load the whole panel from a spreadsheet, then pick defense counsel from it on any matter. Defense counsel is told when a time-limit demand is logged on their matter.</div>';
+  if (S.counselErr) h += '<div class="alert-bad" style="margin-bottom:12px;font-size:12.5px;">'+esc(S.counselErr)+'</div>';
+  if (canUpload) {
+    h += '<div class="card" style="padding:14px 16px;margin-bottom:16px;"><div style="font-weight:800;font-size:14px;margin-bottom:8px;">Upload your approved attorneys</div>';
+    h += '<div style="font-size:12.5px;color:var(--muted);line-height:1.65;margin-bottom:10px;"><strong>1.</strong> <span class="muted-link" style="cursor:pointer;" onclick="counselTemplateDownload()">Download the template</span> (or use your own spreadsheet saved as CSV; common column names are recognized). <strong>2.</strong> Choose the file. <strong>3.</strong> Preview it: nothing is saved until you confirm. Attorneys already on the panel are matched by your ID, then email, then name and firm, and updated instead of duplicated.</div>';
+    h += '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;"><label class="btn btn-out" style="cursor:pointer;margin:0;">⬆ Choose CSV file<input type="file" accept=".csv,.txt,text/csv" style="display:none" onchange="counselFile(this)"></label>'+
+      '<button class="btn btn-out" onclick="counselTemplateDownload()">Download template</button>'+(ci.fileName?'<span style="font-size:12px;color:var(--dim);">Loaded: '+esc(ci.fileName)+'</span>':'')+'</div>';
+    h += '<div style="margin-top:8px;"><textarea class="inp" rows="3" placeholder="…or paste rows here, including the header row" oninput="S.cImp=Object.assign({},S.cImp||{},{text:this.value})" style="font-family:monospace;font-size:11.5px;">'+esc(ci.text||'')+'</textarea></div>';
+    h += '<label style="font-size:12px;display:flex;gap:6px;align-items:center;margin-top:8px;text-transform:none;letter-spacing:0;font-weight:500;"><input type="checkbox" '+(ci.markMissing?'checked':'')+' onchange="S.cImp=Object.assign({},S.cImp||{},{markMissing:this.checked})"> Mark attorneys that are not in this file as Inactive (use this when the file is your complete, current panel)</label>';
+    if (ci.error) h += '<div class="alert-bad" style="margin-top:8px;font-size:12.5px;">'+esc(ci.error)+'</div>';
+    h += '<div style="margin-top:10px;"><button class="btn btn-pri" '+(ci.busy?'disabled':'')+' onclick="counselPreview()">'+(ci.busy?'Working…':'Preview the import')+'</button></div>';
+    if (pv) {
+      const tile = (l, v, col) => '<div style="flex:1 1 130px;border:1px solid #E5E7EB;border-radius:10px;padding:8px 12px;background:#fff;"><div style="font-size:11px;color:var(--muted);">'+l+'</div><div style="font-size:22px;font-weight:800;color:'+col+';">'+v+'</div></div>';
+      h += '<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px;"><div style="font-weight:700;font-size:13px;margin-bottom:8px;">Preview of '+pv.rows+' rows (nothing saved yet)</div><div style="display:flex;gap:10px;flex-wrap:wrap;">'+
+        tile('New attorneys', pv.created, '#15803D')+tile('Updated', pv.updated, 'var(--ink)')+tile('Need fixing', pv.skipped, pv.skipped?'#B91C1C':'#15803D')+(ci.markMissing?tile('Will be marked Inactive', pv.deactivated, pv.deactivated?'#B45309':'var(--ink)'):'')+'</div>';
+      if (pv.duplicatesInFile) h += '<div style="font-size:12px;color:#92400E;margin-top:8px;">'+pv.duplicatesInFile+' duplicate row'+(pv.duplicatesInFile!==1?'s':'')+' in the file. The last one is used.</div>';
+      if (ci.unknown && ci.unknown.length) h += '<div style="font-size:12px;color:var(--muted);margin-top:6px;">Ignored columns: '+ci.unknown.map(esc).join(', ')+'</div>';
+      if (pv.errors.length) {
+        h += '<div style="margin-top:10px;font-size:12.5px;font-weight:700;color:#991B1B;">Rows that need fixing (they will be skipped)</div><div style="max-height:220px;overflow:auto;border:1px solid #FCA5A5;border-radius:8px;margin-top:4px;"><table class="tbl" style="width:100%;font-size:12px;"><thead><tr><th style="width:80px;">Row</th><th>Attorney</th><th>Problem</th></tr></thead><tbody>'+pv.errors.map(e=>'<tr><td>'+e.row+'</td><td>'+esc(e.name)+'</td><td>'+esc(e.reason)+'</td></tr>').join('')+'</tbody></table></div>'+(pv.moreErrors?'<div style="font-size:11.5px;color:var(--dim);margin-top:4px;">+ '+pv.moreErrors+' more not shown.</div>':'')+'<div style="margin-top:6px;"><span class="muted-link" style="cursor:pointer;" onclick="counselErrorsCsv()">Download the rows to fix</span></div>';
+      }
+      const n = pv.created + pv.updated;
+      h += '<div style="margin-top:12px;display:flex;gap:8px;"><button class="btn btn-pri" '+(!n||ci.busy?'disabled':'')+' onclick="counselCommit()">Import '+n+' attorney'+(n!==1?'s':'')+(pv.skipped?' (skip '+pv.skipped+')':'')+'</button><button class="btn btn-out" onclick="st({cImp:{text:\'\',fileName:\'\',markMissing:false}})">Start over</button></div></div>';
+    }
+    if (res) h += '<div class="alert-good" style="margin-top:12px;font-size:12.5px;">Imported. '+res.created+' added, '+res.updated+' updated'+(res.deactivated?', '+res.deactivated+' marked Inactive':'')+(res.skipped?', '+res.skipped+' skipped':'')+'.</div>';
+    h += '</div>';
+  } else h += '<div class="card" style="padding:10px 14px;margin-bottom:14px;font-size:12.5px;color:var(--muted);">An owner or admin loads and updates the panel.</div>';
+  // panel list
+  const q = (S.counselQ||'').toLowerCase(), fs = S.counselState||'', ft = S.counselStatus||'';
+  const rows = list.filter(x => (!q || (x.name+' '+(x.firm||'')+' '+(x.email||'')).toLowerCase().includes(q)) && (!fs || (x.states||[]).includes(fs)) && (!ft || x.status === ft));
+  const states = Array.from(new Set(list.flatMap(x => x.states||[]))).sort();
+  const by = {}; list.forEach(x => { by[x.status] = (by[x.status]||0)+1; });
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:center;"><div style="font-weight:800;font-size:15px;">Your panel ('+list.length+')</div>'+
+    ['Preferred','Approved','Pending','Inactive'].filter(k=>by[k]).map(k=>'<span class="tag tag-info">'+by[k]+' '+k+'</span>').join('')+'</div>';
+  if (!counselLoaded()) h += '<div class="card" style="padding:14px;color:var(--dim);">Loading the panel…</div>';
+  else if (!list.length) h += '<div class="card" style="padding:14px;font-size:13px;color:var(--muted);">No approved attorneys loaded yet. Upload your panel above to get started.</div>';
+  else {
+    h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;"><input class="inp" style="max-width:260px;" placeholder="Search name, firm or email" value="'+esc(S.counselQ||'')+'" oninput="S.counselQ=this.value;clearTimeout(window._cqT);window._cqT=setTimeout(render,250)">'+
+      '<select class="inp" style="width:auto;" onchange="st({counselState:this.value})"><option value="">All states</option>'+states.map(x=>'<option'+(fs===x?' selected':'')+'>'+x+'</option>').join('')+'</select>'+
+      '<select class="inp" style="width:auto;" onchange="st({counselStatus:this.value})"><option value="">All statuses</option>'+['Preferred','Approved','Pending','Inactive'].map(x=>'<option'+(ft===x?' selected':'')+'>'+x+'</option>').join('')+'</select></div>';
+    h += '<div style="overflow:auto;"><table class="tbl" style="width:100%;font-size:12.5px;"><thead><tr><th>Attorney</th><th>Firm</th><th>States</th><th>Email</th><th>Phone</th><th>Rate</th><th>Status</th>'+(canUpload?'<th></th>':'')+'</tr></thead><tbody>'+
+      rows.slice(0, 300).map(x => '<tr><td><strong>'+esc(x.name)+'</strong>'+(x.practiceAreas?'<div style="font-size:11px;color:var(--dim);">'+esc(x.practiceAreas)+'</div>':'')+'</td><td>'+esc(x.firm||'')+'</td><td>'+esc((x.states||[]).join(', '))+'</td><td>'+esc(x.email||'')+'</td><td>'+esc(x.phone||'')+'</td><td>'+(x.hourlyRate!=null && x.hourlyRate!==''?'$'+x.hourlyRate:'')+'</td><td><span class="tag '+(x.status==='Inactive'?'tag-danger':x.status==='Pending'?'tag-warn':'tag-ok')+'">'+esc(x.status)+'</span></td>'+(canUpload?'<td><span class="muted-link" style="cursor:pointer;" onclick="counselRemove(\''+esc(x.id)+'\')">Remove</span></td>':'')+'</tr>').join('')+'</tbody></table></div>'+
+      (rows.length>300?'<div style="font-size:11.5px;color:var(--dim);margin-top:6px;">Showing the first 300 of '+rows.length+'. Use search or the filters to narrow the list.</div>':'')+
+      (!DEMO_MODE && (S.counselTotal||0) > list.length ? '<div style="font-size:11.5px;color:var(--dim);margin-top:6px;">'+list.length+' of '+S.counselTotal+' attorneys loaded on screen.</div>':'');
+  }
+  return h + '</div>';
+}
+
 function demandDeskRowV(r){
   const c = r.c, d = r.d, tone = demandTone(r.left), me = demandMe();
-  const role = c.attorney === me ? 'You are the primary' : (c.backupAttorney === me ? 'You are the backup' : '');
+  const role = claimsPrimary(c) === me ? 'You are the adjuster' : (claimsBackup(c) === me ? 'You are the backup adjuster' : '');
   const mid = esc(c.id), did = esc(d.id);
   let h = '<div class="card" style="padding:11px 14px;margin-bottom:8px;border-left:5px solid '+tone.bd+';'+(r.left<0?'background:#FFF1F2;':'')+'">';
   h += '<div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;"><div style="flex:1;min-width:230px;">';
@@ -3860,7 +4075,7 @@ function attentionData(scopeCases, opts){
         go:"st({role:'demands',caseId:null,showWelcome:false})"}); } }
 
   { const nb = open.filter(c => caseNeedsBackup(c) && backupMissing(c));
-    if (nb.length) items.push({key:'nobackup', sev:'red', icon:'👥', title:'Time-critical matters with no backup claims person', count:nb.length, cases:nb,
+    if (nb.length) items.push({key:'nobackup', sev:'red', icon:'👥', title:'Time-critical matters with no backup adjuster', count:nb.length, cases:nb,
       detail: first(nb, c => esc(c.client))}); }
 
   // 1. Statute of limitations — the one missed date that becomes a claim against you
@@ -12094,6 +12309,7 @@ function randomizeDemoData(){
   CASES.forEach(c => {
     // Attorney reassignment (preserves the original workload distribution)
     c.attorney = nameMap[c.attorney] || randoPick(newNames);
+    if (c.backupAttorney) c.backupAttorney = nameMap[c.backupAttorney] || c.backupAttorney;
 
     // Client name — mostly company-style (matches this dataset's
     // mostly-commercial matter mix), occasionally a person's name.
