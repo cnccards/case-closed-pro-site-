@@ -193,7 +193,7 @@ footer{padding:44px 0 36px;}
     <h1>One shared source of truth for your claims team <em>and</em> defense counsel.</h1>
     <p class="sub">Case Closed Pro replaces the email threads and spreadsheets between claims and outside counsel with a single litigation platform — from first assignment to a closing package your claims team can actually act on.</p>
     <div class="hero-btns">
-      <a href="case-closed-pro.html?demo=1" target="_blank" class="btn-white">See a Live Demo</a>
+      <a href="javascript:void(0)" onclick="openContactModal('I would like to see a live demo of Case Closed Pro.')" class="btn-white">See a Live Demo</a>
       <a href="javascript:void(0)" onclick="openContactModal()" class="btn-outline-w">Start a 90-Day Pilot</a>
     </div>
     <div class="hero-stats">
@@ -419,6 +419,8 @@ footer{padding:44px 0 36px;}
       <button class="cf-submit" id="cfSubmitBtn" onclick="submitContactSales()">Send Message</button>
       <div id="cfStatus"></div>
       <div class="cf-note">Or email us directly at <a href="mailto:sales@cclosed.com">sales@cclosed.com</a></div>
+      <div class="cf-note" style="margin-top:10px;">Prefer to talk live? <a href="https://calendly.com/cclosed" target="_blank" rel="noopener">Book a live video demo</a></div>
+      <div class="cf-note" style="margin-top:6px;">Case Closed Pro team? <a href="case-closed-pro.html?demo=1" target="_blank">Open the demo with the password</a></div>
     </div>
   </div>
 </div>
@@ -428,6 +430,7 @@ footer{padding:44px 0 36px;}
    Set window.CCP_API_BASE (same convention as the product app) to
    send through a real backend at /api/contact-sales. Left unset,
    this falls back to a mailto: link — always works, zero setup. */
+window.CCP_API_BASE = window.CCP_API_BASE || 'https://case-closed-pro-site.onrender.com';
 const SALES_EMAILS = ['matt@cclosed.com', 'mike@cclosed.com', 'sales@cclosed.com'];
 
 function openContactModal(prefillMessage){
