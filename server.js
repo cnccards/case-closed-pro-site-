@@ -3934,6 +3934,78 @@ function caseLastActivityMs(c) {
   (c.updates || []).forEach(u => { const t = new Date(u.date).getTime(); if (!isNaN(t) && t > best) best = t; });
   return best;
 }
+// ---------------------------------------------------------------
+// TIME-LIMIT DEMANDS. A time-limited policy-limits demand that goes
+// unanswered can turn a defensible claim into an excess ("nuclear")
+// verdict against the insurer. Demands are recorded per case in
+// data.timeLimitDemands: { id, deadline 'YYYY-MM-DD', extendedDeadline,
+// status 'open'|'accepted'|'rejected'|'countered'|'withdrawn'|'lapsed',
+// demandAmount, policyLimits, state, ... }. A demand is OPEN until a
+// person records a response; an open demand past its deadline is the
+// most urgent thing in the system. Day-granular on purpose (US Eastern
+// dates): it never rounds in favor of "more time".
+// ---------------------------------------------------------------
+const DEMAND_WARN_DAYS = 14;
+function demandEffectiveDeadline(d) { return (d.extendedDeadline || d.deadline || '').slice(0, 10); }
+function demandRows(cases, today) {
+  const t0 = Date.parse(today + 'T00:00:00Z');
+  const rows = [];
+  for (const c of cases) {
+    if (c.status === 'Closed') continue;
+    for (const d of (Array.isArray(c.timeLimitDemands) ? c.timeLimitDemands : [])) {
+      if (!d || d.status !== 'open') continue;
+      const eff = demandEffectiveDeadline(d);
+      const ms = Date.parse(eff + 'T00:00:00Z');
+      if (!Number.isFinite(ms)) continue;
+      rows.push({ c, d, eff, daysLeft: Math.round((ms - t0) / 864e5) });
+    }
+  }
+  return rows.sort((a, b) => a.daysLeft - b.daysLeft);
+}
+function demandLine(r) {
+  const when = r.daysLeft < 0 ? `${Math.abs(r.daysLeft)} day(s) PAST DEADLINE` : r.daysLeft === 0 ? 'DUE TODAY' : r.daysLeft === 1 ? 'due tomorrow' : `due in ${r.daysLeft} days`;
+  const who = caseTeamText(r.c);
+  if (r.kind === 'sol') return `${r.c.matterNo || r.c.id} ${r.c.client}: STATUTE OF LIMITATIONS ${r.eff}, ${when}${who}`;
+  const amt = Number(r.d.demandAmount) ? ` — demand $${Math.round(Number(r.d.demandAmount)).toLocaleString('en-US')}` : '';
+  return `${r.c.matterNo || r.c.id} ${r.c.client} (${r.d.state || 'state not set'}): ${r.eff}, ${when}${amt}${who}`;
+}
+// Every time-critical matter (open demand or statute of limitations soon) needs a second claims
+// person so the date is double-tracked if one person is out or misses it.
+function caseTeamText(c) {
+  const p = (c.attorney || '').trim(), b = (c.backupAttorney || '').trim();
+  const prim = p && p !== 'Unassigned' ? p : 'NO PRIMARY ASSIGNED';
+  return ` — Primary: ${prim}; Backup: ${b || 'NO BACKUP ASSIGNED'}`;
+}
+function caseNeedsBackup(c) {
+  if (c.status === 'Closed') return false;
+  const hasDemand = (Array.isArray(c.timeLimitDemands) ? c.timeLimitDemands : []).some(d => d && d.status === 'open');
+  const solMs = c.keyDates?.sol ? Date.parse(String(c.keyDates.sol).slice(0, 10) + 'T00:00:00Z') : NaN;
+  const solSoon = Number.isFinite(solMs) && solMs <= Date.now() + 120 * 864e5;
+  return hasDemand || solSoon;
+}
+function backupMissing(c) {
+  const p = (c.attorney || '').trim().toLowerCase(), b = (c.backupAttorney || '').trim().toLowerCase();
+  return !b || b === 'unassigned' || b === p;
+}
+const SOL_EMAIL_DAYS = 30;
+function solRows(cases, today) {
+  const t0 = Date.parse(today + 'T00:00:00Z');
+  const rows = [];
+  for (const c of cases) {
+    if (c.status === 'Closed' || !c.keyDates?.sol) continue;
+    const eff = String(c.keyDates.sol).slice(0, 10);
+    const ms = Date.parse(eff + 'T00:00:00Z');
+    if (!Number.isFinite(ms)) continue;
+    const daysLeft = Math.round((ms - t0) / 864e5);
+    if (daysLeft > SOL_EMAIL_DAYS) continue;
+    rows.push({ c, d: null, kind: 'sol', eff, daysLeft });
+  }
+  return rows.sort((a, b) => a.daysLeft - b.daysLeft);
+}
+function solNeedsEmailToday(daysLeft) { return daysLeft <= 3 || [30, 14, 7].includes(daysLeft); }
+// Escalation: overdue or within 3 days = every day; 4 to 14 days = on milestone days only.
+function demandNeedsEmailToday(daysLeft) { return daysLeft <= 3 || [14, 10, 7, 5].includes(daysLeft); }
+
 function computeAlertItems(cases, opts = {}) {
   const now = Date.now(), day = 864e5;
   const money = n => '$' + Math.round(Number(n) || 0).toLocaleString('en-US');
@@ -3947,6 +4019,10 @@ function computeAlertItems(cases, opts = {}) {
   if (!opts.personal) {
     add('unassigned', 'red', 'Matters need an attorney', open.filter(c => !(c.attorney || '').trim() || c.attorney === 'Unassigned'),
       c => `${label(c)} (${money(c.value)})`);
+  }
+  if (!opts.personal) {
+    add('nobackup', 'red', 'Time-critical matters with no backup claims person', open.filter(c => caseNeedsBackup(c) && backupMissing(c)),
+      c => `${label(c)} — ${c.keyDates?.sol ? 'SOL ' + String(c.keyDates.sol).slice(0, 10) : 'open time-limit demand'}${caseTeamText(c)}`);
   }
   const sol = open.filter(c => c.keyDates?.sol && new Date(c.keyDates.sol).getTime() <= now + ALERT_T.SOL_DAYS * day).sort((a, b) => new Date(a.keyDates.sol) - new Date(b.keyDates.sol));
   add('sol', 'red', `Statute of limitations within ${ALERT_T.SOL_DAYS} days`, sol, c => `${label(c)} — ${c.keyDates.sol} (${dtxt(dleft(c.keyDates.sol))})`);
@@ -3969,8 +4045,14 @@ function computeAlertItems(cases, opts = {}) {
     add('overload', 'amber', `Attorneys at ${ALERT_T.OVERLOAD_OPEN}+ open matters`, loaded, ([a, n]) => `${a} — ${n} open matters`);
     if (opts.payablesWaiting) items.push({ key: 'payables', sev: 'amber', title: 'Payables awaiting approval', count: opts.payablesWaiting, lines: [`${opts.payablesWaiting} payable(s) totaling ${money(opts.payablesAmount)}`], more: 0 });
   }
+  {
+    const rows = demandRows(open, easternNow().date);
+    const late = rows.filter(r => r.daysLeft < 0), soon = rows.filter(r => r.daysLeft >= 0 && r.daysLeft <= DEMAND_WARN_DAYS);
+    if (late.length) items.push({ key: 'demand_overdue', sev: 'red', top: true, title: 'TIME-LIMIT DEMAND PAST DEADLINE, NO RESPONSE RECORDED', count: late.length, lines: late.slice(0, 5).map(demandLine), more: Math.max(0, late.length - 5) });
+    if (soon.length) items.push({ key: 'demand_due', sev: 'red', top: true, title: `Time-limit demands due within ${DEMAND_WARN_DAYS} days`, count: soon.length, lines: soon.slice(0, 5).map(demandLine), more: Math.max(0, soon.length - 5) });
+  }
   const rank = { red: 0, amber: 1 };
-  items.sort((a, b) => rank[a.sev] - rank[b.sev] || b.count - a.count);
+  items.sort((a, b) => (b.top ? 1 : 0) - (a.top ? 1 : 0) || rank[a.sev] - rank[b.sev] || b.count - a.count);
   return items;
 }
 function buildAlertEmail(orgName, recipientName, items, personal) {
@@ -4042,6 +4124,255 @@ async function runDailyAlertCheck() {
     if (client) client.release();
   }
 }
+
+// Time-limit demand and statute-of-limitations emails. OPT-IN: an owner or admin turns them on
+// (Verdict Shield screen, POST /api/org/demand-emails), stored as features.demand_emails_on.
+// Once on, they are NOT governed by the daily/weekly/monthly alert setting.
+// Recipients: owners and admins get everything. The primary attorney AND the backup claims
+// person on a matter each get that matter's items, so a date is double-tracked.
+function buildDemandEmail(orgName, recipientName, rows, backupFor, missingBackup) {
+  const url = `${process.env.APP_URL || 'http://localhost:3000'}/case-closed-pro.html`;
+  const demands = rows.filter(r => r.kind !== 'sol');
+  const late = rows.filter(r => r.daysLeft < 0).length;
+  let t = `Hi ${recipientName || 'there'},\n\n`;
+  t += late ? `${late} time-critical item(s) in ${orgName} are PAST DEADLINE. Escalate to counsel immediately.\n\n` : `These time-critical items in ${orgName} need action before they expire:\n\n`;
+  rows.forEach(r => {
+    const tag = r.daysLeft < 0 ? '[PAST DEADLINE]' : r.daysLeft <= 3 ? '[ACT NOW]' : '[WATCH]';
+    const bk = backupFor && backupFor.has(r.c.id) ? ' (YOU ARE THE BACKUP)' : '';
+    t += `  ${tag} ${demandLine(r)}${bk}\n`;
+  });
+  if (missingBackup && missingBackup.length) {
+    t += `\nNo backup claims person is assigned on: ${missingBackup.map(c => c.matterNo || c.id).join(', ')}. Assign one in Case Closed Pro so these dates are double-tracked.\n`;
+  }
+  t += `\nRecord the response (accepted, rejected, counter-offered, or extension granted) in Case Closed Pro so demand reminders stop:\n${url}\n\n`;
+  t += 'An unanswered time-limit demand can expose the insurer to a judgment above policy limits, and a missed statute of limitations can end a defense or create a claim against the firm. This is an automated reminder, not legal advice; confirm deadlines against the source documents and with counsel.\n';
+  const kind = demands.length && demands.length === rows.length ? 'time-limit demand' : 'time-critical date';
+  return { subject: `${late ? 'URGENT PAST DEADLINE' : 'URGENT'}: ${rows.length} ${kind}${rows.length !== 1 ? 's' : ''} — ${orgName}`, text: t };
+}
+async function sendDemandEmailsForOrg(client, org, today) {
+  const cases = (await client.query('SELECT * FROM cases WHERE org_id = $1', [org.id])).rows.map(rowToCase);
+  const rows = demandRows(cases, today).filter(r => r.daysLeft <= DEMAND_WARN_DAYS).map(r => ({ ...r, kind: 'demand' }))
+    .concat(solRows(cases, today));
+  const send = rows.filter(r => r.kind === 'sol' ? solNeedsEmailToday(r.daysLeft) : demandNeedsEmailToday(r.daysLeft));
+  if (!send.length) return 0;
+  const missing = cases.filter(c => caseNeedsBackup(c) && backupMissing(c));
+  const users = (await client.query('SELECT id, email, name, role FROM users WHERE org_id = $1 AND is_active = true', [org.id])).rows;
+  let sent = 0;
+  for (const u of users) {
+    const isMgr = u.role === 'owner' || u.role === 'admin';
+    const nm = (u.name || '').trim().toLowerCase();
+    const isPrimary = c => c.assignedAttorneyUserId === u.id || (nm && (c.attorney || '').trim().toLowerCase() === nm);
+    const isBackup = c => nm && (c.backupAttorney || '').trim().toLowerCase() === nm;
+    // Managers get every item that is due today. Everyone else gets the items on matters they
+    // are primary or backup on, and sees the whole open list for those matters, not just today's.
+    const mine = isMgr ? send : rows.filter(r => (isPrimary(r.c) || isBackup(r.c)) && send.some(x => x.c.id === r.c.id));
+    if (!mine.length) continue;
+    const backupFor = new Set(mine.filter(r => isBackup(r.c) && !isPrimary(r.c)).map(r => r.c.id));
+    const mail = buildDemandEmail(org.name, u.name, mine, backupFor, isMgr ? missing : []);
+    await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: u.email, subject: mail.subject, text: mail.text });
+    sent++;
+  }
+  return sent;
+}
+async function runDemandWatchCheck() {
+  if (!SMTP_CONFIGURED) return;
+  const et = easternNow();
+  if (et.hour < 7) return; // every day including weekends: deadlines do not skip them
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    await client.query(`SET LOCAL app.is_platform_admin = 'true'`);
+    const due = await client.query(
+      `SELECT id, name FROM organizations
+       WHERE access_status = 'active' AND name NOT LIKE 'Health Check —%'
+         AND COALESCE(features->>'demand_emails_on', 'false') = 'true'
+         AND COALESCE(features->>'demand_alerts_last_sent', '') <> $1`, [et.date]);
+    for (const org of due.rows) {
+      try {
+        const n = await sendDemandEmailsForOrg(client, org, et.date);
+        await client.query(`UPDATE organizations SET features = jsonb_set(COALESCE(features, '{}'::jsonb), '{demand_alerts_last_sent}', to_jsonb($1::text)) WHERE id = $2`, [et.date, org.id]);
+        if (n) console.log(`Time-limit demand emails: sent ${n} for org ${org.id}`);
+      } catch (e) {
+        console.error(`Time-limit demand emails failed for org ${org.id} (will retry next hour):`, e.message);
+      }
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    console.error('Demand watch check failed:', e.message);
+  } finally {
+    if (client) client.release();
+  }
+}
+
+// ---------------------------------------------------------------
+// ESCALATION LADDER + ACKNOWLEDGMENT for time-limit demands (opt-in with the demand emails).
+// Deadlines are hour-level: date + time of day + time zone (5:00 PM Eastern assumed when the letter
+// gives no time). Ladder (default 72 / 48 / 24 hours): manager, director, VP/Chief Claims. Only rungs
+// marked unlessAcked are skipped when the primary AND backup claims person have both acknowledged.
+// Everyone on the matter (primary and backup) is included at every rung. A response ends the ladder.
+// If several rungs were crossed while email was off or the server was down, only the most urgent sends
+// (the others are recorded as covered). Sent notices are remembered in features._demandEsc (hidden
+// from customers) so nothing sends twice.
+// ---------------------------------------------------------------
+const DEMAND_LADDER_DEFAULT = [
+  { hours: 72, label: 'Manager', userIds: [], roles: ['admin', 'owner'], unlessAcked: true },
+  { hours: 48, label: 'Director', userIds: [], roles: ['admin', 'owner'], unlessAcked: false },
+  { hours: 24, label: 'VP / Chief Claims', userIds: [], roles: ['owner'], unlessAcked: false }];
+function normalizeLadder(raw) {
+  if (!Array.isArray(raw) || !raw.length || raw.length > 6) return null;
+  const out = [], seen = new Set();
+  for (const r of raw) {
+    const hours = parseInt(r && r.hours, 10);
+    if (!Number.isFinite(hours) || hours < 1 || hours > 720 || seen.has(hours)) return null;
+    seen.add(hours);
+    const roles = Array.isArray(r.roles) ? r.roles.filter(x => x === 'owner' || x === 'admin') : ['admin', 'owner'];
+    out.push({
+      hours, label: String(r.label || 'Escalation').trim().slice(0, 40) || 'Escalation',
+      userIds: Array.isArray(r.userIds) ? r.userIds.map(String).slice(0, 25) : [],
+      roles: roles.length ? roles : ['admin', 'owner'], unlessAcked: !!r.unlessAcked
+    });
+  }
+  return out.sort((a, b) => b.hours - a.hours);
+}
+const TZ_ABBR = { 'America/New_York': 'ET', 'America/Chicago': 'CT', 'America/Denver': 'MT', 'America/Los_Angeles': 'PT' };
+function tzOffsetMs(utcMs, tz) {
+  const p = {};
+  new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    .formatToParts(new Date(utcMs)).forEach(x => { p[x.type] = x.value; });
+  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - Math.floor(utcMs / 1000) * 1000;
+}
+function tzInstant(dateStr, hm, tz) {
+  const dm = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr || ''), tm = /^(\d{1,2}):(\d{2})/.exec(hm || '');
+  if (!dm || !tm) return NaN;
+  const zone = TZ_ABBR[tz] ? tz : 'America/New_York';
+  const base = Date.UTC(+dm[1], +dm[2] - 1, +dm[3], +tm[1], +tm[2]);
+  let t = base; for (let i = 0; i < 3; i++) t = base - tzOffsetMs(t, zone);
+  return t;
+}
+function demandHMServer(d) {
+  if (d.deadlineHM && /^\d{1,2}:\d{2}$/.test(d.deadlineHM)) return { hm: d.deadlineHM, stated: true };
+  const m = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i.exec(d.deadlineTime || '');
+  if (m) { let h = (+m[1]) % 12; if (/pm/i.test(m[3])) h += 12; return { hm: String(h).padStart(2, '0') + ':' + (m[2] || '00'), stated: true }; }
+  return { hm: '17:00', stated: false };
+}
+function demandDeadlineMs(d) { return tzInstant(demandEffectiveDeadline(d), demandHMServer(d).hm, d.tz); }
+function demandDeadlineText(d) {
+  const t = demandHMServer(d), [h, m] = t.hm.split(':').map(Number);
+  return `${demandEffectiveDeadline(d)} ${(h % 12) || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'} ${TZ_ABBR[d.tz] || 'ET'}${t.stated ? '' : ' (no time in the letter; 5:00 PM assumed)'}`;
+}
+function demandFullyAcked(c, d) {
+  const prim = (c.attorney || '').trim(), bk = (c.backupAttorney || '').trim();
+  const needP = prim && prim !== 'Unassigned', needB = !backupMissing(c);
+  const by = n => (Array.isArray(d.acks) ? d.acks : []).some(a => a && a.by === n);
+  if (!needP && !needB) return Array.isArray(d.acks) && d.acks.length > 0;
+  return (!needP || by(prim)) && (!needB || by(bk));
+}
+function hoursText(h) {
+  const a = Math.abs(h), hh = Math.floor(a), mm = Math.floor((a - hh) * 60);
+  const t = a >= 48 ? `${Math.floor(a / 24)} days ${Math.floor(a % 24)}h` : `${hh}h ${String(mm).padStart(2, '0')}m`;
+  return h < 0 ? `${t} PAST DEADLINE` : `${t} left`;
+}
+function buildEscalationEmail(orgName, kind, c, d, hrs, acked) {
+  const url = `${process.env.APP_URL || 'http://localhost:3000'}/case-closed-pro.html`;
+  const head = kind.late ? `PAST DEADLINE: a time-limit demand has no response recorded.` : kind.isNew ? `A time-limit demand was logged on a matter you are on. Please open it and acknowledge it.` :
+    `ESCALATION to ${kind.label}: a time-limit demand is ${hoursText(hrs)}${acked ? '' : ' and has NOT been acknowledged by everyone assigned'}.`;
+  let t = `${head}\n\n`;
+  t += `Matter: ${c.matterNo || c.id} ${c.client}\nState: ${d.state || 'not set'}\nDeadline: ${demandDeadlineText(d)}\nTime: ${hoursText(hrs)}\n`;
+  if (Number(d.demandAmount)) t += `Demand: $${Math.round(Number(d.demandAmount)).toLocaleString('en-US')}${Number(d.policyLimits) ? ` (limits $${Math.round(Number(d.policyLimits)).toLocaleString('en-US')})` : ''}\n`;
+  t += `${caseTeamText(c).replace(/^ — /, '')}\nAcknowledged: ${acked ? 'yes, by everyone assigned' : 'NO'}\n`;
+  t += `\nOpen it, acknowledge it, and record the response:\n${url}\n\nResponding to the demand in Case Closed Pro ends these notices. This is an automated reminder, not legal advice; confirm the deadline against the demand letter and with counsel.\n`;
+  const sub = kind.late ? `URGENT PAST DEADLINE: ${c.client} time-limit demand` : kind.isNew ? `New time-limit demand: ${c.client}` : `[Escalation: ${kind.label}] ${hoursText(hrs)}: ${c.client} time-limit demand`;
+  return { subject: sub, text: t };
+}
+async function sendEscalationsForOrg(client, org) {
+  const f = org.features || {};
+  const ladder = normalizeLadder(f.demand_ladder) || DEMAND_LADDER_DEFAULT;
+  const esc = (f._demandEsc && typeof f._demandEsc === 'object') ? JSON.parse(JSON.stringify(f._demandEsc)) : {};
+  const cases = (await client.query('SELECT * FROM cases WHERE org_id = $1', [org.id])).rows.map(rowToCase);
+  const users = (await client.query('SELECT id, email, name, role FROM users WHERE org_id = $1 AND is_active = true', [org.id])).rows;
+  const now = Date.now(), openIds = new Set();
+  let changed = false, sent = 0;
+  const matterPeople = c => users.filter(u => {
+    const nm = (u.name || '').trim().toLowerCase();
+    return c.assignedAttorneyUserId === u.id || (nm && ((c.attorney || '').trim().toLowerCase() === nm || (c.backupAttorney || '').trim().toLowerCase() === nm));
+  });
+  const rungPeople = r => {
+    const byId = users.filter(u => (r.userIds || []).includes(u.id));
+    return byId.length ? byId : users.filter(u => (r.roles || []).includes(u.role));
+  };
+  const mail = async (people, m) => {
+    const seen = new Set(); let n = 0;
+    for (const u of people) { if (!u.email || seen.has(u.email.toLowerCase())) continue; seen.add(u.email.toLowerCase());
+      await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: u.email, subject: m.subject, text: m.text }); n++; }
+    return n;
+  };
+  for (const c of cases) {
+    if (c.status === 'Closed') continue;
+    for (const d of (Array.isArray(c.timeLimitDemands) ? c.timeLimitDemands : [])) {
+      if (!d || d.status !== 'open' || !d.id) continue;
+      const ms = demandDeadlineMs(d); if (!Number.isFinite(ms)) continue;
+      openIds.add(d.id);
+      const hrs = (ms - now) / 36e5, entry = esc[d.id] = esc[d.id] || {}, acked = demandFullyAcked(c, d), at = new Date().toISOString();
+      try {
+        if (!entry.new) {
+          if (hrs >= 0) sent += await mail(matterPeople(c), buildEscalationEmail(org.name, { isNew: true }, c, d, hrs, acked));
+          entry.new = { at }; changed = true;
+        }
+        const crossed = ladder.filter(r => hrs <= r.hours && !entry[String(r.hours)]);
+        if (crossed.length && hrs < 0) {
+          // Already past the deadline: the single PAST DEADLINE notice below covers every rung.
+          for (const r of crossed) entry[String(r.hours)] = { at, skipped: true, merged: true };
+          changed = true;
+        } else if (crossed.length) {
+          const top = crossed.reduce((a, b) => (b.hours < a.hours ? b : a));
+          for (const r of crossed) if (r !== top) { entry[String(r.hours)] = { at, skipped: true, merged: true }; changed = true; }
+          if (top.unlessAcked && acked) entry[String(top.hours)] = { at, skipped: true };
+          else {
+            sent += await mail(rungPeople(top).concat(matterPeople(c)), buildEscalationEmail(org.name, { label: top.label }, c, d, hrs, acked));
+            entry[String(top.hours)] = { at };
+          }
+          changed = true;
+        }
+        if (hrs < 0 && !entry.late) {
+          const all = ladder.flatMap(rungPeople).concat(matterPeople(c));
+          sent += await mail(all, buildEscalationEmail(org.name, { late: true }, c, d, hrs, acked));
+          entry.late = { at }; changed = true;
+        }
+      } catch (e) { console.error(`Escalation email failed for demand ${d.id} (will retry):`, e.message); }
+    }
+  }
+  for (const id of Object.keys(esc)) if (!openIds.has(id)) { delete esc[id]; changed = true; }
+  if (changed) await client.query(`UPDATE organizations SET features = jsonb_set(COALESCE(features, '{}'::jsonb), '{_demandEsc}', $1::jsonb) WHERE id = $2`, [JSON.stringify(esc), org.id]);
+  return sent;
+}
+async function runDemandEscalations() {
+  if (!SMTP_CONFIGURED) return;
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    await client.query(`SET LOCAL app.is_platform_admin = 'true'`);
+    const orgs = await client.query(
+      `SELECT id, name, features FROM organizations
+       WHERE access_status = 'active' AND name NOT LIKE 'Health Check —%' AND COALESCE(features->>'demand_emails_on', 'false') = 'true'`);
+    for (const org of orgs.rows) {
+      try { const n = await sendEscalationsForOrg(client, org); if (n) console.log(`Demand escalation emails: sent ${n} for org ${org.id}`); }
+      catch (e) { console.error(`Demand escalations failed for org ${org.id}:`, e.message); }
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    console.error('Demand escalation check failed:', e.message);
+  } finally { if (client) client.release(); }
+}
+setInterval(runDemandEscalations, 60 * 60 * 1000);
+setTimeout(runDemandEscalations, 75 * 1000);
+
+setInterval(runDemandWatchCheck, 60 * 60 * 1000);
+setTimeout(runDemandWatchCheck, 45 * 1000);
+
 setInterval(runDailyAlertCheck, 60 * 60 * 1000);
 setTimeout(runDailyAlertCheck, 30 * 1000); // shortly after startup, in case the service just woke up
 
@@ -4062,6 +4393,30 @@ app.post('/api/org/security', requireOrgRole('owner'), async (req, res) => {
   res.json({ require2fa: on });
 });
 
+// Opt-in for time-limit demand and statute-of-limitations emails (off until an owner or admin turns it on).
+app.get('/api/org/demand-emails', async (req, res) => {
+  const f = (await q('SELECT features FROM organizations WHERE id = $1', [req.orgId])).rows[0]?.features || {};
+  const people = (await q('SELECT id, name, role FROM users WHERE org_id = $1 AND is_active = true ORDER BY name', [req.orgId])).rows;
+  const sent = {};
+  for (const [id, e] of Object.entries(f._demandEsc || {})) { sent[id] = {}; for (const [k, v] of Object.entries(e || {})) if (/^\d+$/.test(k)) sent[id][k] = v; }
+  res.json({ enabled: f.demand_emails_on === true, lastSent: f.demand_alerts_last_sent || null, emailConfigured: SMTP_CONFIGURED,
+    ladder: normalizeLadder(f.demand_ladder) || DEMAND_LADDER_DEFAULT, people, sent });
+});
+app.post('/api/org/demand-ladder', requireOrgRole('admin'), async (req, res) => {
+  const ladder = normalizeLadder((req.body || {}).ladder);
+  if (!ladder) return res.status(400).json({ error: 'Each step needs a different number of hours between 1 and 720, and a ladder can have up to 6 steps.' });
+  const ids = new Set((await q('SELECT id FROM users WHERE org_id = $1 AND is_active = true', [req.orgId])).rows.map(r => String(r.id)));
+  ladder.forEach(r => { r.userIds = r.userIds.filter(id => ids.has(id)); });
+  await q(`UPDATE organizations SET features = jsonb_set(COALESCE(features, '{}'::jsonb), '{demand_ladder}', $1::jsonb) WHERE id = $2`, [JSON.stringify(ladder), req.orgId]);
+  await audit(req.orgId, req.user?.sub, 'org.demand_ladder_update', 'organization', req.orgId, { steps: ladder.map(r => r.hours) }, req.ip);
+  res.json({ ladder });
+});
+app.post('/api/org/demand-emails', requireOrgRole('admin'), async (req, res) => {
+  const enabled = !!(req.body || {}).enabled;
+  await q(`UPDATE organizations SET features = jsonb_set(COALESCE(features, '{}'::jsonb), '{demand_emails_on}', to_jsonb($1::boolean)) WHERE id = $2`, [enabled, req.orgId]);
+  await audit(req.orgId, req.user?.sub, 'org.demand_emails_' + (enabled ? 'on' : 'off'), 'organization', req.orgId, null, req.ip);
+  res.json({ enabled, emailConfigured: SMTP_CONFIGURED });
+});
 app.get('/api/org/alert-emails', async (req, res) => {
   const r = await q('SELECT features FROM organizations WHERE id = $1', [req.orgId]);
   const f = r.rows[0]?.features || {};
