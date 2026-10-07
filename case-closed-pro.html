@@ -1041,6 +1041,28 @@ CASES.forEach(c => {
      log:[{date:iso(-60), by:'Sarah Chen', text:'Demand recorded.'},{date:iso(-34), by:'Sarah Chen', text:'Response recorded on '+iso(-34)+': accepted.'}]}]);
 })();
 
+
+const US_STATE_NAMES = {AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',CO:'Colorado',CT:'Connecticut',DE:'Delaware',DC:'District of Columbia',FL:'Florida',GA:'Georgia',HI:'Hawaii',ID:'Idaho',IL:'Illinois',IN:'Indiana',IA:'Iowa',KS:'Kansas',KY:'Kentucky',LA:'Louisiana',ME:'Maine',MD:'Maryland',MA:'Massachusetts',MI:'Michigan',MN:'Minnesota',MS:'Mississippi',MO:'Missouri',MT:'Montana',NE:'Nebraska',NV:'Nevada',NH:'New Hampshire',NJ:'New Jersey',NM:'New Mexico',NY:'New York',NC:'North Carolina',ND:'North Dakota',OH:'Ohio',OK:'Oklahoma',OR:'Oregon',PA:'Pennsylvania',RI:'Rhode Island',SC:'South Carolina',SD:'South Dakota',TN:'Tennessee',TX:'Texas',UT:'Utah',VT:'Vermont',VA:'Virginia',WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming'};
+/* Demo: accounts, plaintiff firms, claim dates, defense counsel and outcomes so the new screens have something to show. */
+(function(){
+  const iso = n => new Date(Date.now() + n*864e5).toISOString().slice(0,10);
+  const pf = [['Pat Harlan','Harlan & Pike, LLP'],['Dena Brandt','Brandt Injury Law'],['Luis Ocampo','Ocean Coast Trial Group'],['Pat Harlan','Harlan & Pike, LLP'],['Kim Strand','Strand Reyes Trial Lawyers']];
+  const counsel = counselDemoSeed();
+  let n = 0;
+  CASES.forEach((c, i) => {
+    const car = c.insurance && c.insurance.carrier;
+    if (car) c.clientAccount = car + ' claims';
+    if (i % 2 === 0 || demandsOf(c).length) { const f = pf[i % pf.length]; c.opposing = Object.assign({}, c.opposing, {counsel:f[0], counselFirm:f[1]}); }
+    if (demandsOf(c).length) { c.fnolDate = iso(-90 - i); c.repDate = iso(-60 - i); }
+    if ((i < 12 || c.status === 'Closed') && !c.defenseCounsel) { const stN = caseStateName(c), ab = stateAbbrOf(stN); const k = (ab && counsel.find(x => x.states.indexOf(ab) >= 0)) || counsel[n++ % counsel.length]; c.defenseCounsel = {panelId:k.id, name:k.name, firm:k.firm, email:k.email, phone:k.phone}; }
+    if (c.defenseCounsel) {
+      c.billing = c.billing || {}; const res = (c.insurance && c.insurance.reserveAmount) || 0;
+      if (!c.billing.budget && res) { c.billing.budget = Math.round(res * 0.4); c.billing.totalBilled = Math.round(c.billing.budget * (0.8 + (i % 5) * 0.1)); }
+    }
+    if (c.status === 'Closed' || c.status === 'Closing') { c.exposure = c.exposure || {}; const res = (c.insurance && c.insurance.reserveAmount) || 0; if (res) { c.exposure.settlementAmount = Math.round(res * (0.85 + (i % 4) * 0.12)); c.exposure.demandAmount = c.exposure.demandAmount || c.value || res * 2; } }
+  });
+})();
+
 /* Assign cases to customers */
 [0, 1, 4].forEach(i => addCustomerToCase(CASES[i], 'carr1')); // Zurich
 [2, 3, 6].forEach(i => addCustomerToCase(CASES[i], 'carr2')); // Hartford
@@ -1392,7 +1414,7 @@ function reopenSavedReport(id){
 }
 function csvFromRows(cols, rows){
   let csv = cols.join(',') + '\n';
-  rows.forEach(r => csv += r.map(v => '"'+String(v).replace(/"/g,'""')+'"').join(',') + '\n');
+  rows.forEach(r => csv += r.map(v => { let t = String(v); if (/^[=+\-@]/.test(t) && isNaN(Number(t))) t = "'" + t; return '"'+t.replace(/"/g,'""')+'"'; }).join(',') + '\n');
   return csv;
 }
 function downloadCSV(filename, cols, rows){
@@ -1885,7 +1907,7 @@ function demoModeBannerV(){
   return '<div style="background:linear-gradient(90deg,#B45309,#D97706);color:#fff;padding:9px 18px;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;font-size:12.5px;font-weight:600;text-align:center;">' +
     '<span>🔎 You\'re viewing a live demo with sample data — nothing here is a real customer\'s.</span>' +
     '<a href="mailto:sales@cclosed.com?subject=Case%20Closed%20Pro%20Demo%20Request" style="background:#fff;color:#92400E;padding:5px 14px;border-radius:20px;font-weight:700;text-decoration:none;white-space:nowrap;">Talk to Sales →</a>' +
-    '<span style="font-size:10px;opacity:.75;font-weight:500;">build 10/6 4:20pm</span>' +
+    '<span style="font-size:10px;opacity:.75;font-weight:500;">build 10/7 6:00pm</span>' +
   '</div>';
 }
 
@@ -2623,6 +2645,10 @@ function render(){
   else if (S.role === 'tpa') html += tpaV();
   else if (S.role === 'premium') html += premiumHubV();
   else if (S.role === 'demands') html += demandWatchV();
+  else if (S.role === 'today') html += todayV();
+  else if (S.role === 'execvs') html += execVsV();
+  else if (S.role === 'plaintiffs') html += plaintiffV();
+  else if (S.role === 'dcscore') html += dcScoreV();
   else if (S.role === 'counsel') html += counselV();
   else if (S.role === 'partner') html += partV();
   else if (S.role === 'executive') html += execV();
@@ -2748,6 +2774,7 @@ function hdr(){
      workflows, full stop. */
   const groups = [
     { label:'', items:[
+      ['today','Today'],
       ['litigation','Litigation'],
       ['attorney','My Cases'],
       ['demands','🛡 Verdict Shield'],
@@ -2758,6 +2785,9 @@ function hdr(){
     ]},
     { label:'Insights', items:[
       ['executive','Executive'],
+      ['execvs','🛡 Executive Shield'],
+      ['plaintiffs','Plaintiff Counsel'],
+      ['dcscore','Defense Counsel'],
       ['scorecard','Scorecards'],
       ['reports','Reports Hub']
     ]},
@@ -3831,6 +3861,7 @@ function tabDemands(c){
   let h = '<div class="section-band">Time-Limit Demands</div>';
   const list = demandsOf(c), openN = list.filter(d => d.status === 'open').length;
   h += '<div style="font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:12px;max-width:760px;">Log every time-limited demand the day it arrives. It stays open, and the loudest alert in the system, until you record how it was answered.</div>';
+  h += claimFactsCardV(c);
   h += backupPickerV(c);
   if (!openN && list.length) h += '<div class="alert-good" style="margin-bottom:12px;">No open demands on this matter.</div>';
   list.slice().sort((a,b) => (a.status==='open'?0:1)-(b.status==='open'?0:1) || demandEff(a).localeCompare(demandEff(b))).forEach(d => { h += demandCardV(c, d, false); });
@@ -3961,7 +3992,7 @@ async function counselPreview(){
   const ci = S.cImp || {};
   try {
     const {recs, unknown} = counselParse(ci.text || '');
-    if (recs.length > 5000) throw new Error('That file has '+recs.length+' rows. The limit is 5,000 per upload, so split it into parts.');
+    if (recs.length > 10000) throw new Error('That file has '+recs.length+' rows. The limit is 10,000 per upload, so split it into parts.');
     st({cImp:Object.assign({}, ci, {busy:true, error:'', result:null, preview:null})});
     const res = (DEMO_MODE || !authToken) ? counselSimImport(recs, false, ci.markMissing)
       : await apiFetch('/api/approved-counsel/import', {method:'POST', body:JSON.stringify({rows:recs, dryRun:true, markMissingInactive:!!ci.markMissing})});
@@ -4079,7 +4110,7 @@ function demandDeskV(opts){
   h += '<div style="font-size:24px;">🛡</div><div style="flex:1;min-width:240px;"><div style="font-weight:800;font-size:15px;color:'+fg+';">Verdict Shield: time-limit demands'+(scope==='mine'?' on your matters':'')+'</div>'+
     '<div style="font-size:12.5px;color:'+sub+';margin-top:2px;">'+(hot ? late+' PAST DEADLINE with no response recorded. Escalate to counsel now.' : rows.length ? rows.length+' open'+(crit?' · '+crit+' due within 3 days':'')+'. Record the response to clear each one.' : 'No open time-limit demands. When one arrives, log it the same day.')+'</div></div>';
   h += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><select id="dkLogCase" class="inp" style="width:auto;min-width:170px;font-size:12px;"><option value="">Matter…</option>'+open.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.client)+' ('+esc(c.matterNo||c.id)+')</option>').join('')+'</select>'+
-    '<button class="btn btn-pri" style="background:'+(hot?'#fff':'#DC2626')+';color:'+(hot?'#7F1D1D':'#fff')+';border-color:'+(hot?'#fff':'#DC2626')+';" onclick="demandDeskLog()">+ Log a demand</button></div></div>';
+    '<button class="btn btn-pri" style="background:'+(hot?'#fff':'#DC2626')+';color:'+(hot?'#7F1D1D':'#fff')+';border-color:'+(hot?'#fff':'#DC2626')+';" onclick="demandDeskLog()">+ Log a demand</button><button class="btn btn-out" onclick="st({role:\'demands\',caseId:null,dxOpen:true,showWelcome:false})">📄 Read a letter</button></div></div>';
   if (!opts.forceMine) h += '<div style="padding:8px 16px 0;font-size:12px;color:var(--muted);">Showing: '+
     '<span class="muted-link" style="cursor:pointer;'+(scope==='mine'?'font-weight:800;color:var(--ink);text-decoration:underline;':'')+'" onclick="st({demandScope:\'mine\'})">My matters</span> · '+
     '<span class="muted-link" style="cursor:pointer;'+(scope==='all'?'font-weight:800;color:var(--ink);text-decoration:underline;':'')+'" onclick="st({demandScope:\'all\'})">Everyone</span></div>';
@@ -4107,6 +4138,7 @@ function demandWatchV(){
   let h = '<div class="wrap" style="padding-top:18px;">';
   h += '<div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">Verdict Shield</div>';
   h += '<div style="font-size:13px;color:var(--muted);margin:4px 0 16px;max-width:780px;line-height:1.6;">Every open time-limit demand across the caseload, most urgent first. A demand stays here until someone records the response.</div>';
+  h += demandIntakeV();
   h += demandEmailsV();
   h += demandLadderCardV();
   h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">';
@@ -4127,6 +4159,515 @@ function demandWatchV(){
   return h + '</div>';
 }
 
+
+/* ═══════════════════════════════════════════════════════════
+   BROADSPIRE BUILD: accounts, claim facts, letter reading, Today desk, executive view,
+   plaintiff-counsel history, defense-counsel scorecards and matching.
+   ═══════════════════════════════════════════════════════════ */
+function stateNameFrom(v){
+  const s = String(v||'').trim(); if (!s) return '';
+  if (US_STATE_NAMES[s.toUpperCase()]) return US_STATE_NAMES[s.toUpperCase()];
+  const hit = Object.values(US_STATE_NAMES).find(n => n.toLowerCase() === s.toLowerCase());
+  return hit || '';
+}
+function stateAbbrOf(name){ const k = Object.keys(US_STATE_NAMES).find(a => US_STATE_NAMES[a] === name); return k || ''; }
+function caseStateName(c){
+  const j = stateFromJurisdiction(c.court && c.court.jurisdiction);
+  if (j) return j;
+  const d = demandsOf(c).find(x => x && x.state); return d ? d.state : '';
+}
+
+/* ── Accounts: one customer can hold many client accounts (pilot setup) ── */
+function caseAcct(c){ return String(c.clientAccount || '').trim(); }
+function acctNames(){ const s = new Set(); CASES.forEach(c => { const a = caseAcct(c); if (a) s.add(a); }); return Array.from(s).sort(); }
+function acctScope(){ const a = S.acct || ''; return a ? CASES.filter(c => caseAcct(c) === a) : CASES; }
+function acctPickerV(){
+  const n = acctNames(); if (!n.length) return '';
+  return '<label style="font-size:12px;color:var(--muted);display:inline-flex;gap:6px;align-items:center;">Account <select class="inp" style="width:auto;font-size:12px;" onchange="st({acct:this.value})"><option value="">All accounts ('+n.length+')</option>'+
+    n.map(a => '<option value="'+esc(a)+'"'+(S.acct===a?' selected':'')+'>'+esc(a)+'</option>').join('')+'</select></label>';
+}
+
+/* ── Claim facts: the dates and people that start the clock ── */
+function plaintiffAtty(c){ return String((c.opposing && c.opposing.counsel) || '').trim(); }
+function plaintiffFirmOf(c){ return String((c.opposing && c.opposing.counselFirm) || '').trim(); }
+function setCaseFact(caseId, key, val){
+  const c = CASES.find(x => x.id === caseId); if (!c) return;
+  val = String(val || '').trim();
+  if ((key === 'fnolDate' || key === 'repDate') && val && !/^\d{4}-\d{2}-\d{2}$/.test(val)) return;
+  if (key === 'plaintiffAttorney') { c.opposing = c.opposing || {}; c.opposing.counsel = val; }
+  else if (key === 'plaintiffFirm') { c.opposing = c.opposing || {}; c.opposing.counselFirm = val; }
+  else c[key] = val;
+  sc(c); render();
+}
+function claimFactsCardV(c){
+  const id = esc(c.id);
+  const inp = (label, key, val, type, ph) => '<div class="fld" style="flex:1 1 190px;margin:0;"><label class="lbl">'+label+'</label><input class="inp" type="'+type+'" value="'+esc(val||'')+'" placeholder="'+(ph||'')+'" onchange="setCaseFact(\''+id+'\',\''+key+'\',this.value)"></div>';
+  let line = '';
+  if (c.fnolDate && c.repDate) { const n = demandDaysBetween(c.fnolDate, c.repDate); if (n !== null) line += 'The claimant\'s lawyer started representing them '+(n < 0 ? Math.abs(n)+' days before the first notice of loss' : n+' day'+(n===1?'':'s')+' after the first notice of loss')+'. '; }
+  if (c.repDate) { const n = demandDaysBetween(c.repDate, demandToday()); if (n !== null && n >= 0) line += 'Represented for '+n+' day'+(n===1?'':'s')+'. '; }
+  return '<div class="card" style="padding:12px 14px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;">Claim facts that start the clock</div>'+
+    '<div style="font-size:12px;color:var(--muted);margin:3px 0 10px;max-width:780px;line-height:1.55;">Several state rules count time from the first notice of the claim or from when the claimant got a lawyer. Record both dates exactly as the file shows them.</div>'+
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;">'+inp('First notice of loss date','fnolDate',c.fnolDate,'date')+inp('Actual date of representation','repDate',c.repDate,'date')+inp('Plaintiff attorney','plaintiffAttorney',plaintiffAtty(c),'text','Name')+inp('Plaintiff firm','plaintiffFirm',plaintiffFirmOf(c),'text','Firm')+inp('Client account','clientAccount',c.clientAccount,'text','Carrier or client account')+'</div>'+
+    (line ? '<div style="font-size:12px;margin-top:8px;color:var(--ink);">'+esc(line)+'</div>' : '')+'</div>';
+}
+
+/* ── CSV import columns for the new fields ── */
+function dxNormDate(v){
+  v = String(v||'').trim(); if (!v) return '';
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(v); if (m) return dxIso(+m[1], +m[2], +m[3]);
+  m = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(v); if (m) return dxIso(m[3].length === 2 ? 2000 + +m[3] : +m[3], +m[1], +m[2]);
+  return '';
+}
+function importExtraFields(cells, idx){
+  const g = k => (idx[k] >= 0 && cells[idx[k]]) ? cells[idx[k]].trim() : '';
+  const out = {}, stName = stateNameFrom(g('state')) || g('state');
+  const fnol = dxNormDate(g('fnol')), rep = dxNormDate(g('repDate'));
+  if (fnol) out.fnolDate = fnol; if (rep) out.repDate = rep;
+  if (g('account')) out.clientAccount = g('account');
+  if (g('adjuster')) out.adjusterPrimary = g('adjuster');
+  if (g('backupAdjuster')) out.adjusterBackup = g('backupAdjuster');
+  if (g('defenseCounsel') || g('defenseFirm')) out.defenseCounsel = {name:g('defenseCounsel'), firm:g('defenseFirm')};
+  if (g('plaintiffAttorney') || g('plaintiffFirm')) out.opposing = {counsel:g('plaintiffAttorney'), counselFirm:g('plaintiffFirm')};
+  if (stName) out.court = {jurisdiction:'State - '+stName};
+  const dd = dxNormDate(g('demandDeadline'));
+  if (dd) {
+    const hm = /^(\d{1,2}):(\d{2})$/.exec(g('demandTime')) ? g('demandTime') : '';
+    const num = v => { const n = parseFloat(String(v||'').replace(/[^0-9.]/g,'')); return isNaN(n) ? 0 : n; };
+    out.timeLimitDemands = [{id:'TLD-imp-'+Math.random().toString(36).slice(2,8), receivedDate:dxNormDate(g('demandReceived')) || dd, deadline:dd, deadlineHM:hm, tz:'America/New_York',
+      demandAmount:num(g('demandAmount')), policyLimits:num(g('policyLimits')), claimantFirm:g('plaintiffFirm'), method:'', state:stName, notes:'Loaded from import.', status:'open', log:[{date:demandToday(), by:'Import', text:'Demand loaded from the import file.'}]}];
+  }
+  return out;
+}
+
+/* ── Letter reading: pull the demand fields out of pasted letter or email text ── */
+const DX_MONTHS = {january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12,jan:1,feb:2,mar:3,apr:4,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12};
+function dxIso(y, m, d){ if (!(y > 1990 && y < 2100)) return ''; const dt = new Date(Date.UTC(y, m-1, d)); return (dt.getUTCFullYear() === y && dt.getUTCMonth() === m-1 && dt.getUTCDate() === d) ? dt.toISOString().slice(0,10) : ''; }
+function dxDates(str){
+  const out = []; let m;
+  const r1 = /\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept|Sep|Oct|Nov|Dec)\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\b/gi;
+  while ((m = r1.exec(str))) { const iso = dxIso(+m[3], DX_MONTHS[m[1].toLowerCase()], +m[2]); if (iso) out.push({iso, idx:m.index, end:m.index+m[0].length}); }
+  const r2 = /\b(\d{1,2})\/(\d{1,2})\/(\d{4}|\d{2})\b/g;
+  while ((m = r2.exec(str))) { const iso = dxIso(m[3].length === 2 ? 2000 + +m[3] : +m[3], +m[1], +m[2]); if (iso) out.push({iso, idx:m.index, end:m.index+m[0].length}); }
+  const r3 = /\b(\d{4})-(\d{2})-(\d{2})\b/g;
+  while ((m = r3.exec(str))) { const iso = dxIso(+m[1], +m[2], +m[3]); if (iso) out.push({iso, idx:m.index, end:m.index+m[0].length}); }
+  return out.sort((a, b) => a.idx - b.idx);
+}
+function dxAddDays(iso, n){ return new Date(Date.parse(iso+'T00:00:00Z') + n*864e5).toISOString().slice(0,10); }
+function dxExtract(text){
+  text = String(text || '').replace(/\r/g, '');
+  const f = {isTimeLimitDemand:false, receivedDate:'', deadline:'', deadlineHM:'', tz:'', demandAmount:0, policyLimits:0, claimantName:'', claimNo:'', insuredName:'', plaintiffAttorney:'', claimantFirm:'', method:'', state:'', representationDate:'', summary:'', quote:''};
+  const notes = [];
+  const STRONG = /(expire|expir|deadline|no later than|not later than|on or before|open until|remain[s]? open|must be (accepted|received|paid|tendered)|accepted by|time.limit)/i;
+  const dates = dxDates(text);
+  /* deadline: the date sitting closest to deadline words */
+  let best = null;
+  dates.forEach(dt => {
+    const w = text.slice(Math.max(0, dt.idx - 110), Math.min(text.length, dt.end + 60));
+    const before = text.slice(Math.max(0, dt.idx - 110), dt.idx);
+    let score = 0; if (STRONG.test(before)) score += 3; if (STRONG.test(text.slice(dt.end, dt.end + 60))) score += 1; if (/\buntil\b|\bby\b/i.test(before.slice(-30))) score += 1;
+    if (/(retain|represent|loss|accident|incident|injur)/i.test(before.slice(-70)) && !STRONG.test(before.slice(-70))) score -= 3;
+    if (/(dated|date of (this|the) letter|letter dated)\s*:?\s*$/i.test(before)) score -= 5;
+    dt.score = score;
+    if (score > 0 && (!best || score > best.score || (score === best.score && dt.iso > best.iso))) best = dt;
+  });
+  if (best) {
+    f.deadline = best.iso;
+    f.quote = text.slice(Math.max(0, best.idx - 90), Math.min(text.length, best.end + 70)).replace(/\s+/g, ' ').trim();
+    const win = text.slice(Math.max(0, best.idx - 90), Math.min(text.length, best.end + 130));
+    const tm = /\b(\d{1,2})(?::(\d{2}))?\s*([ap])\.?\s?m\.?(?![a-z])/i.exec(win);
+    if (tm) { let h = (+tm[1]) % 12; if (/p/i.test(tm[3])) h += 12; f.deadlineHM = String(h).padStart(2,'0')+':'+(tm[2] || '00'); }
+    else if (/\bnoon\b/i.test(win)) f.deadlineHM = '12:00';
+    else if (/\bmidnight\b/i.test(win)) f.deadlineHM = '23:59';
+    if (/\b(EST|EDT|ET|Eastern)\b/.test(win)) f.tz = 'America/New_York';
+    else if (/\b(CST|CDT|CT|Central)\b/.test(win)) f.tz = 'America/Chicago';
+    else if (/\b(MST|MDT|MT|Mountain)\b/.test(win)) f.tz = 'America/Denver';
+    else if (/\b(PST|PDT|PT|Pacific)\b/.test(win)) f.tz = 'America/Los_Angeles';
+  }
+  /* letter date: first date near the top that is not the deadline */
+  const top = dates.find(dt => dt.iso !== f.deadline && dt.idx < 500 && !/(retain|represent|loss|accident|incident)/i.test(text.slice(Math.max(0, dt.idx-60), dt.idx)));
+  if (top) f.receivedDate = top.iso;
+  /* representation date */
+  const rep = dates.find(dt => dt.iso !== f.deadline && /(retain|represent|engaged)/i.test(text.slice(Math.max(0, dt.idx - 90), dt.idx + 20)));
+  if (rep) f.representationDate = rep.iso;
+  /* relative deadline: "within 30 days" with no calendar date */
+  if (!f.deadline) {
+    const rel = /(?:within|(?:open|remain(?:s)?|valid|good|available)(?:\s+for)?)\s+(\d{1,3})\s+(calendar\s+|business\s+)?days/i.exec(text);
+    if (rel) {
+      if (/business/i.test(rel[2] || '')) notes.push('The letter gives "'+rel[0]+'" in business days. Count it with counsel and enter the date by hand.');
+      else { const base = f.receivedDate || demandToday(); f.deadline = dxAddDays(base, +rel[1]); notes.push('The letter says "'+rel[0]+'" with no calendar date. This deadline is '+rel[1]+' days from '+(f.receivedDate ? 'the letter date' : 'today')+'. Check it against the letter.'); f.quote = text.slice(Math.max(0, rel.index - 80), rel.index + rel[0].length + 60).replace(/\s+/g, ' ').trim(); }
+    }
+  }
+  /* money */
+  const money = []; let m; const rm = /\$\s?([\d,]+(?:\.\d+)?)\s*(million|thousand|mm|m\b|k\b)?/gi;
+  while ((m = rm.exec(text))) {
+    let n = parseFloat(m[1].replace(/,/g, '')); if (!isFinite(n)) continue;
+    const u = (m[2] || '').toLowerCase(); if (u === 'million' || u === 'mm' || u === 'm') n *= 1e6; else if (u === 'thousand' || u === 'k') n *= 1e3;
+    money.push({n, ctx:text.slice(Math.max(0, m.index - 100), m.index).toLowerCase()});
+  }
+  const lims = money.filter(x => /(policy limit|limits? of|limit of|per.person|coverage)/.test(x.ctx.slice(-60)));
+  const dems = money.filter(x => !lims.includes(x) && /(demand|settle|tender|pay|sum of|in exchange|release|accept)/.test(x.ctx.slice(-80)) && !/(medical|bills|expenses|specials|wages)/.test(x.ctx.slice(-40)));
+  if (lims.length) f.policyLimits = Math.max.apply(null, lims.map(x => x.n));
+  if (dems.length) f.demandAmount = Math.max.apply(null, dems.map(x => x.n));
+  if (!f.demandAmount && f.policyLimits && /(settle|tender|demand|pay|offer|accept)[^.]{0,70}(the )?(full |entire |applicable |combined )?policy limits?/i.test(text)) { f.demandAmount = f.policyLimits; notes.push('The letter demands the policy limits. The amount shown is the limit found in the letter.'); }
+  /* claim number */
+  const cn = /claim\s*(?:no\.?|number|#)\s*[:#]?\s*([A-Z0-9][A-Z0-9\-\/]{4,})/i.exec(text); if (cn) f.claimNo = cn[1];
+  /* firm and attorney */
+  const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
+  const FIRM = /\b(LLP|L\.L\.P\.|LLC|P\.A\.|PLLC|P\.C\.|Law Group|Law Firm|Law Offices?|Attorneys|& Associates|Trial (Group|Lawyers)|Injury Law|Trial Attorneys)\b/i;
+  const firmLine = lines.slice(0, 14).concat(lines.slice(-14)).find(l => l.length < 90 && FIRM.test(l) && !/^(re|dear)\b/i.test(l));
+  if (firmLine) { let fl = firmLine.replace(/^(via|from)\s*:?\s*/i, '').trim(); if (fl === fl.toUpperCase()) fl = fl.toLowerCase().replace(/\b([a-z])/g, x => x.toUpperCase()).replace(/\b(Llp|Llc|Pllc|Pa|Pc)\b/g, x => x.toUpperCase()).replace(/\bP\.a\./,'P.A.').replace(/\bP\.c\./,'P.C.'); f.claimantFirm = fl; }
+  const at = /([A-Z][A-Za-z.'\-]+(?:\s[A-Z][A-Za-z.'\-]*\.?){1,3}),?\s*(?:Esq\.?|Attorney at Law)/.exec(text); if (at) f.plaintiffAttorney = at[1].trim();
+  /* delivery method */
+  const head = text.slice(0, 700);
+  if (/certified\s+mail/i.test(head)) f.method = 'Certified mail'; else if (/(fedex|ups\b|overnight|courier)/i.test(head)) f.method = 'Overnight courier'; else if (/hand.?deliver/i.test(head)) f.method = 'Hand delivery';
+  else if (/facsimile|\bfax\b/i.test(head)) f.method = 'Fax'; else if (/(first.class|regular mail|u\.?s\.? mail)/i.test(head)) f.method = 'Regular mail'; else if (/(via e-?mail|e-?mail:|^from:.*@)/im.test(head)) f.method = 'Email';
+  /* state */
+  const counts = {}; Object.values(US_STATE_NAMES).forEach(n => { const k = (text.match(new RegExp('\\b'+n+'\\b', 'g')) || []).length; if (k) counts[n] = k; });
+  const zip = /,\s*([A-Z]{2})\s+\d{5}/g; while ((m = zip.exec(text))) { const n = US_STATE_NAMES[m[1]]; if (n) counts[n] = (counts[n] || 0) + 2; }
+  const topState = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0]; if (topState) f.state = topState;
+  f.isTimeLimitDemand = !!f.deadline || /(time.limit|expires?\b|deadline)/i.test(text);
+  if (!f.deadline) notes.push('No deadline date was found. Read the letter and enter it by hand.');
+  if (f.deadline && !f.deadlineHM) notes.push('The letter shows no time of day. 5:00 PM Eastern is used until you change it.');
+  return {f, notes};
+}
+function dxGuessCase(f, text){
+  const t = String(text || '').toLowerCase();
+  let best = null, bs = 0;
+  CASES.filter(c => c.status !== 'Closed').forEach(c => {
+    let s = 0; const cn = String((c.insurance && c.insurance.claimNo) || '').toLowerCase();
+    if (cn && (t.indexOf(cn) >= 0 || (f.claimNo && f.claimNo.toLowerCase() === cn))) s += 10;
+    if (c.client && t.indexOf(String(c.client).toLowerCase()) >= 0) s += 5;
+    if (f.insuredName && c.client && String(c.client).toLowerCase() === f.insuredName.toLowerCase()) s += 5;
+    const pf = plaintiffFirmOf(c).toLowerCase(); if (pf && f.claimantFirm && pf === f.claimantFirm.toLowerCase()) s += 2;
+    if (s > bs) { bs = s; best = c; }
+  });
+  return bs >= 5 ? best : null;
+}
+function dxMerge(local, ai){
+  const f = Object.assign({}, local);
+  if (ai) Object.keys(ai).forEach(k => { const v = ai[k]; if (v !== '' && v !== 0 && v != null && v !== false) f[k] = v; });
+  return f;
+}
+async function demandReadLetter(){
+  const text = (document.getElementById('dxText') || {}).value || '';
+  if (text.trim().length < 40) { st({dx:{text, err:'Paste the letter or email text first (at least a few sentences).'}}); return; }
+  S.dx = {text, busy:true}; render();
+  const local = dxExtract(text); let ai = null, aiErr = '';
+  if (!DEMO_MODE && authToken) {
+    try { const r = await apiFetch('/api/demands/extract', {method:'POST', body: JSON.stringify({text})}); ai = r.fields || null; }
+    catch (e) { aiErr = e.message; }
+  }
+  const f = dxMerge(local.f, ai);
+  const c = dxGuessCase(f, text);
+  S.dx = {text, f, notes:local.notes, caseId:c ? c.id : '', src: ai ? 'AI reading, checked by rules' : 'Rules only', aiErr: (DEMO_MODE || !authToken) ? 'AI reading runs on live accounts. This preview used rules only.' : aiErr, ai:!!ai};
+  render();
+}
+function dxFile(inp){
+  const file = inp.files && inp.files[0]; if (!file) return;
+  if (file.size > 1024 * 1024) { alert('That file is over 1 MB. Paste just the letter text instead.'); return; }
+  const r = new FileReader();
+  r.onload = () => { st({dx:{text:String(r.result || '').slice(0, 60000)}}); };
+  r.readAsText(file); inp.value = '';
+}
+function demandCreate(caseId, v){
+  const c = CASES.find(x => x.id === caseId); if (!c) return 'Choose the matter this demand belongs to.';
+  if (!v.recv || !v.due) return 'Enter both the date the demand was received and the deadline.';
+  if (demandDaysBetween(v.recv, v.due) === null) return 'Dates must be valid.';
+  if (demandDaysBetween(v.recv, v.due) < 0) return 'The deadline is before the received date. Check both dates.';
+  if (!v.pr) return 'Choose the adjuster handling this claim.';
+  if (!v.bk) return 'Choose a backup adjuster. Every time-limit demand needs a second person tracking it.';
+  if (v.bk === v.pr) return 'The adjuster and the backup have to be two different people.';
+  c.adjusterPrimary = v.pr; c.adjusterBackup = v.bk; c.backupAttorney = '';
+  const d = {id:'TLD-'+Date.now().toString(36), receivedDate:v.recv, deadline:v.due, deadlineHM:v.hm || '', tz:v.tz || 'America/New_York', demandAmount:v.amt || 0, policyLimits:v.lim || 0,
+    claimantFirm:v.firm || '', method:v.method || '', state:v.state || '', notes:v.notes || '', status:'open', log:[], source:v.source || ''};
+  if (v.quote) d.sourceQuote = v.quote;
+  demandLog(d, (v.source ? 'Created from a letter ('+v.source+') and confirmed by '+((S.currentUser && S.currentUser.name) || 'a user')+'. ' : '')+'Received '+v.recv+', deadline '+v.due+' '+demandTimeLabel(d)+'.');
+  c.timeLimitDemands = demandsOf(c).concat([d]);
+  if (v.rep && !c.repDate) c.repDate = v.rep;
+  if (v.atty || v.firm) { c.opposing = c.opposing || {}; if (v.atty && !c.opposing.counsel) c.opposing.counsel = v.atty; if (v.firm && !c.opposing.counselFirm) c.opposing.counselFirm = v.firm; }
+  demandCaseNote(c, 'Time-limit demand logged from a letter. Deadline '+v.due+(d.demandAmount ? ', demand '+fM(d.demandAmount) : '')+'.');
+  sc(c); return '';
+}
+function demandConfirmLetter(){
+  const g = id => demandVal(id), money = x => { const n = parseFloat(String(x||'').replace(/[^0-9.]/g,'')); return isNaN(n) ? 0 : n; };
+  const dx = S.dx || {}, caseId = g('dxCase');
+  { const cc = CASES.find(x => x.id === caseId); if (cc && demandsOf(cc).some(d => d.status === 'open' && demandEff(d) === g('dxDue') && (Number(d.demandAmount)||0) === (money(g('dxAmt'))||0))) { S.dx = Object.assign({}, dx, {err:'This matter already has an open demand with the same deadline and amount. Open it from the list instead of creating a second one.', caseId}); render(); return; } }
+  const err = demandCreate(caseId, {recv:g('dxRecv') || demandToday(), due:g('dxDue'), hm:g('dxTime'), tz:g('dxTz'), amt:money(g('dxAmt')), lim:money(g('dxLim')), firm:g('dxFirm'), atty:g('dxAtty'), method:g('dxMethod'), state:g('dxState'),
+    pr:g('dxPrimary'), bk:g('dxBackup'), rep:(dx.f && dx.f.representationDate) || '', source:dx.src || 'letter', quote:(dx.f && dx.f.quote) || '', notes:'Created from a pasted letter.'});
+  if (err) { S.dx = Object.assign({}, dx, {err, caseId}); render(); return; }
+  S.dx = {done:'Demand created and added to the Verdict Shield list below.'}; render();
+}
+function demandIntakeV(){
+  const dx = S.dx || {}, open = !!(S.dxOpen || S.dx);
+  if (!open) return '<div style="margin:0 0 14px;"><button class="btn btn-out" onclick="st({dxOpen:true})">📄 Read a demand letter or email</button> <span style="font-size:12px;color:var(--muted);">Paste it in and the deadline, amount and firm are filled in for you to confirm.</span></div>';
+  let h = '<div class="card" style="padding:14px 16px;margin-bottom:16px;border-left:4px solid var(--pri2);max-width:980px;">';
+  h += '<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;"><div style="font-weight:800;font-size:14px;">Read a demand letter or email</div><span class="muted-link" style="cursor:pointer;font-size:12px;" onclick="st({dx:null,dxOpen:false})">Close</span></div>';
+  if (dx.done) h += '<div class="alert-good" style="margin:10px 0;">'+esc(dx.done)+'</div><button class="btn btn-out" onclick="st({dx:{text:\'\'}})">Read another</button>';
+  else {
+    h += '<div style="font-size:12px;color:var(--muted);margin:4px 0 8px;line-height:1.55;">Paste the text of the letter or email, or choose a .txt or .eml file. Nothing is created until you check the fields and confirm. For a PDF, copy its text and paste it here.</div>';
+    h += '<textarea id="dxText" class="inp" style="min-height:130px;font-size:12px;" placeholder="Paste the demand letter or email here">'+esc(dx.text || '')+'</textarea>';
+    h += '<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;"><button class="btn btn-pri" '+(dx.busy?'disabled':'')+' onclick="demandReadLetter()">'+(dx.busy?'Reading…':'Read it')+'</button>'+
+      '<label class="btn btn-out" style="cursor:pointer;margin:0;">Choose a file<input type="file" accept=".txt,.eml,text/plain" style="display:none" onchange="dxFile(this)"></label></div>';
+    if (dx.err) h += '<div class="alert-bad" style="margin-top:10px;">'+esc(dx.err)+'</div>';
+    if (dx.f) {
+      const f = dx.f, c = CASES.find(x => x.id === dx.caseId);
+      h += '<div style="border-top:1px solid #E5E7EB;margin:14px 0 10px;padding-top:12px;"><div style="font-weight:700;font-size:13px;">Check what was found <span style="font-weight:500;color:var(--dim);font-size:11.5px;">('+esc(dx.src)+')</span></div>';
+      if (!f.isTimeLimitDemand) h += '<div class="alert-bad" style="margin:8px 0;">This does not look like a time-limit demand. Check the text before creating anything.</div>';
+      (dx.notes || []).forEach(n => { h += '<div style="font-size:12px;color:#92400E;background:#FEF3C7;border-radius:6px;padding:6px 10px;margin:6px 0;">'+esc(n)+'</div>'; });
+      if (dx.aiErr) h += '<div style="font-size:11.5px;color:var(--dim);margin:4px 0;">'+esc(dx.aiErr)+'</div>';
+      if (f.quote) h += '<div style="font-size:12px;margin:8px 0;padding:8px 10px;background:var(--surf2);border-radius:6px;"><strong>Deadline wording in the letter:</strong> “'+esc(f.quote)+'”</div>';
+      const fld = (label, id, val, type, w) => '<div class="fld" style="flex:1 1 '+(w||150)+'px;margin:0;"><label class="lbl">'+label+'</label><input id="'+id+'" class="inp" type="'+(type||'text')+'" value="'+esc(val == null ? '' : val)+'"></div>';
+      const open2 = CASES.filter(x => x.status !== 'Closed');
+      const roster = claimsRoster();
+      const pr = c ? claimsPrimary(c) : '', bk = c ? (backupMissing(c) ? '' : claimsBackup(c)) : '';
+      const sel = (id, cur, other) => '<select id="'+id+'" class="inp"><option value="">Choose…</option>'+roster.map(n => '<option'+(cur===n?' selected':'')+'>'+esc(n)+'</option>').join('')+'</select>';
+      h += '<div class="fld" style="margin:8px 0;"><label class="lbl">Matter</label><select id="dxCase" class="inp" onchange="S.dx.caseId=this.value;render()"><option value="">Choose the matter…</option>'+open2.map(x => '<option value="'+esc(x.id)+'"'+(dx.caseId===x.id?' selected':'')+'>'+esc(x.client)+' · '+esc(x.matterNo||x.id)+(x.insurance&&x.insurance.claimNo?' · '+esc(x.insurance.claimNo):'')+'</option>').join('')+'</select>'+(f.claimNo?'<div style="font-size:11.5px;color:var(--dim);margin-top:3px;">Claim number in the letter: '+esc(f.claimNo)+(c?'':'. No open matter matched it, so choose one.')+'</div>':'')+'</div>';
+      h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;">'+fld('Letter date (received)','dxRecv',f.receivedDate || demandToday(),'date')+fld('Deadline','dxDue',f.deadline,'date')+fld('Time','dxTime',f.deadlineHM,'time',110)+
+        '<div class="fld" style="flex:1 1 110px;margin:0;"><label class="lbl">Time zone</label><select id="dxTz" class="inp">'+DEMAND_TZ.map(z => '<option value="'+z[0]+'"'+((f.tz||'America/New_York')===z[0]?' selected':'')+'>'+z[1]+'</option>').join('')+'</select></div></div>';
+      h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;">'+fld('Demand amount','dxAmt',f.demandAmount || '', 'text')+fld('Policy limits','dxLim',f.policyLimits || '', 'text')+fld('Plaintiff firm','dxFirm',f.claimantFirm,'text',200)+fld('Plaintiff attorney','dxAtty',f.plaintiffAttorney,'text',170)+'</div>';
+      h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;"><div class="fld" style="flex:1 1 160px;margin:0;"><label class="lbl">How it arrived</label><select id="dxMethod" class="inp">'+['','Certified mail','Overnight courier','Hand delivery','Email','Fax','Regular mail'].map(m => '<option'+(f.method===m?' selected':'')+' value="'+m+'">'+(m||'Not stated')+'</option>').join('')+'</select></div>'+
+        fld('State','dxState',f.state,'text',140)+
+        '<div class="fld" style="flex:1 1 170px;margin:0;"><label class="lbl">Adjuster</label>'+sel('dxPrimary', pr)+'</div><div class="fld" style="flex:1 1 170px;margin:0;"><label class="lbl">Backup adjuster</label>'+sel('dxBackup', bk)+'</div></div>';
+      h += '<div style="font-size:11.5px;color:var(--dim);margin-bottom:8px;">'+esc(f.summary || '')+'</div>';
+      h += '<button class="btn btn-pri" onclick="demandConfirmLetter()">Create the demand</button>';
+      h += '</div>';
+    }
+  }
+  return h + '</div>';
+}
+
+/* ── CSV of demands with the structured fields ── */
+function exportDemandsCSV(){
+  const cols = ['Matter','Client','Account','Claim number','State','Adjuster','Backup adjuster','Defense counsel','First notice of loss','Date of representation','Plaintiff attorney','Plaintiff firm','Received','Deadline','Time','Hours left','Demand','Policy limits','Status','Acknowledged by'];
+  const rows = [];
+  acctScope().forEach(c => demandsOf(c).forEach(d => {
+    const hrs = d.status === 'open' ? demandHours(d) : null;
+    rows.push([c.matterNo || c.id, c.client, caseAcct(c), (c.insurance && c.insurance.claimNo) || '', d.state || caseStateName(c), claimsPrimary(c), claimsBackup(c), (c.defenseCounsel && c.defenseCounsel.name) || c.attorney || '', c.fnolDate || '', c.repDate || '', plaintiffAtty(c), d.claimantFirm || plaintiffFirmOf(c), d.receivedDate || '', demandEff(d), demandHM(d).hm, hrs == null ? '' : hrs.toFixed(1), d.demandAmount || 0, d.policyLimits || 0, d.status, demandAcks(d).map(a => a.by).join('; ')]);
+  }));
+  downloadCSV('verdict-shield-demands-'+demandToday()+'.csv', cols, rows);
+}
+
+/* ── Today: one list per adjuster ── */
+function todayScope(){ return S.todayScope || ((demandMe() && CASES.some(c => c.status !== 'Closed' && demandIsMine(c))) ? 'mine' : 'all'); }
+function solDaysLeft(c){ const s = c.keyDates && c.keyDates.sol; return s ? demandDaysBetween(demandToday(), String(s).slice(0,10)) : null; }
+function todayV(){
+  loadDemandEmails();
+  const scope = todayScope(), me = demandMe(), base = acctScope();
+  const mine = c => scope === 'all' || demandIsMine(c);
+  const cases = base.filter(c => c.status !== 'Closed' && mine(c));
+  const rows = openDemandRows(cases);
+  const nobk = cases.filter(c => caseNeedsBackup(c) && (backupMissing(c) || primaryMissing(c)));
+  const sols = cases.map(c => ({c, n:solDaysLeft(c)})).filter(x => x.n !== null && x.n <= 30).sort((a, b) => a.n - b.n);
+  const today = demandToday(), tasks = [];
+  cases.forEach(c => (c.tasks || []).forEach(t => { if (!t.done && t.due && t.due <= today) tasks.push({c, t}); }));
+  tasks.sort((a, b) => a.t.due < b.t.due ? -1 : 1);
+  const unacked = rows.filter(r => r.left <= 7 && !demandFullyAcked(r.c, r.d) && demandIsMine(r.c)).length;
+  const total = rows.filter(r => r.left <= 3).length + nobk.length + sols.filter(x => x.n <= 14).length + tasks.length;
+  let h = '<div class="wrap" style="padding-top:18px;">';
+  h += '<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-end;"><div><div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">Today</div>'+
+    '<div style="font-size:13px;color:var(--muted);margin-top:4px;">'+new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',timeZone:'America/New_York'})+(me?' · '+esc(me):'')+'</div></div>'+
+    '<div style="font-size:12px;color:var(--muted);display:flex;gap:12px;align-items:center;flex-wrap:wrap;">'+acctPickerV()+'<span>Showing: <span class="muted-link" style="cursor:pointer;'+(scope==='mine'?'font-weight:800;color:var(--ink);text-decoration:underline;':'')+'" onclick="st({todayScope:\'mine\'})">My matters</span> · <span class="muted-link" style="cursor:pointer;'+(scope==='all'?'font-weight:800;color:var(--ink);text-decoration:underline;':'')+'" onclick="st({todayScope:\'all\'})">Everyone</span></span></div></div>';
+  h += '<div style="margin:14px 0 16px;padding:10px 14px;border-radius:10px;background:'+(total?'#FEF2F2':'#F0FDF4')+';border:1px solid '+(total?'#FCA5A5':'#BBF7D0')+';font-size:13.5px;font-weight:700;color:'+(total?'#991B1B':'#166534')+';">'+(total ? total+' item'+(total===1?'':'s')+' need'+(total===1?'s':'')+' you today.'+(unacked ? ' '+unacked+' demand'+(unacked===1?' is':'s are')+' waiting for your acknowledgment.' : '') : 'Nothing is due today. Nothing is waiting on you.')+'</div>';
+  const sec = (title, sub, body) => '<div style="font-weight:800;font-size:15px;margin:18px 0 2px;">'+title+'</div>'+(sub?'<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">'+sub+'</div>':'')+body;
+  h += sec('Time-limit demands', rows.length ? 'Most urgent first. Acknowledge it so your backup and your manager know you have it.' : '', rows.length ? rows.map(r => {
+      const mineRow = demandIsMine(r.c) && !demandAckedBy(r.d, me);
+      return demandDeskRowV(r) + (mineRow ? '' : '');
+    }).join('') + (rows.some(r => demandIsMine(r.c) && !demandAckedBy(r.d, me)) ? '<div style="margin:-2px 0 6px;font-size:12px;"><button class="btn btn-out" onclick="todayAckAll()">Acknowledge all of mine</button></div>' : '') : '<div style="font-size:12.5px;color:var(--muted);">None open'+(scope==='mine'?' on your matters':'')+'.</div>');
+  if (nobk.length) h += sec('Needs a backup adjuster', 'These matters have a demand or a statute date inside 120 days and no second person tracking it.', nobk.slice(0, 8).map(c => '<div style="margin-bottom:6px;"><div style="font-weight:700;font-size:13px;margin-bottom:4px;cursor:pointer;" onclick="stCase(\''+esc(c.id)+'\',\'demands\')">'+esc(c.client)+' <span style="font-weight:500;color:var(--dim);">'+esc(c.matterNo||c.id)+'</span></div>'+backupPickerV(c)+'</div>').join('')+(nobk.length>8?'<div style="font-size:12px;color:var(--muted);">and '+(nobk.length-8)+' more</div>':''));
+  if (sols.length) h += sec('Statutes of limitation within 30 days', '', '<div class="card" style="padding:4px 14px;">'+sols.slice(0, 12).map(x => '<div class="row-link" onclick="stCase(\''+esc(x.c.id)+'\',\'dates\')" style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--surf2);font-size:12.5px;"><span>'+esc(x.c.client)+' <span style="color:var(--dim);">'+esc(x.c.matterNo||x.c.id)+'</span></span><span style="font-weight:700;color:'+(x.n<=7?'#B91C1C':'#B45309')+';">'+(x.n<0?Math.abs(x.n)+' days past':x.n===0?'Today':x.n+' days')+'</span></div>').join('')+'</div>');
+  if (tasks.length) h += sec('Tasks due today or overdue', '', '<div class="card" style="padding:4px 14px;">'+tasks.slice(0, 15).map(x => '<div class="row-link" onclick="stCase(\''+esc(x.c.id)+'\',\'tasks\')" style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--surf2);font-size:12.5px;"><span>'+esc(x.t.title||'Task')+' <span style="color:var(--dim);">· '+esc(x.c.client)+'</span></span><span style="font-weight:700;color:'+(x.t.due<today?'#B91C1C':'#B45309')+';">'+(x.t.due<today?'Overdue since '+esc(x.t.due):'Due today')+'</span></div>').join('')+'</div>'+(tasks.length>15?'<div style="font-size:12px;color:var(--muted);margin-top:4px;">and '+(tasks.length-15)+' more</div>':''));
+  h += '<div style="font-size:11.5px;color:var(--dim);margin-top:22px;">Matters in view: '+cases.length+'. "My matters" means you are the adjuster, the backup or the attorney of record.</div>';
+  return h + '</div>';
+}
+function todayAckAll(){
+  const me = demandMe(); if (!me) return;
+  openDemandRows(CASES.filter(c => c.status !== 'Closed' && demandIsMine(c))).forEach(r => { if (!demandAckedBy(r.d, me)) ackDemandQuiet(r.c, r.d); });
+  render();
+}
+function ackDemandQuiet(c, d){
+  const me = demandMe() || 'User';
+  const role = claimsPrimary(c) === me ? 'primary' : (claimsBackup(c) === me ? 'backup' : 'other');
+  d.acks = demandAcks(d).concat([{by:me, role, byId:(S.currentUser && S.currentUser.id) || null, at:new Date().toISOString()}]);
+  demandLog(d, 'Acknowledged by '+me+(role==='other'?'':' ('+role+')')+'.');
+  demandCaseNote(c, 'Time-limit demand acknowledged by '+me+'.'); sc(c);
+}
+
+/* ── Executive Verdict Shield: one screen for a chief claims officer ── */
+function execVsV(){
+  loadDemandEmails();
+  const scope = acctScope(), rows = openDemandRows(scope), open = scope.filter(c => c.status !== 'Closed');
+  const late = rows.filter(r => r.hrs < 0), d24 = rows.filter(r => r.hrs >= 0 && r.hrs <= 24), d72 = rows.filter(r => r.hrs > 24 && r.hrs <= 72);
+  const unacked = rows.filter(r => !demandFullyAcked(r.c, r.d));
+  const esc2 = rows.filter(r => demandLadderStatus(r.c, r.d).some(x => x.state === 'notified' || x.state === 'due'));
+  const nobk = open.filter(c => caseNeedsBackup(c) && (backupMissing(c) || primaryMissing(c)));
+  const sol30 = open.filter(c => { const n = solDaysLeft(c); return n !== null && n <= 30; });
+  const sum = (a, f) => a.reduce((s, x) => s + (Number(f(x)) || 0), 0);
+  const demanded = sum(rows, r => r.d.demandAmount), limits = sum(rows, r => r.d.policyLimits);
+  const tile = (label, v, col, sub) => '<div style="flex:1 1 150px;border:1px solid #E5E7EB;border-radius:10px;padding:10px 14px;background:#fff;"><div style="font-size:11px;color:var(--muted);">'+label+'</div><div style="font-size:28px;font-weight:800;color:'+col+';line-height:1.15;">'+v+'</div>'+(sub?'<div style="font-size:11px;color:var(--dim);">'+sub+'</div>':'')+'</div>';
+  const bad = n => n ? '#B91C1C' : '#15803D';
+  let h = '<div class="wrap" style="padding-top:18px;">';
+  h += '<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;"><div><div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">Verdict Shield: executive view</div>'+
+    '<div style="font-size:13px;color:var(--muted);margin-top:4px;">As of '+new Date().toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:'America/New_York'})+' ET · '+open.length+' open matters in view</div></div>'+
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'+acctPickerV()+'<button class="btn btn-out" onclick="exportDemandsCSV()">Export CSV</button><button class="btn btn-out" onclick="window.print()">Print</button></div></div>';
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">'+tile('Open time-limit demands', rows.length, 'var(--ink)', fM(demanded)+' demanded')+tile('Past deadline, no response', late.length, bad(late.length))+tile('Due within 24 hours', d24.length, bad(d24.length))+tile('Due in 24 to 72 hours', d72.length, d72.length?'#B45309':'#15803D')+'</div>';
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">'+tile('Not fully acknowledged', unacked.length, bad(unacked.length), rows.length ? Math.round((rows.length-unacked.length)/rows.length*100)+'% acknowledged by both adjusters' : '')+tile('Escalated to leadership', esc2.length, esc2.length?'#B45309':'#15803D')+tile('No backup adjuster', nobk.length, bad(nobk.length), 'matters with a date inside 120 days')+tile('Statutes due within 30 days', sol30.length, sol30.length?'#B45309':'#15803D')+'</div>';
+  h += '<div class="grid-2">';
+  /* most urgent */
+  h += '<div class="card"><div class="sh"><span>Most urgent</span></div>';
+  if (rows.length) h += '<div style="overflow-x:auto;"><table><thead><tr><th>Matter</th><th>State</th><th>Adjuster / backup</th><th>Time left</th><th>Ack</th></tr></thead><tbody>'+rows.slice(0, 8).map(r => '<tr class="row-link" onclick="stCase(\''+esc(r.c.id)+'\',\'demands\')"><td><strong>'+esc(r.c.client)+'</strong><br><span style="font-size:11px;color:var(--dim);">'+esc(r.c.matterNo||r.c.id)+'</span></td><td>'+esc(r.d.state||caseStateName(r.c)||'')+'</td><td style="font-size:11.5px;">'+esc(claimsPrimary(r.c)||'none')+' / '+(backupMissing(r.c)?'<span style="color:#B91C1C;font-weight:700;">none</span>':esc(claimsBackup(r.c)))+'</td><td style="font-weight:700;color:'+(r.hrs<0?'#7F1D1D':r.hrs<=72?'#B91C1C':'#92400E')+';white-space:nowrap;">'+esc(demandCountdown(r.hrs))+'</td><td>'+(demandFullyAcked(r.c, r.d)?'<span class="tag tag-ok">Both</span>':'<span class="tag tag-danger">Waiting</span>')+'</td></tr>').join('')+'</tbody></table></div>';
+  else h += '<div style="color:var(--green);font-size:12.5px;font-weight:600;">No open time-limit demands.</div>';
+  h += '</div>';
+  /* by state */
+  const byState = {}; rows.forEach(r => { const s = r.d.state || caseStateName(r.c) || 'Not stated'; const o = byState[s] = byState[s] || {n:0, amt:0, lim:0, hrs:1e9}; o.n++; o.amt += Number(r.d.demandAmount)||0; o.lim += Number(r.d.policyLimits)||0; o.hrs = Math.min(o.hrs, r.hrs); });
+  h += '<div class="card"><div class="sh"><span>By state</span></div>';
+  h += Object.keys(byState).length ? '<table><thead><tr><th>State</th><th>Open</th><th>Demanded</th><th>Policy limits</th><th>Nearest</th></tr></thead><tbody>'+Object.keys(byState).sort((a, b) => byState[a].hrs - byState[b].hrs).map(s => '<tr><td>'+esc(s)+'</td><td>'+byState[s].n+'</td><td>'+fM(byState[s].amt)+'</td><td>'+fM(byState[s].lim)+'</td><td style="white-space:nowrap;">'+esc(demandCountdown(byState[s].hrs))+'</td></tr>').join('')+'</tbody></table>' : '<div style="color:var(--muted);font-size:12.5px;">Nothing open.</div>';
+  h += '</div></div>';
+  h += '<div class="grid-2" style="margin-top:14px;">';
+  /* by account */
+  const accts = {}; open.forEach(c => { const a = caseAcct(c) || 'No account set'; const o = accts[a] = accts[a] || {m:0, d:0, late:0, nb:0}; o.m++; if (caseNeedsBackup(c) && (backupMissing(c) || primaryMissing(c))) o.nb++; });
+  rows.forEach(r => { const a = caseAcct(r.c) || 'No account set'; if (accts[a]) { accts[a].d++; if (r.hrs < 0) accts[a].late++; } });
+  h += '<div class="card"><div class="sh"><span>By client account</span></div><table><thead><tr><th>Account</th><th>Open matters</th><th>Open demands</th><th>Past deadline</th><th>No backup</th></tr></thead><tbody>'+Object.keys(accts).sort((a, b) => (accts[b].late - accts[a].late) || (accts[b].d - accts[a].d)).slice(0, 12).map(a => '<tr><td>'+esc(a)+'</td><td>'+accts[a].m+'</td><td>'+accts[a].d+'</td><td style="color:'+bad(accts[a].late)+';font-weight:700;">'+accts[a].late+'</td><td style="color:'+bad(accts[a].nb)+';font-weight:700;">'+accts[a].nb+'</td></tr>').join('')+'</tbody></table></div>';
+  /* answered */
+  const ans = []; scope.forEach(c => demandsOf(c).forEach(d => { if (d.status !== 'open') ans.push({c, d}); }));
+  const onT = ans.filter(x => x.d.respondedDate && demandEff(x.d) && x.d.respondedDate <= demandEff(x.d)).length;
+  const bySt = {}; ans.forEach(x => { bySt[x.d.status] = (bySt[x.d.status] || 0) + 1; });
+  h += '<div class="card"><div class="sh"><span>Answered demands</span></div>';
+  h += ans.length ? '<div style="font-size:26px;font-weight:800;color:'+(onT===ans.length?'#15803D':'#B45309')+';">'+Math.round(onT/ans.length*100)+'%</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px;">answered before the deadline ('+onT+' of '+ans.length+')</div><div style="font-size:12.5px;">'+Object.keys(bySt).map(k => '<span class="tag tag-info" style="margin-right:6px;">'+esc(k)+' '+bySt[k]+'</span>').join('')+'</div>' : '<div style="color:var(--muted);font-size:12.5px;">No answered demands yet.</div>';
+  h += '<div style="margin-top:12px;"><span class="muted-link" style="cursor:pointer;font-size:12.5px;" onclick="st({role:\'plaintiffs\',caseId:null})">See plaintiff firms behind these demands →</span></div></div></div>';
+  h += demandDisclaimerV();
+  return h + '</div>';
+}
+
+/* ── Plaintiff-counsel history ── */
+function pfNorm(s){ return String(s || '').toLowerCase().replace(/[.,]/g, '').replace(/&/g, ' ').replace(/\b(llp|llc|pa|pc|pllc|the|law|firm|group|offices?|of|and)\b/g, '').replace(/\s+/g, ' ').trim(); }
+function plaintiffFirms(){
+  const map = {};
+  const get = name => { const k = pfNorm(name); if (!k) return null; return map[k] = map[k] || {key:k, name:String(name).trim(), cases:new Set(), open:0, closed:0, demands:[], atty:new Set(), states:new Set(), settle:[], extensions:0}; };
+  acctScope().forEach(c => {
+    const own = get(plaintiffFirmOf(c));
+    if (own) { own.cases.add(c.id); if (c.status === 'Closed') own.closed++; else own.open++; if (plaintiffAtty(c)) own.atty.add(plaintiffAtty(c)); const st2 = caseStateName(c); if (st2) own.states.add(st2);
+      const sa = Number(c.exposure && c.exposure.settlementAmount) || 0, da = Number(c.exposure && c.exposure.demandAmount) || 0; if (c.status === 'Closed' && sa > 0 && da > 0) own.settle.push(sa / da); }
+    demandsOf(c).forEach(d => { const f = get(d.claimantFirm || plaintiffFirmOf(c)); if (!f) return; f.cases.add(c.id); f.demands.push({c, d}); if (d.state) f.states.add(d.state); if (d.extendedDeadline) f.extensions++; });
+  });
+  return Object.keys(map).map(k => {
+    const f = map[k], ds = f.demands.map(x => x.d), win = ds.map(d => demandDaysBetween(d.receivedDate, d.deadline)).filter(n => n !== null && n >= 0);
+    const ratios = ds.filter(d => d.demandAmount > 0 && d.policyLimits > 0).map(d => d.demandAmount / d.policyLimits);
+    const answered = ds.filter(d => d.status !== 'open'), ontime = answered.filter(d => d.respondedDate && d.respondedDate <= demandEff(d)).length;
+    return Object.assign(f, {nDem:ds.length, nOpen:ds.filter(d => d.status === 'open').length, avgWin: win.length ? win.reduce((a, b) => a + b, 0) / win.length : null,
+      totalDem: ds.reduce((s, d) => s + (Number(d.demandAmount) || 0), 0), avgRatio: ratios.length ? ratios.reduce((a, b) => a + b, 0) / ratios.length : null,
+      settleAvg: f.settle.length ? f.settle.reduce((a, b) => a + b, 0) / f.settle.length : null, answered:answered.length, ontime, statusMix: ds.reduce((m, d) => { m[d.status] = (m[d.status] || 0) + 1; return m; }, {})});
+  }).sort((a, b) => (b.nOpen - a.nOpen) || (b.nDem - a.nDem) || (b.cases.size - a.cases.size));
+}
+function plaintiffV(){
+  const list = plaintiffFirms();
+  let h = '<div class="wrap" style="padding-top:18px;">';
+  h += '<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-end;"><div><div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">Plaintiff counsel</div>'+
+    '<div style="font-size:13px;color:var(--muted);margin:4px 0 14px;max-width:760px;line-height:1.6;">The firms behind the demands and suits on your caseload: how many, how much time they allow, and how their matters resolved. It is built only from your own files, so it gets sharper as more history is loaded.</div></div><div>'+acctPickerV()+'</div></div>';
+  if (!list.length) return h + '<div class="alert-bad">No plaintiff firms recorded yet. Add the plaintiff firm on a matter (Claim facts), load it from the import file, or read it from a demand letter.</div></div>';
+  h += '<div class="card" style="padding:0;overflow-x:auto;"><table><thead><tr><th>Firm</th><th>Matters</th><th>Demands</th><th>Open now</th><th>Average time allowed</th><th>Total demanded</th><th>Closed matters settled at</th><th>What stands out</th></tr></thead><tbody>';
+  list.forEach(f => {
+    const flags = [];
+    if (f.nOpen) flags.push('<span class="tag tag-danger">Open demand now</span>');
+    if (f.nDem >= 2) flags.push('<span class="tag tag-warn">Repeat time-limit sender</span>');
+    if (f.avgWin !== null && f.avgWin < 20) flags.push('<span class="tag tag-warn">Short windows</span>');
+    if (f.avgRatio !== null && f.avgRatio >= 0.95) flags.push('<span class="tag tag-warn">Demands at limits</span>');
+    if (f.extensions) flags.push('<span class="tag tag-ok">Has granted extensions</span>');
+    h += '<tr class="row-link" onclick="st({pfSel:'+(S.pfSel===f.key?'null':JSON.stringify(f.key).replace(/"/g,'&quot;'))+'})"><td><strong>'+esc(f.name)+'</strong>'+(f.atty.size?'<br><span style="font-size:11px;color:var(--dim);">'+esc(Array.from(f.atty).slice(0,2).join(', '))+'</span>':'')+'</td><td>'+f.cases.size+' <span style="color:var(--dim);font-size:11px;">('+f.open+' open)</span></td><td>'+f.nDem+'</td><td style="font-weight:700;color:'+(f.nOpen?'#B91C1C':'inherit')+';">'+f.nOpen+'</td><td>'+(f.avgWin===null?'—':Math.round(f.avgWin)+' days')+'</td><td>'+fM(f.totalDem)+'</td><td>'+(f.settleAvg===null?'<span style="color:var(--dim);">no closed matters yet</span>':Math.round(f.settleAvg*100)+'% of demand')+'</td><td>'+(flags.join(' ')||'<span style="color:var(--dim);">—</span>')+'</td></tr>';
+    if (S.pfSel === f.key) {
+      h += '<tr><td colspan="8" style="background:var(--surf2);padding:12px 16px;">';
+      h += '<div style="font-size:12.5px;margin-bottom:8px;">States: <strong>'+esc(Array.from(f.states).join(', ')||'not recorded')+'</strong>'+(f.answered?' · Answered '+f.answered+' demand'+(f.answered===1?'':'s')+', '+f.ontime+' before the deadline':'')+(f.avgRatio!==null?' · Demands average '+Math.round(f.avgRatio*100)+'% of policy limits':'')+'</div>';
+      f.demands.slice().sort((a, b) => demandEff(b.d) < demandEff(a.d) ? -1 : 1).forEach(x => { h += '<div class="row-link" onclick="event.stopPropagation();stCase(\''+esc(x.c.id)+'\',\'demands\')" style="font-size:12.5px;padding:5px 0;border-top:1px solid #E5E7EB;">'+esc(x.c.client)+' <span style="color:var(--dim);">'+esc(x.c.matterNo||x.c.id)+'</span> · '+fM(x.d.demandAmount)+' · deadline '+esc(demandEff(x.d))+' · <strong>'+esc(x.d.status)+'</strong></div>'; });
+      if (!f.demands.length) h += '<div style="font-size:12.5px;color:var(--muted);">No time-limit demands logged from this firm. It appears as the plaintiff firm on '+f.cases.size+' matter'+(f.cases.size===1?'':'s')+'.</div>';
+      h += '</td></tr>';
+    }
+  });
+  h += '</tbody></table></div>';
+  h += '<div style="font-size:11.5px;color:var(--dim);margin-top:10px;max-width:780px;">These are counts and averages from the files in this account. They describe what has happened, and they are not a prediction about any firm or a conclusion about how to handle a particular demand.</div>';
+  return h + '</div>';
+}
+
+/* ── Defense counsel: scorecards and matching ── */
+function dcKey(c){ const d = c.defenseCounsel; if (!d) return ''; return (d.firm || d.name || '').trim(); }
+function dcScorecards(){
+  const map = {};
+  acctScope().forEach(c => {
+    const k = dcKey(c); if (!k) return;
+    const o = map[k] = map[k] || {firm:k, people:new Set(), cases:[], open:0, closed:0, settle:[], cost:[], dem:0, onTime:0};
+    o.cases.push(c); if (c.defenseCounsel.name) o.people.add(c.defenseCounsel.name);
+    if (c.status === 'Closed') o.closed++; else o.open++;
+    const res = Number((c.insurance && c.insurance.reserveAmount) || (c.exposure && c.exposure.reserveAmount)) || 0, sa = Number(c.exposure && c.exposure.settlementAmount) || 0;
+    if (res > 0 && sa > 0) o.settle.push(sa / res);
+    const billed = Number(c.billing && c.billing.totalBilled) || 0, bud = Number(c.billing && c.billing.budget) || 0;
+    if (billed > 0 && bud > 0) o.cost.push(billed / bud);
+    demandsOf(c).forEach(d => { if (d.status !== 'open') { o.dem++; if (d.respondedDate && d.respondedDate <= demandEff(d)) o.onTime++; } });
+  });
+  const avg = a => a.reduce((s, x) => s + x, 0) / a.length;
+  return Object.keys(map).map(k => {
+    const o = map[k], parts = [];
+    if (o.settle.length) { const r = avg(o.settle); parts.push({name:'Settled against reserve', have:Math.round(r*100)+'% of reserve', pts:Math.max(0, 40 - Math.max(0, r - 1) * 80), max:40}); }
+    if (o.cost.length) { const r = avg(o.cost); parts.push({name:'Billing against budget', have:Math.round(r*100)+'% of budget', pts:Math.max(0, 30 - Math.max(0, r - 1) * 60), max:30}); }
+    if (o.dem) { parts.push({name:'Demands answered in time', have:o.onTime+' of '+o.dem, pts:30 * o.onTime / o.dem, max:30}); }
+    const max = parts.reduce((s, p) => s + p.max, 0), got = parts.reduce((s, p) => s + p.pts, 0);
+    return Object.assign(o, {parts, score: (parts.length >= 2 && max) ? Math.round(got / max * 100) : null});
+  }).sort((a, b) => (b.score == null ? -1 : b.score) - (a.score == null ? -1 : a.score));
+}
+function dcScoreFor(c){ const k = String(c.firm || c.name || '').trim(); const s = dcScorecards().find(x => x.firm === k); return s ? s.score : null; }
+function dcMatchList(c, stateOverride){
+  const want = stateAbbrOf(stateOverride || caseStateName(c)), type = String(c.type || '').toLowerCase();
+  const toks = type.split(/[^a-z]+/).filter(w => w.length > 3 && !['liability','law','dispute','claim','defense','other'].includes(w));
+  const load = {}; CASES.forEach(x => { if (x.status !== 'Closed' && x.defenseCounsel && x.defenseCounsel.panelId) load[x.defenseCounsel.panelId] = (load[x.defenseCounsel.panelId] || 0) + 1; });
+  const cards = dcScorecards();
+  return counselAll().filter(r => r.status !== 'Inactive').map(r => {
+    let s = 0; const why = [], warn = [];
+    const states = (r.states || []).map(x => String(x).toUpperCase());
+    if (want) { if (states.indexOf(want) >= 0) { s += 50; why.push('Licensed in '+want); } else { s -= 60; warn.push('Not listed as licensed in '+want); } } else warn.push('No state on the matter, so licensing was not checked');
+    const pa = String(r.practiceAreas || '').toLowerCase();
+    { const hit = toks.length ? String(r.practiceAreas||'').split(/[;,]/).map(x => x.trim()).find(x => toks.some(t => x.toLowerCase().indexOf(t) >= 0)) : ''; if (hit) { s += 20; why.push('Handles '+hit.toLowerCase()); } }
+    if (r.status === 'Preferred') { s += 10; why.push('Preferred panel'); } else if (r.status === 'Pending') { s -= 15; warn.push('Panel approval still pending'); }
+    const card = cards.find(x => x.firm === (r.firm || r.name)); if (card && card.score != null) { s += card.score * 0.15; why.push('Scorecard '+card.score); }
+    const n = load[r.id] || 0; if (n) { s -= Math.min(10, n * 2); why.push(n+' open matter'+(n===1?'':'s')+' with you now'); }
+    if (r.hourlyRate) { s += Math.max(0, 5 - (Number(r.hourlyRate) - 150) / 25); why.push('$'+Number(r.hourlyRate)+' an hour'); }
+    return {r, s, why, warn};
+  }).sort((a, b) => b.s - a.s);
+}
+function dcScoreV(){
+  loadCounsel();
+  const cards = dcScorecards(), open = acctScope().filter(c => c.status !== 'Closed');
+  const mc = CASES.find(x => x.id === S.dcMatter) || null;
+  let h = '<div class="wrap" style="padding-top:18px;">';
+  h += '<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-end;"><div><div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">Defense counsel</div>'+
+    '<div style="font-size:13px;color:var(--muted);margin:4px 0 14px;max-width:780px;line-height:1.6;">Find the right approved attorney for a matter, then see how each firm has performed on your files.</div></div><div>'+acctPickerV()+'</div></div>';
+  /* matcher */
+  h += '<div class="card" style="padding:14px 16px;margin-bottom:16px;max-width:980px;"><div style="font-weight:800;font-size:14px;margin-bottom:6px;">Find a match from your approved panel</div>';
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;"><div class="fld" style="flex:2 1 260px;margin:0;"><label class="lbl">Matter</label><select class="inp" onchange="st({dcMatter:this.value,dcState:\'\'})"><option value="">Choose a matter…</option>'+open.map(x => '<option value="'+esc(x.id)+'"'+(S.dcMatter===x.id?' selected':'')+'>'+esc(x.client)+' · '+esc(x.type||'')+'</option>').join('')+'</select></div>';
+  if (mc) h += '<div class="fld" style="flex:1 1 160px;margin:0;"><label class="lbl">State</label><select class="inp" onchange="st({dcState:this.value})"><option value="">'+(caseStateName(mc) ? esc(caseStateName(mc))+' (from the matter)' : 'Choose a state')+'</option>'+Object.keys(US_STATE_NAMES).map(a => '<option value="'+US_STATE_NAMES[a]+'"'+(S.dcState===US_STATE_NAMES[a]?' selected':'')+'>'+US_STATE_NAMES[a]+'</option>').join('')+'</select></div>'; h += '</div>';
+  if (mc) {
+    const list = dcMatchList(mc, S.dcState).slice(0, 5);
+    if (!counselAll().length) h += '<div class="alert-bad" style="margin-top:10px;">No approved counsel loaded yet. Upload your panel on the Approved Counsel page.</div>';
+    list.forEach((m, i) => {
+      const cur = mc.defenseCounsel && mc.defenseCounsel.panelId === m.r.id;
+      h += '<div style="display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;padding:10px 0;border-top:1px solid #E5E7EB;margin-top:'+(i?0:10)+'px;"><div style="flex:1;min-width:240px;"><div style="font-weight:700;font-size:13.5px;">'+(i+1)+'. '+esc(m.r.name)+' <span style="font-weight:500;color:var(--dim);">'+esc(m.r.firm||'')+'</span></div>'+
+        '<div style="font-size:12px;color:#166534;margin-top:2px;">'+esc(m.why.join(' · '))+'</div>'+(m.warn.length?'<div style="font-size:12px;color:#B45309;margin-top:2px;">'+esc(m.warn.join(' · '))+'</div>':'')+'</div>'+
+        '<button class="btn '+(cur?'btn-out':'btn-pri')+'" '+(cur?'disabled':'')+' onclick="setDefenseCounsel(\''+esc(mc.id)+'\',\''+esc(m.r.id)+'\')">'+(cur?'Assigned':'Assign')+'</button></div>';
+    });
+    h += '<div style="font-size:11.5px;color:var(--dim);margin-top:8px;">Ranked by licensing in the matter\'s state, practice area, panel status, scorecard, current workload and rate. It is a starting list, so review it before you assign.</div>';
+  }
+  h += '</div>';
+  /* scorecards */
+  h += '<div style="font-weight:800;font-size:15px;margin:6px 0 8px;">Scorecards</div>';
+  if (!cards.length) h += '<div class="alert-bad">No matters have defense counsel assigned yet. Assign counsel from the matcher above or on a matter, and scorecards fill in as matters close and demands are answered.</div>';
+  else {
+    h += '<div class="card" style="padding:0;overflow-x:auto;"><table><thead><tr><th>Firm</th><th>Matters</th><th>Score</th><th>Settled vs reserve</th><th>Billing vs budget</th><th>Demands answered in time</th></tr></thead><tbody>';
+    const cell = (p) => p ? '<td>'+esc(p.have)+'</td>' : '<td style="color:var(--dim);">not enough data</td>';
+    cards.forEach(o => {
+      const get = n => o.parts.find(p => p.name === n);
+      h += '<tr><td><strong>'+esc(o.firm)+'</strong>'+(o.people.size?'<br><span style="font-size:11px;color:var(--dim);">'+esc(Array.from(o.people).slice(0,3).join(', '))+'</span>':'')+'</td><td>'+o.cases.length+' <span style="color:var(--dim);font-size:11px;">('+o.open+' open, '+o.closed+' closed)</span></td><td>'+(o.score==null?'<span style="color:var(--dim);">needs 2 measures</span>':'<span style="font-weight:800;font-size:16px;color:'+(o.score>=80?'#15803D':o.score>=60?'#B45309':'#B91C1C')+';">'+o.score+'</span><div style="font-size:10.5px;color:var(--dim);">from '+o.parts.length+' of 3 measures</div>')+'</td>'+cell(get('Settled against reserve'))+cell(get('Billing against budget'))+cell(get('Demands answered in time'))+'</tr>';
+    });
+    h += '</tbody></table></div>';
+    h += '<div style="font-size:11.5px;color:var(--dim);margin-top:10px;max-width:800px;line-height:1.55;">How the score works: up to 40 points for matters settled at or under reserve, 30 for billing at or under budget, and 30 for demands answered before their deadline. A score shows once a firm has at least two of the three measures, and it uses only the measures that have data. The weights are a starting point and can be changed to fit your own program.</div>';
+  }
+  return h + '</div>';
+}
 
 function attentionData(scopeCases, opts){
   opts = opts || {};
@@ -6557,8 +7098,8 @@ function execRiskV(){
 
 /* ── 6. DETAILED REPORTS ──────────────────────────────────── */
 function execReportsExportCSV(){
-  const cols = ['Matter','Client','Type','Attorney','Status','Stage','Value','Reserve','CCI'];
-  const rows = CASES.map(c => [c.matterNo||c.id, c.client, c.type, c.attorney, c.status, c.litigationStage||'', c.value, c.insurance.reserveAmount||0, cci(c)]);
+  const cols = ['Matter','Client','Account','Type','Attorney','Adjuster','Backup adjuster','Defense counsel','Plaintiff attorney','Plaintiff firm','First notice of loss','Date of representation','Status','Stage','Value','Reserve','CCI'];
+  const rows = CASES.map(c => [c.matterNo||c.id, c.client, c.clientAccount||'', c.type, c.attorney, claimsPrimary(c), claimsBackup(c), (c.defenseCounsel&&c.defenseCounsel.name)||'', plaintiffAtty(c), plaintiffFirmOf(c), c.fnolDate||'', c.repDate||'', c.status, c.litigationStage||'', c.value, c.insurance.reserveAmount||0, cci(c)]);
   downloadCSV('executive_matter_report_'+td()+'.csv', cols, rows);
 }
 function execReportsV(){
@@ -9359,13 +9900,13 @@ async function submitCreateOrg(){
    book. See the matching /api/admin/sentinel-health-check route in
    server.js for why this deliberately uses OPEN cases, never closed
    ones with an already-known outcome. */
-const HEALTH_CHECK_CSV_HEADERS = ['Client','Type','Status','Attorney','Carrier','ClaimNo','Filed','SOL','Value','Reserve','Demand','Offer','LastActivity','TotalBilled'];
+const HEALTH_CHECK_CSV_HEADERS = ['Client','Type','Status','Attorney','Carrier','ClaimNo','Filed','SOL','Value','Reserve','Demand','Offer','LastActivity','TotalBilled','State','Account','Adjuster','BackupAdjuster','DefenseCounsel','DefenseFirm','PlaintiffAttorney','PlaintiffFirm','FNOL','RepDate','DemandReceived','DemandDeadline','DemandTime','DemandAmount','PolicyLimits'];
 // One clean example row only — anything else here would risk being
 // parsed as a real matter if someone forgets to delete it before
 // sending the CSV back. Column notes live in the modal's own copy
 // instead, not in the file.
 const HEALTH_CHECK_CSV_TEMPLATE = HEALTH_CHECK_CSV_HEADERS.join(',') + '\n' +
-  'Acme Manufacturing Co,Contract Dispute,Active,,Zurich,CLM-2025-1234,2025-03-01,2027-03-01,1200000,450000,1500000,300000,2025-09-15,18500\n';
+  'Acme Manufacturing Co,Auto Liability,Active,,Zurich,CLM-2025-1234,2025-03-01,2027-03-01,1200000,450000,1500000,300000,2025-09-15,18500,Georgia,Southeast Auto Book,Jordan Lee,Casey Morgan,Dana Whitfield,Whitfield & Burke LLP,Pat Harlan,"Harlan & Pike, LLP",2025-02-10,2025-03-15,,,,,\n';
 
 /* Upload a .csv instead of pasting it. Reads the file in the browser (nothing is sent anywhere until
    you run the check or import) and drops its text into the box so it can still be reviewed and edited. */
@@ -9375,7 +9916,7 @@ function loadCsvFile(source, stateKey){
   if (!/\.csv$|\.txt$/i.test(file.name) && file.type && !/csv|text\/plain/.test(file.type)) {
     alert('Please choose a CSV file. In Excel use File > Save As > CSV (Comma delimited).'); return;
   }
-  if (file.size > 5 * 1024 * 1024) { alert('That file is over 5 MB. Split it into smaller files and run them one at a time.'); return; }
+  if (file.size > 25 * 1024 * 1024) { alert('That file is over 25 MB. Split it into smaller files and run them one at a time.'); return; }
   const r = new FileReader();
   r.onload = () => {
     const text = String(r.result || '').replace(/^\uFEFF/, '');
@@ -9434,7 +9975,10 @@ function parseHealthCheckCSV(text){
     client: col('Client'), type: col('Type'), status: col('Status'), attorney: col('Attorney'),
     carrier: col('Carrier'), claimNo: col('ClaimNo'), filed: col('Filed'), sol: col('SOL'),
     value: col('Value'), reserve: col('Reserve'), demand: col('Demand'), offer: col('Offer'),
-    lastActivity: col('LastActivity'), totalBilled: col('TotalBilled')
+    lastActivity: col('LastActivity'), totalBilled: col('TotalBilled'),
+    state: col('State'), account: col('Account'), adjuster: col('Adjuster'), backupAdjuster: col('BackupAdjuster'), defenseCounsel: col('DefenseCounsel'), defenseFirm: col('DefenseFirm'),
+    plaintiffAttorney: col('PlaintiffAttorney'), plaintiffFirm: col('PlaintiffFirm'), fnol: col('FNOL'), repDate: col('RepDate'),
+    demandReceived: col('DemandReceived'), demandDeadline: col('DemandDeadline'), demandTime: col('DemandTime'), demandAmount: col('DemandAmount'), policyLimits: col('PolicyLimits')
   };
   if (idx.client === -1) throw new Error('CSV is missing a required "Client" column. Download the template to see the expected format.');
   const num = v => { const n = parseFloat(String(v||'').replace(/[^0-9.-]/g,'')); return isNaN(n) ? 0 : n; };
@@ -9467,7 +10011,8 @@ function parseHealthCheckCSV(text){
         },
         keyDates: { sol: sol || '' },
         billing: { totalBilled: idx.totalBilled >= 0 ? num(cells[idx.totalBilled]) : 0 },
-        updates: lastActivity ? [{ date: lastActivity, author: 'Import', type: 'Last Known Activity', text: 'Most recent activity date from prospect\'s source data.' }] : []
+        updates: lastActivity ? [{ date: lastActivity, author: 'Import', type: 'Last Known Activity', text: 'Most recent activity date from prospect\'s source data.' }] : [],
+        ...importExtraFields(cells, idx)
       }
     });
   }
@@ -9542,7 +10087,7 @@ function hcPrint(summary){
 }
 function hcLegacyReportV(r){
   let h = '';
-    h += '<div class="alert-good" style="margin-bottom:14px;">Imported '+r.imported+' matter'+(r.imported===1?'':'s')+' into a dedicated, isolated engagement org'+(r.failed?' ('+r.failed+' row'+(r.failed===1?'':'s')+' skipped — see below)':'')+'.</div>';
+    h += '<div class="alert-good" style="margin-bottom:14px;">Imported '+r.imported+' matter'+(r.imported===1?'':'s')+' into a dedicated, isolated engagement org'+(r.failed?' ('+r.failed.toLocaleString()+' row'+(r.failed===1?'':'s')+' skipped — see below)':'')+'.</div>';
     if (r.billing && r.billing.pricePaid != null) {
       h += '<div style="background:#FFF7ED;border:1px solid #FDBA74;border-radius:8px;padding:12px 14px;margin-bottom:16px;">';
       h += '<div style="font-weight:700;font-size:13px;color:#9A3412;">💳 '+fM(r.billing.pricePaid)+' paid · credit expires '+esc(r.billing.creditExpiresAt)+'</div>';
@@ -9845,7 +10390,7 @@ function orgNotesModalV(){
 // needed since the data driving these exports (org list, a
 // particular org's user list) is already loaded into state by the
 // time someone clicks the button.
-function downloadCSV(filename, rows){
+function downloadObjectsCSV(filename, rows){
   if (!rows || rows.length === 0) { alert('Nothing to export.'); return; }
   const headers = Object.keys(rows[0]);
   const escCell = v => {
@@ -9865,14 +10410,14 @@ function exportOrgsCSV(){
     Organization: o.name, Type: o.persona, Plan: o.planTier, Status: o.accessStatus,
     Matters: o.caseCount, Users: o.userCount, Created: String(o.createdAt).slice(0,10)
   }));
-  downloadCSV('case-closed-pro-organizations.csv', orgs);
+  downloadObjectsCSV('case-closed-pro-organizations.csv', orgs);
 }
 function exportOrgUsersCSV(){
   const users = (S.manageUsersData||[]).map(u => ({
     Name: u.name || '', Email: u.email, Role: u.role, Active: u.isActive ? 'Yes' : 'No',
     AssignedMatters: u.assignedCaseCount, LastLogin: u.lastLoginAt ? String(u.lastLoginAt).slice(0,19).replace('T',' ') : ''
   }));
-  downloadCSV((S.manageUsersOrgName||'organization').replace(/[^a-z0-9]+/gi,'-').toLowerCase() + '-users.csv', users);
+  downloadObjectsCSV((S.manageUsersOrgName||'organization').replace(/[^a-z0-9]+/gi,'-').toLowerCase() + '-users.csv', users);
 }
 
 async function openManageUsers(orgId, orgName){
@@ -10290,9 +10835,10 @@ function openCaseImportCardV(){
 
   if (S.openImportResult) {
     const r = S.openImportResult;
-    h += '<div class="alert-good" style="margin-bottom:10px;">Imported '+r.imported+' matter'+(r.imported===1?'':'s')+(r.failed?' ('+r.failed+' row'+(r.failed===1?'':'s')+' skipped — see below)':'')+'. They\'re live in your Cases tab now.</div>';
+    if (r.stopped) h += '<div class="alert-bad" style="margin-bottom:10px;">'+esc(r.stopped)+'</div>';
+    h += '<div class="alert-good" style="margin-bottom:10px;">Imported '+r.imported.toLocaleString()+' matter'+(r.imported===1?'':'s')+(r.failed?' ('+r.failed.toLocaleString()+' row'+(r.failed===1?'':'s')+' skipped — see below)':'')+'. They\'re live in your Cases tab now.</div>';
     if (r.failed) {
-      h += '<div style="font-size:10.5px;color:var(--dim);margin-bottom:10px;">Skipped rows: '+r.errors.map(e=>'#'+(e.index+1)+' ('+esc(e.error)+')').join(', ')+'</div>';
+      h += '<div style="font-size:10.5px;color:var(--dim);margin-bottom:10px;">Skipped rows: '+r.errors.map(e=>'#'+(e.index+1)+' ('+esc(e.error)+')').join(', ')+(r.failed>r.errors.length?' … and '+(r.failed-r.errors.length)+' more':'')+'</div>';
     }
     h += '<button class="btn btn-out" onclick="st({openImportResult:null})">Import More</button>';
   } else {
@@ -10301,30 +10847,33 @@ function openCaseImportCardV(){
     h += '</div>';
     h += '<div class="fld"><label class="lbl">Your Open Caseload (CSV)</label>';
     h += '<div style="margin-bottom:6px;">'+csvUploadButtonV('openImportCsvText')+'</div>';
-    h += '<textarea id="openImportCsv" class="inp" style="min-height:160px;font-family:monospace;font-size:11.5px;" ondragover="event.preventDefault()" ondrop="csvDropHandler(event,\'openImportCsvText\')" placeholder="Upload a CSV file, drop one here, paste the rows, or download the template above and fill it in.">'+esc(S.openImportCsvText||'')+'</textarea></div>';
+    if (S.openImportLoading && S.openImportProgress) { const pr = S.openImportProgress; h += '<div style="border:1px solid #E5E7EB;border-radius:8px;padding:14px;"><div style="font-size:12.5px;font-weight:700;margin-bottom:6px;">Importing '+pr.done.toLocaleString()+' of '+pr.total.toLocaleString()+'</div><div style="height:8px;background:var(--surf3);border-radius:4px;overflow:hidden;"><div style="height:100%;width:'+Math.round(pr.done/Math.max(1,pr.total)*100)+'%;background:var(--pri2);"></div></div></div></div>'; }
+    else {
+    h += '<textarea id="openImportCsv" class="inp" style="min-height:160px;font-family:monospace;font-size:11.5px;" ondragover="event.preventDefault()" ondrop="csvDropHandler(event,\'openImportCsvText\')" placeholder="Upload a CSV file, drop one here, paste the rows, or download the template above and fill it in.">'+esc(S.openImportCsvText||'')+'</textarea></div>'; }
     if (S.openImportError) h += '<div class="alert-bad" style="margin-bottom:10px;">'+esc(S.openImportError)+'</div>';
-    h += '<button class="btn btn-pri" onclick="submitOpenCaseImport()" '+(S.openImportLoading?'disabled':'')+'>'+(S.openImportLoading?'Importing…':'Import Open Cases')+'</button>';
+    h += '<button class="btn btn-pri" onclick="submitOpenCaseImport()" '+(S.openImportLoading?'disabled':'')+'>'+(S.openImportLoading?(S.openImportProgress?'Importing '+S.openImportProgress.done.toLocaleString()+' of '+S.openImportProgress.total.toLocaleString()+'…':'Importing…'):'Import Open Cases')+'</button>';
+    h += '<div style="font-size:11.5px;color:var(--dim);margin-top:8px;">Up to 10,000 matters per upload. Bigger files are sent in batches of 1,000 and you will see the count climb. Optional columns: State, Account, Adjuster, BackupAdjuster, DefenseCounsel, DefenseFirm, PlaintiffAttorney, PlaintiffFirm, FNOL, RepDate, and DemandDeadline (with DemandReceived, DemandTime, DemandAmount, PolicyLimits) to load an open time-limit demand.</div>';
   }
   h += '</div>';
   return h;
 }
 async function submitOpenCaseImport(){
-  const csvText = (document.getElementById('openImportCsv')||{}).value || '';
+  const csvText = (document.getElementById('openImportCsv')||{}).value || S.openImportCsvText || '';
   let cases;
-  try {
-    cases = parseHealthCheckCSV(csvText);
-  } catch (e) {
-    st({openImportError:e.message});
-    return;
+  try { cases = parseHealthCheckCSV(csvText); } catch (e) { st({openImportError:e.message}); return; }
+  if (cases.length > 10000) { st({openImportError:'That file has '+cases.length.toLocaleString()+' matters. The limit is 10,000 per upload. Split the file and upload the parts one after another.'}); return; }
+  st({openImportLoading:true, openImportError:'', openImportProgress:{done:0, total:cases.length}});
+  const agg = {imported:0, failed:0, errors:[], stopped:''}, CH = 1000;
+  for (let i = 0; i < cases.length; i += CH) {
+    try {
+      const r = await apiFetch('/api/cases/import-open', { method:'POST', body: JSON.stringify(cases.slice(i, i + CH)) });
+      agg.imported += r.imported || 0; agg.failed += r.failed || 0;
+      (r.errors || []).forEach(e => { if (agg.errors.length < 200) agg.errors.push({index:e.index + i, error:e.error}); });
+    } catch (e) { agg.stopped = 'Stopped before row '+(i+1).toLocaleString()+': '+e.message+'. Rows before that were saved. Remove them from your file and upload the rest.'; break; }
+    S.openImportProgress = {done:Math.min(i + CH, cases.length), total:cases.length}; render();
   }
-  st({openImportLoading:true, openImportError:''});
-  try {
-    const data = await apiFetch('/api/cases/import-open', { method:'POST', body: JSON.stringify(cases) });
-    await loadCasesFromApi();
-    st({openImportLoading:false, openImportResult:data});
-  } catch (e) {
-    st({openImportLoading:false, openImportError:e.message});
-  }
+  await loadCasesFromApi();
+  st({openImportLoading:false, openImportProgress:null, openImportResult:agg});
 }
 
 /* ── Live API console ── */
@@ -10572,6 +11121,7 @@ function tabInsurance(c){
 /* ── TAB: KEY DATES ────────────────────────────────────── */
 function tabDates(c){
   let h = '<div class="section-band">Statute of Limitations</div>';
+  h += claimFactsCardV(c);
   h += backupPickerV(c);
   h += '<div class="grid-2">';
   h += '<div>'+inp('SOL Date', c.keyDates.sol, 'un(\'keyDates\',\'sol\',this.value)','date')+'</div>';
