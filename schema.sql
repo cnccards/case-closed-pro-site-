@@ -402,3 +402,36 @@ CREATE POLICY weekly_digest_admin_bypass ON weekly_digest_config
 -- GRANT USAGE ON SCHEMA public TO app_user;
 -- GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;
 -- GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;
+
+-- ---------------------------------------------------------------
+-- Approved counsel panel (added October 2026). A customer's approved
+-- defense attorneys, loaded in bulk from CSV. The server also creates
+-- this on startup if it is missing; run this block manually only if
+-- that fails (the app will say so). Safe to run more than once.
+-- ---------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS approved_counsel (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id        UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  external_id   TEXT,
+  name          TEXT NOT NULL,
+  firm          TEXT,
+  email         TEXT,
+  phone         TEXT,
+  city          TEXT,
+  states        TEXT[] NOT NULL DEFAULT '{}',
+  practice_areas TEXT,
+  hourly_rate   NUMERIC(10,2),
+  status        TEXT NOT NULL DEFAULT 'Approved' CHECK (status IN ('Approved','Preferred','Pending','Inactive')),
+  notes         TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_approved_counsel_org ON approved_counsel(org_id);
+ALTER TABLE approved_counsel ENABLE ROW LEVEL SECURITY;
+ALTER TABLE approved_counsel FORCE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'approved_counsel' AND policyname = 'approved_counsel_tenant_isolation') THEN
+    CREATE POLICY approved_counsel_tenant_isolation ON approved_counsel
+      USING (org_id = current_setting('app.current_org_id', true)::uuid);
+  END IF;
+END $$;
