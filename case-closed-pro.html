@@ -1812,6 +1812,75 @@ function impersonationBannerV(){
   '</div>';
 }
 
+
+/* ── DEMO GATE ──────────────────────────────────────────────
+   The public demo (?demo=1) is no longer open to anyone with the link. A visitor lands on this page instead:
+   request a demo (goes to sales), book a live video demo, or, for our own team, enter the demo password.
+   The password is checked as a SHA-256 hash so it is not readable in the page source. This is a soft gate
+   meant to keep casual visitors out and route them to sales; it is not a security boundary for real data
+   (the demo contains only sample data). To change the password, replace DEMO_PW_HASH with the SHA-256
+   hex of the new one. */
+const DEMO_PW_HASH = 'c55205a1153e74bf7f4722ef683d2b15290f3b272661e8e2b07a821d56b8d6cc';
+const LIVE_DEMO_VIDEO_URL = 'https://calendly.com/cclosed';
+function demoUnlocked(){ try { if (sessionStorage.getItem('ccp_demo_ok') === '1') return true; } catch (e) {} return !!window.__ccpDemoOk; }
+async function demoSha256(text){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+async function demoUnlock(){
+  const el = document.getElementById('dgPw'); const pw = el ? el.value : '';
+  if (!pw) { st({dgPwErr:'Enter the demo password.'}); return; }
+  try {
+    const ok = (await demoSha256(pw.trim())) === DEMO_PW_HASH;
+    if (!ok) { st({dgPwErr:'That password is not right.'}); return; }
+    window.__ccpDemoOk = true;
+    try { sessionStorage.setItem('ccp_demo_ok', '1'); } catch (e) {}
+    st({dgPwErr:'', dgPwOpen:false});
+  } catch (e) { st({dgPwErr:'This browser cannot check the password. Use a current version of Chrome, Edge, Safari or Firefox.'}); }
+}
+async function demoGateSend(){
+  const v = id => (document.getElementById(id) || {value:''}).value.trim();
+  const name = v('dgName'), email = v('dgEmail'), company = v('dgCompany'), message = v('dgMsg') || 'I would like to see a live demo of Case Closed Pro.';
+  if (!name || !email || !email.includes('@')) { st({dgMsgOut:'', dgErr:'Enter your name and a valid work email.'}); return; }
+  st({dgBusy:true, dgErr:''});
+  try {
+    const base = (window.CCP_API_BASE || '').replace(/\/$/, '');
+    const r = await fetch(base + '/api/contact-sales', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, email, company, message:'[Demo request] ' + message})});
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || 'Request failed');
+    st({dgBusy:false, dgSent:name.split(' ')[0]});
+  } catch (e) {
+    st({dgBusy:false, dgErr:'We could not reach the server, so your email app will open instead. Send the message from there.'});
+    window.location.href = 'mailto:sales@cclosed.com?subject=' + encodeURIComponent('Demo request from ' + name + (company ? ' (' + company + ')' : '')) + '&body=' + encodeURIComponent('Name: ' + name + '\nEmail: ' + email + '\nCompany: ' + (company || '-') + '\n\n' + message);
+  }
+}
+function demoGateV(){
+  const inp2 = 'width:100%;padding:10px 12px;border:1.5px solid var(--line2);border-radius:8px;font-size:13px;font-family:inherit;box-sizing:border-box;';
+  const lbl = 'display:block;font-size:11px;font-weight:700;color:var(--muted);margin:10px 0 4px;';
+  let h = '<div style="min-height:100vh;background:linear-gradient(160deg,#0b2b52 0%, var(--pri) 45%, var(--pri2) 130%);padding:36px 16px;display:flex;align-items:center;justify-content:center;">';
+  h += '<div style="max-width:880px;width:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;">';
+  h += '<div style="color:#fff;padding:8px 6px;"><div style="font-family:var(--serif);font-size:30px;font-weight:700;line-height:1.2;margin-bottom:12px;">See Case Closed Pro live</div>'+
+    '<div style="font-size:14.5px;color:#C9D8EC;line-height:1.7;margin-bottom:20px;">The best way to see it is with one of us. We walk through your own litigated-claim workflow, including how Verdict Shield keeps time-limit demands from going unanswered.</div>'+
+    '<a href="'+LIVE_DEMO_VIDEO_URL+'" target="_blank" rel="noopener" style="display:inline-block;background:#fff;color:var(--pri);padding:13px 24px;border-radius:8px;font-weight:800;font-size:14px;text-decoration:none;">📹 Book a live video demo</a>'+
+    '<div style="font-size:12px;color:#9FB4D3;margin-top:10px;">Pick a time that works. Usually 30 minutes.</div>'+
+    '<div style="margin-top:34px;border-top:1px solid rgba(255,255,255,.2);padding-top:16px;"><span style="font-size:12.5px;color:#C9D8EC;">Case Closed Pro team?</span> <span style="font-size:12.5px;color:#fff;font-weight:700;cursor:pointer;text-decoration:underline;" onclick="st({dgPwOpen:'+(!S.dgPwOpen)+',dgPwErr:\'\'})">Enter the demo password</span>';
+  if (S.dgPwOpen) h += '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;"><input id="dgPw" type="password" autocomplete="off" placeholder="Demo password" style="'+inp2+'max-width:230px;" onkeydown="if(event.key===\'Enter\')demoUnlock()"><button onclick="demoUnlock()" style="background:var(--pri3);color:#00263a;border:none;border-radius:8px;padding:10px 18px;font-weight:800;cursor:pointer;">Open the demo</button></div>'+(S.dgPwErr?'<div style="color:#FECACA;font-size:12px;margin-top:6px;">'+esc(S.dgPwErr)+'</div>':'');
+  h += '</div></div>';
+  h += '<div style="background:#fff;border-radius:14px;padding:22px 24px;box-shadow:0 24px 60px rgba(0,10,30,.35);">';
+  if (S.dgSent) h += '<div style="font-family:var(--serif);font-size:20px;font-weight:700;color:var(--ink);">Thanks, '+esc(S.dgSent)+'.</div><div style="font-size:13.5px;color:var(--muted);line-height:1.65;margin-top:8px;">Your request went to our sales team. We reply within one business day. To skip the wait, book a time now.</div><div style="margin-top:14px;"><a href="'+LIVE_DEMO_VIDEO_URL+'" target="_blank" rel="noopener" style="display:inline-block;background:var(--pri);color:#fff;padding:11px 20px;border-radius:8px;font-weight:800;text-decoration:none;">📹 Book a live video demo</a></div>';
+  else {
+    h += '<div style="font-family:var(--serif);font-size:20px;font-weight:700;color:var(--ink);">Request a demo</div><div style="font-size:12.5px;color:var(--muted);margin-top:3px;">Tell us who you are and we will get back to you within one business day.</div>';
+    h += '<label style="'+lbl+'">Name</label><input id="dgName" style="'+inp2+'" placeholder="Jane Doe">';
+    h += '<label style="'+lbl+'">Work email</label><input id="dgEmail" type="email" style="'+inp2+'" placeholder="jane@yourcarrier.com">';
+    h += '<label style="'+lbl+'">Company</label><input id="dgCompany" style="'+inp2+'" placeholder="Your company">';
+    h += '<label style="'+lbl+'">What would you like to see?</label><textarea id="dgMsg" rows="3" style="'+inp2+'resize:vertical;" placeholder="Litigated claim volume, time-limit demands, adjuster workflow…"></textarea>';
+    if (S.dgErr) h += '<div style="background:#FEF2F2;color:#B91C1C;border-radius:8px;padding:9px 11px;font-size:12px;margin-top:10px;">'+esc(S.dgErr)+'</div>';
+    h += '<button '+(S.dgBusy?'disabled ':'')+'onclick="demoGateSend()" style="width:100%;background:var(--pri);color:#fff;border:none;border-radius:9px;padding:12px;font-weight:800;font-size:13.5px;cursor:pointer;margin-top:14px;">'+(S.dgBusy?'Sending…':'Request a demo')+'</button>';
+    h += '<div style="font-size:11px;color:var(--dim);text-align:center;margin-top:10px;">Or email <a href="mailto:sales@cclosed.com" style="color:var(--pri2);">sales@cclosed.com</a></div>';
+  }
+  return h + '</div></div></div>';
+}
+
 function demoModeBannerV(){
   return '<div style="background:linear-gradient(90deg,#B45309,#D97706);color:#fff;padding:9px 18px;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;font-size:12.5px;font-weight:600;text-align:center;">' +
     '<span>🔎 You\'re viewing a live demo with sample data — nothing here is a real customer\'s.</span>' +
@@ -2502,6 +2571,7 @@ function carrierLogin() {
 
 function render(){
   try {
+    if (DEMO_MODE && !demoUnlocked()) { document.getElementById('app').innerHTML = demoGateV(); return; }
     if (S.showLandingPage !== false && !S.isAuthenticated && !S.role) {
       document.getElementById('app').innerHTML = landingPageV();
       return;
