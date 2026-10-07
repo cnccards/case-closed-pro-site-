@@ -2716,6 +2716,156 @@ app.delete('/api/cases/:id', requireOrgRole('admin'), async (req, res) => {
   res.json({ deleted: true, id: req.params.id });
 });
 
+
+// ---------------------------------------------------------------
+// APPROVED COUNSEL PANEL. A customer's list of approved defense attorneys, loaded in bulk from a CSV
+// (or one at a time). Matters can then name defense counsel from this panel, and defense counsel is
+// notified when a time-limit demand is logged. The table is created on startup if it does not exist
+// (the same SQL is in schema.sql for manual setup). One org never sees another's panel (row-level
+// security, same as cases and payees).
+// Import rules: a row matches an existing attorney by the customer's own ID, else email, else
+// name + firm; matches are updated, the rest are created. A dry run reports what would happen and
+// lists every row that needs fixing before anything is saved.
+// ---------------------------------------------------------------
+let approvedCounselReady = false;
+async function ensureApprovedCounselTable() {
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS approved_counsel (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      external_id TEXT, name TEXT NOT NULL, firm TEXT, email TEXT, phone TEXT, city TEXT,
+      states TEXT[] NOT NULL DEFAULT '{}', practice_areas TEXT, hourly_rate NUMERIC(10,2),
+      status TEXT NOT NULL DEFAULT 'Approved' CHECK (status IN ('Approved','Preferred','Pending','Inactive')),
+      notes TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_approved_counsel_org ON approved_counsel(org_id)');
+    await pool.query('ALTER TABLE approved_counsel ENABLE ROW LEVEL SECURITY');
+    await pool.query('ALTER TABLE approved_counsel FORCE ROW LEVEL SECURITY');
+    await pool.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'approved_counsel' AND policyname = 'approved_counsel_tenant_isolation') THEN
+        CREATE POLICY approved_counsel_tenant_isolation ON approved_counsel USING (org_id = current_setting('app.current_org_id', true)::uuid);
+      END IF; END $$`);
+    approvedCounselReady = true;
+  } catch (e) {
+    console.error('Approved counsel table could not be created automatically (run the approved_counsel block in schema.sql):', e.message);
+  }
+}
+setTimeout(ensureApprovedCounselTable, 3000);
+function counselTableGuard(req, res, next) {
+  if (approvedCounselReady) return next();
+  ensureApprovedCounselTable().then(() => approvedCounselReady ? next() : res.status(503).json({ error: 'The approved counsel list is not set up on this server yet. Run the approved_counsel block from schema.sql once, then try again.' }));
+}
+const US_STATE_CODES = { AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',CO:'Colorado',CT:'Connecticut',DE:'Delaware',DC:'District of Columbia',FL:'Florida',GA:'Georgia',HI:'Hawaii',ID:'Idaho',IL:'Illinois',IN:'Indiana',IA:'Iowa',KS:'Kansas',KY:'Kentucky',LA:'Louisiana',ME:'Maine',MD:'Maryland',MA:'Massachusetts',MI:'Michigan',MN:'Minnesota',MS:'Mississippi',MO:'Missouri',MT:'Montana',NE:'Nebraska',NV:'Nevada',NH:'New Hampshire',NJ:'New Jersey',NM:'New Mexico',NY:'New York',NC:'North Carolina',ND:'North Dakota',OH:'Ohio',OK:'Oklahoma',OR:'Oregon',PA:'Pennsylvania',RI:'Rhode Island',SC:'South Carolina',SD:'South Dakota',TN:'Tennessee',TX:'Texas',UT:'Utah',VT:'Vermont',VA:'Virginia',WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming',PR:'Puerto Rico' };
+const US_STATE_BY_NAME = Object.fromEntries(Object.entries(US_STATE_CODES).map(([k, v]) => [v.toLowerCase(), k]));
+function parseStateList(v) {
+  const out = [], bad = [];
+  String(v || '').split(/[,;/|\n]+/).map(x => x.trim()).filter(Boolean).forEach(tok => {
+    const up = tok.toUpperCase();
+    const code = US_STATE_CODES[up] ? up : US_STATE_BY_NAME[tok.toLowerCase()];
+    if (code) { if (!out.includes(code)) out.push(code); } else bad.push(tok);
+  });
+  return { states: out, bad };
+}
+function normalizeCounselRow(r) {
+  const t = k => String(r[k] == null ? '' : r[k]).trim();
+  const name = t('name') || [t('firstName'), t('lastName')].filter(Boolean).join(' ');
+  if (!name) return { error: 'Attorney name is missing.' };
+  if (name.length > 160) return { error: 'Attorney name is too long.' };
+  const email = t('email').toLowerCase();
+  if (email && !/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(email)) return { error: `"${t('email').slice(0, 60)}" is not a valid email address.` };
+  const st = parseStateList(t('states'));
+  if (st.bad.length) return { error: `Unrecognized state: ${st.bad.slice(0, 3).join(', ')}. Use two-letter codes like GA, FL.` };
+  let rate = null;
+  if (t('hourlyRate')) { rate = parseFloat(t('hourlyRate').replace(/[$,\s]/g, '')); if (!Number.isFinite(rate) || rate < 0 || rate > 5000) return { error: `Hourly rate "${t('hourlyRate').slice(0, 20)}" is not a number between 0 and 5000.` }; }
+  const sRaw = t('status').toLowerCase();
+  const status = !sRaw ? 'Approved' : ({ approved: 'Approved', active: 'Approved', preferred: 'Preferred', pending: 'Pending', inactive: 'Inactive', suspended: 'Inactive', removed: 'Inactive' })[sRaw];
+  if (!status) return { error: `Status "${t('status').slice(0, 20)}" must be Approved, Preferred, Pending or Inactive.` };
+  return { row: { externalId: t('externalId').slice(0, 60) || null, name, firm: t('firm').slice(0, 200) || null, email: email || null, phone: t('phone').slice(0, 40) || null,
+    city: t('city').slice(0, 80) || null, states: st.states, practiceAreas: t('practiceAreas').slice(0, 300) || null, hourlyRate: rate, status, notes: t('notes').slice(0, 500) || null } };
+}
+const counselKey = r => r.externalId ? 'x:' + r.externalId.toLowerCase() : r.email ? 'e:' + r.email : 'n:' + r.name.toLowerCase() + '|' + (r.firm || '').toLowerCase();
+function counselRowOut(r) {
+  return { id: r.id, externalId: r.external_id, name: r.name, firm: r.firm, email: r.email, phone: r.phone, city: r.city, states: r.states || [],
+    practiceAreas: r.practice_areas, hourlyRate: r.hourly_rate != null ? Number(r.hourly_rate) : null, status: r.status, notes: r.notes };
+}
+// Shared by the batch import and the single add. dryRun = report only.
+async function importCounsel(db, orgId, records, { dryRun, markMissingInactive }) {
+  const errors = [], good = new Map();
+  let dupInFile = 0;
+  records.forEach((rec, i) => {
+    const n = normalizeCounselRow(rec || {});
+    if (n.error) { errors.push({ row: i + 2, reason: n.error, name: String((rec && (rec.name || rec.lastName)) || '').slice(0, 60) }); return; }
+    const k = counselKey(n.row);
+    if (good.has(k)) dupInFile++;
+    good.set(k, n.row); // later rows win
+  });
+  const existing = (await db.query('SELECT id, external_id, email, name, firm, status FROM approved_counsel WHERE org_id = $1', [orgId])).rows;
+  const byKey = new Map();
+  for (const e of existing) {
+    if (e.external_id) byKey.set('x:' + e.external_id.toLowerCase(), e);
+    if (e.email) byKey.set('e:' + e.email.toLowerCase(), e);
+    byKey.set('n:' + e.name.toLowerCase() + '|' + (e.firm || '').toLowerCase(), e);
+  }
+  const toCreate = [], toUpdate = [], touched = new Set();
+  for (const [k, row] of good) {
+    const hit = byKey.get(k) || (row.externalId && row.email && byKey.get('e:' + row.email)) || null;
+    if (hit) { toUpdate.push({ id: hit.id, row }); touched.add(hit.id); } else toCreate.push(row);
+  }
+  const toDeactivate = markMissingInactive ? existing.filter(e => !touched.has(e.id) && e.status !== 'Inactive') : [];
+  const result = { dryRun: !!dryRun, rows: records.length, created: toCreate.length, updated: toUpdate.length, skipped: errors.length, duplicatesInFile: dupInFile, deactivated: toDeactivate.length, errors: errors.slice(0, 200), moreErrors: Math.max(0, errors.length - 200) };
+  if (dryRun) return result;
+  const cols = '(org_id, external_id, name, firm, email, phone, city, states, practice_areas, hourly_rate, status, notes)';
+  for (let i = 0; i < toCreate.length; i += 200) {
+    const chunk = toCreate.slice(i, i + 200), params = [], tuples = [];
+    chunk.forEach(r => {
+      const b = params.length;
+      params.push(orgId, r.externalId, r.name, r.firm, r.email, r.phone, r.city, r.states, r.practiceAreas, r.hourlyRate, r.status, r.notes);
+      tuples.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12})`);
+    });
+    await db.query(`INSERT INTO approved_counsel ${cols} VALUES ${tuples.join(',')}`, params);
+  }
+  for (const u of toUpdate) {
+    const r = u.row;
+    await db.query(`UPDATE approved_counsel SET external_id = COALESCE($3, external_id), name = $4, firm = $5, email = COALESCE($6, email), phone = COALESCE($7, phone), city = COALESCE($8, city),
+      states = $9, practice_areas = COALESCE($10, practice_areas), hourly_rate = COALESCE($11, hourly_rate), status = $12, notes = COALESCE($13, notes), updated_at = now() WHERE id = $1 AND org_id = $2`,
+      [u.id, orgId, r.externalId, r.name, r.firm, r.email, r.phone, r.city, r.states, r.practiceAreas, r.hourlyRate, r.status, r.notes]);
+  }
+  if (toDeactivate.length) await db.query(`UPDATE approved_counsel SET status = 'Inactive', updated_at = now() WHERE org_id = $1 AND id = ANY($2::uuid[])`, [orgId, toDeactivate.map(e => e.id)]);
+  return result;
+}
+app.get('/api/approved-counsel', counselTableGuard, async (req, res) => {
+  const { q: term, state, status } = req.query;
+  const limit = Math.min(1000, Math.max(1, parseInt(req.query.limit, 10) || 200)), offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+  const where = ['org_id = $1'], params = [req.orgId];
+  if (term) { params.push('%' + String(term).toLowerCase().replace(/[%_]/g, '') + '%'); where.push(`(lower(name) LIKE $${params.length} OR lower(COALESCE(firm,'')) LIKE $${params.length} OR lower(COALESCE(email,'')) LIKE $${params.length})`); }
+  if (state && US_STATE_CODES[String(state).toUpperCase()]) { params.push(String(state).toUpperCase()); where.push(`$${params.length} = ANY(states)`); }
+  if (status && ['Approved', 'Preferred', 'Pending', 'Inactive'].includes(status)) { params.push(status); where.push(`status = $${params.length}`); }
+  const w = where.join(' AND ');
+  const rows = (await req.db.query(`SELECT * FROM approved_counsel WHERE ${w} ORDER BY lower(name) LIMIT ${limit} OFFSET ${offset}`, params)).rows;
+  const total = (await req.db.query(`SELECT COUNT(*)::int AS n FROM approved_counsel WHERE ${w}`, params)).rows[0].n;
+  const all = (await req.db.query(`SELECT status, COUNT(*)::int AS n FROM approved_counsel WHERE org_id = $1 GROUP BY status`, [req.orgId])).rows;
+  res.json({ counsel: rows.map(counselRowOut), total, byStatus: Object.fromEntries(all.map(r => [r.status, r.n])) });
+});
+app.post('/api/approved-counsel/import', requireOrgRole('admin'), counselTableGuard, async (req, res) => {
+  const b = req.body || {};
+  if (!Array.isArray(b.rows) || !b.rows.length) return res.status(400).json({ error: 'Send the attorneys as a non-empty list of rows.' });
+  if (b.rows.length > 5000) return res.status(413).json({ error: 'That file has more than 5,000 rows. Split it and import in parts.' });
+  const result = await importCounsel(req.db, req.orgId, b.rows, { dryRun: b.dryRun === true, markMissingInactive: b.markMissingInactive === true });
+  if (!result.dryRun) await audit(req.orgId, req.user?.sub, 'approved_counsel.import', 'organization', req.orgId, { created: result.created, updated: result.updated, skipped: result.skipped, deactivated: result.deactivated }, req.ip);
+  res.json(result);
+});
+app.post('/api/approved-counsel', requireOrgRole('admin'), counselTableGuard, async (req, res) => {
+  const result = await importCounsel(req.db, req.orgId, [req.body || {}], { dryRun: false, markMissingInactive: false });
+  if (result.skipped) return res.status(400).json({ error: result.errors[0].reason });
+  await audit(req.orgId, req.user?.sub, 'approved_counsel.add', 'organization', req.orgId, { created: result.created, updated: result.updated }, req.ip);
+  res.status(201).json(result);
+});
+app.delete('/api/approved-counsel/:id', requireOrgRole('admin'), counselTableGuard, async (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ error: 'Bad id' });
+  const r = await req.db.query('DELETE FROM approved_counsel WHERE id = $1 AND org_id = $2', [req.params.id, req.orgId]);
+  await audit(req.orgId, req.user?.sub, 'approved_counsel.delete', 'organization', req.orgId, { id: req.params.id }, req.ip);
+  res.json({ deleted: r.rowCount });
+});
+
 // ---------------------------------------------------------------
 // Payees & Payables — accounts PAYABLE. The org paying its own
 // outside counsel, claims adjusters, expert witnesses, and other
@@ -3971,10 +4121,14 @@ function demandLine(r) {
 }
 // Every time-critical matter (open demand or statute of limitations soon) needs a second claims
 // person so the date is double-tracked if one person is out or misses it.
+// Verdict Shield works on CLAIMS people: the primary adjuster (data.adjusterPrimary, else the carrier
+// adjuster on the matter) and a backup adjuster (data.adjusterBackup). The matter's attorney and the
+// defense counsel (data.defenseCounsel, from the approved panel) are shown separately.
+function claimsPrimary(c) { return String(c.adjusterPrimary || c.insurance?.adjuster || '').trim(); }
+function claimsBackup(c) { return String(c.adjusterBackup || c.backupAttorney || '').trim(); }
 function caseTeamText(c) {
-  const p = (c.attorney || '').trim(), b = (c.backupAttorney || '').trim();
-  const prim = p && p !== 'Unassigned' ? p : 'NO PRIMARY ASSIGNED';
-  return ` — Primary: ${prim}; Backup: ${b || 'NO BACKUP ASSIGNED'}`;
+  const p = claimsPrimary(c), b = claimsBackup(c), a = (c.attorney || '').trim(), dc = c.defenseCounsel && c.defenseCounsel.name ? c.defenseCounsel.name + (c.defenseCounsel.firm ? ' (' + c.defenseCounsel.firm + ')' : '') : '';
+  return ` — Adjuster: ${p || 'NO ADJUSTER ASSIGNED'}; Backup adjuster: ${b || 'NO BACKUP ASSIGNED'}${dc ? '; Defense counsel: ' + dc : (a && a !== 'Unassigned' ? '; Attorney: ' + a : '')}`;
 }
 function caseNeedsBackup(c) {
   if (c.status === 'Closed') return false;
@@ -3984,7 +4138,7 @@ function caseNeedsBackup(c) {
   return hasDemand || solSoon;
 }
 function backupMissing(c) {
-  const p = (c.attorney || '').trim().toLowerCase(), b = (c.backupAttorney || '').trim().toLowerCase();
+  const p = claimsPrimary(c).toLowerCase(), b = claimsBackup(c).toLowerCase();
   return !b || b === 'unassigned' || b === p;
 }
 const SOL_EMAIL_DAYS = 30;
@@ -4021,7 +4175,7 @@ function computeAlertItems(cases, opts = {}) {
       c => `${label(c)} (${money(c.value)})`);
   }
   if (!opts.personal) {
-    add('nobackup', 'red', 'Time-critical matters with no backup claims person', open.filter(c => caseNeedsBackup(c) && backupMissing(c)),
+    add('nobackup', 'red', 'Time-critical matters with no backup adjuster', open.filter(c => caseNeedsBackup(c) && backupMissing(c)),
       c => `${label(c)} — ${c.keyDates?.sol ? 'SOL ' + String(c.keyDates.sol).slice(0, 10) : 'open time-limit demand'}${caseTeamText(c)}`);
   }
   const sol = open.filter(c => c.keyDates?.sol && new Date(c.keyDates.sol).getTime() <= now + ALERT_T.SOL_DAYS * day).sort((a, b) => new Date(a.keyDates.sol) - new Date(b.keyDates.sol));
@@ -4084,7 +4238,7 @@ async function sendAlertEmailsForOrg(client, org) {
   let sent = 0;
   for (const u of users) {
     const isMgr = u.role === 'owner' || u.role === 'admin';
-    const items = isMgr ? orgItems : computeAlertItems(cases.filter(c => c.assignedAttorneyUserId === u.id), { personal: true });
+    const items = isMgr ? orgItems : computeAlertItems(cases.filter(c => { const nm = (u.name || '').trim().toLowerCase(); return c.assignedAttorneyUserId === u.id || (nm && (claimsPrimary(c).toLowerCase() === nm || claimsBackup(c).toLowerCase() === nm)); }), { personal: true });
     if (!items.length) continue; // never email an empty day
     const mail = buildAlertEmail(org.name, u.name, items, !isMgr);
     await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: u.email, subject: mail.subject, text: mail.text });
@@ -4161,8 +4315,8 @@ async function sendDemandEmailsForOrg(client, org, today) {
   for (const u of users) {
     const isMgr = u.role === 'owner' || u.role === 'admin';
     const nm = (u.name || '').trim().toLowerCase();
-    const isPrimary = c => c.assignedAttorneyUserId === u.id || (nm && (c.attorney || '').trim().toLowerCase() === nm);
-    const isBackup = c => nm && (c.backupAttorney || '').trim().toLowerCase() === nm;
+    const isPrimary = c => c.assignedAttorneyUserId === u.id || (nm && (claimsPrimary(c).toLowerCase() === nm || (c.attorney || '').trim().toLowerCase() === nm));
+    const isBackup = c => nm && claimsBackup(c).toLowerCase() === nm;
     // Managers get every item that is due today. Everyone else gets the items on matters they
     // are primary or backup on, and sees the whole open list for those matters, not just today's.
     const mine = isMgr ? send : rows.filter(r => (isPrimary(r.c) || isBackup(r.c)) && send.some(x => x.c.id === r.c.id));
@@ -4263,8 +4417,8 @@ function demandDeadlineText(d) {
   return `${demandEffectiveDeadline(d)} ${(h % 12) || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'} ${TZ_ABBR[d.tz] || 'ET'}${t.stated ? '' : ' (no time in the letter; 5:00 PM assumed)'}`;
 }
 function demandFullyAcked(c, d) {
-  const prim = (c.attorney || '').trim(), bk = (c.backupAttorney || '').trim();
-  const needP = prim && prim !== 'Unassigned', needB = !backupMissing(c);
+  const prim = claimsPrimary(c), bk = claimsBackup(c);
+  const needP = !!prim, needB = !backupMissing(c);
   const by = n => (Array.isArray(d.acks) ? d.acks : []).some(a => a && a.by === n);
   if (!needP && !needB) return Array.isArray(d.acks) && d.acks.length > 0;
   return (!needP || by(prim)) && (!needB || by(bk));
@@ -4276,7 +4430,7 @@ function hoursText(h) {
 }
 function buildEscalationEmail(orgName, kind, c, d, hrs, acked) {
   const url = `${process.env.APP_URL || 'http://localhost:3000'}/case-closed-pro.html`;
-  const head = kind.late ? `PAST DEADLINE: a time-limit demand has no response recorded.` : kind.isNew ? `A time-limit demand was logged on a matter you are on. Please open it and acknowledge it.` :
+  const head = kind.late ? `PAST DEADLINE: a time-limit demand has no response recorded.` : kind.isNew ? `A time-limit demand was logged on a matter you are on (claims team and defense counsel). The assigned adjusters must open it and acknowledge it.` :
     `ESCALATION to ${kind.label}: a time-limit demand is ${hoursText(hrs)}${acked ? '' : ' and has NOT been acknowledged by everyone assigned'}.`;
   let t = `${head}\n\n`;
   t += `Matter: ${c.matterNo || c.id} ${c.client}\nState: ${d.state || 'not set'}\nDeadline: ${demandDeadlineText(d)}\nTime: ${hoursText(hrs)}\n`;
@@ -4296,7 +4450,7 @@ async function sendEscalationsForOrg(client, org) {
   let changed = false, sent = 0;
   const matterPeople = c => users.filter(u => {
     const nm = (u.name || '').trim().toLowerCase();
-    return c.assignedAttorneyUserId === u.id || (nm && ((c.attorney || '').trim().toLowerCase() === nm || (c.backupAttorney || '').trim().toLowerCase() === nm));
+    return c.assignedAttorneyUserId === u.id || (nm && ((c.attorney || '').trim().toLowerCase() === nm || claimsPrimary(c).toLowerCase() === nm || claimsBackup(c).toLowerCase() === nm));
   });
   const rungPeople = r => {
     const byId = users.filter(u => (r.userIds || []).includes(u.id));
@@ -4317,7 +4471,10 @@ async function sendEscalationsForOrg(client, org) {
       const hrs = (ms - now) / 36e5, entry = esc[d.id] = esc[d.id] || {}, acked = demandFullyAcked(c, d), at = new Date().toISOString();
       try {
         if (!entry.new) {
-          if (hrs >= 0) sent += await mail(matterPeople(c), buildEscalationEmail(org.name, { isNew: true }, c, d, hrs, acked));
+          if (hrs >= 0) {
+            const dc = c.defenseCounsel && c.defenseCounsel.email ? [{ email: String(c.defenseCounsel.email), name: c.defenseCounsel.name }] : [];
+            sent += await mail(matterPeople(c).concat(dc), buildEscalationEmail(org.name, { isNew: true }, c, d, hrs, acked));
+          }
           entry.new = { at }; changed = true;
         }
         const crossed = ladder.filter(r => hrs <= r.hours && !entry[String(r.hours)]);
