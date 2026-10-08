@@ -1017,6 +1017,29 @@ let CASES = [
   mkC('NEW-003','HealthFirst Inc','Medical Dispute','Pleadings','High','','2025-01-30','2027-01-15',4100000,3,'CLM-2025-8003','CNA',1650000,'Dr. Lisa Chen')
 ];
 
+
+/* Demo workers' comp claims (dates are relative to today). */
+(function(){
+  const iso = n => new Date(Date.now() + n*864e5).toISOString().slice(0,10);
+  const W = [
+    ['WC-001','Keystone Distribution','Hartford','Rosa Delgado','State - Georgia','Lost time','Lower back strain','Lifting injury, warehouse',-120,-118,'Temporary total (TTD)','Off work','','','',980,653,16200,24000,22000,48000,'GA-2026-04417',12,'None','Unknown'],
+    ['WC-002','Bayline Foods','Travelers','Tom Reiner','State - Florida','Medical only','Hand laceration','Slicer blade',-20,-20,'None','Full duty','','','',0,0,2100,4000,0,0,'',0,'None','No'],
+    ['WC-003','Summit Assembly','Zurich','Alicia Moore','State - California','Lost time','Right shoulder','Repetitive overhead work',-210,-205,'Permanent partial (PPD)','Modified duty','',-15,9,1120,747,31800,36000,41500,58000,'ADJ-2026-9120',-4,'None','Unknown'],
+    ['WC-004','Redwood Logistics','Hartford','Dwayne Pike','State - Texas','Denied / contested','Left knee','Fall from loading dock',-75,-70,'None','Not yet determined','','','',0,0,1800,6000,0,15000,'',0,'None','No'],
+    ['WC-005','Harbor Steel','CNA','Maria Santos','State - Missouri','Lost time','Wrist fracture','Struck by falling tool',-45,-45,'Temporary total (TTD)','Off work',iso(21),'','',1240,827,8900,14000,9800,30000,'MO-2026-1188',5,'None','No'],
+    ['WC-006','Peachtree Hospitality','Travelers','Grace Lin','State - Georgia','Lost time','Right wrist','Repetitive motion, kitchen',-300,-296,'Permanent partial (PPD)','Full duty','',-90,6,760,507,22400,22000,5000,12000,'GA-2026-02201',-30,'Compromise and release','Yes'],
+    ['WC-007','Sunrise Senior Living','Zurich','Paul Okoye','State - Florida','Lost time','Lumbar spine','Patient transfer injury',-160,-118,'Temporary total (TTD)','Off work','','','',890,593,27300,24000,19000,40000,'FL-2026-3350',40,'None','Unknown'],
+    ['WC-008','Delta Packaging','Hartford','Jill Navarro','State - California','Medical only','Eye irritation','Chemical splash',-9,-9,'None','Full duty','','','',0,0,600,2500,0,0,'',0,'None','No']
+  ];
+  W.forEach(w => {
+    const c = mkC(w[0], w[1], 'Workers Comp', 'Discovery', 'Medium', ['Sarah Chen','David Park','James Ortega'][+w[0].slice(3) % 3], iso(w[8]), iso(365), Math.round((w[17]+w[18]+w[19]+w[20])||10000), 20, 'WC-CLM-' + w[0].slice(3) + '26', w[2], (w[18]+w[20])||5000, w[3]);
+    c.insurance.coverageType = 'Workers Compensation'; c.court = Object.assign({}, c.court, {jurisdiction:w[4]});
+    c.litigationStage = w[5] === 'Denied / contested' ? 'Discovery' : 'Pre-Suit';
+    c.comp = {on:true, claimant:w[3], employer:w[1], claimClass:w[5], bodyPart:w[6], injuryNature:w[7], injuryDate:iso(w[8]), reportedDate:iso(w[9]), disability:w[10], rtwStatus:w[11], rtwDate:w[12], mmiDate: w[13] === '' ? '' : iso(w[13]), impairment:w[14], aww:w[15], compRate:w[16], medicalPaid:w[17], medicalReserve:w[18], indemnityPaid:w[19], indemnityReserve:w[20], boardCaseNo:w[21], hearingDate: w[22] ? iso(w[22]) : '', settlementType:w[23], medicare:w[24], subro:'Unknown'};
+    CASES.push(c);
+  });
+})();
+
 /* BLOCKER 1: Add orgId to all cases for data isolation */
 CASES.forEach(c => {
   c.orgId = 'demo-org';  // All demo cases belong to demo-org
@@ -2651,6 +2674,7 @@ function render(){
   else if (S.role === 'plaintiffs') html += plaintiffV();
   else if (S.role === 'dcscore') html += dcScoreV();
   else if (S.role === 'review') html += revV();
+  else if (S.role === 'comp') html += compV();
   else if (S.role === 'counsel') html += counselV();
   else if (S.role === 'partner') html += partV();
   else if (S.role === 'executive') html += execV();
@@ -2780,6 +2804,7 @@ function hdr(){
       ['litigation','Litigation'],
       ['attorney','My Cases'],
       ['demands','🛡 Verdict Shield'],
+      ['comp',"Workers' Comp"],
       ['claims','Claims Desk'],
       ['activity','Activity Hub'],
       ['billing','Invoice Hub'],
@@ -4290,6 +4315,14 @@ function importExtraFields(cells, idx){
   if (g('defenseCounsel') || g('defenseFirm')) out.defenseCounsel = {name:g('defenseCounsel'), firm:g('defenseFirm')};
   if (g('plaintiffAttorney') || g('plaintiffFirm')) out.opposing = {counsel:g('plaintiffAttorney'), counselFirm:g('plaintiffFirm')};
   if (stName) out.court = {jurisdiction:'State - '+stName};
+  if (g('injuryDate') || g('claimClass') || g('aww') || g('medPaid') || g('indPaid') || g('medRes') || g('indRes') || g('hearing') || g('bodyPart')) {
+    const nn = v => { const n = parseFloat(String(v||'').replace(/[^0-9.-]/g,'')); return isNaN(n) ? 0 : n; };
+    const cl = g('claimClass').toLowerCase(), dis = g('disability').toLowerCase();
+    out.comp = {on:true, employer:g('employer'), injuryDate:dxNormDate(g('injuryDate')), bodyPart:g('bodyPart'), aww:nn(g('aww')),
+      claimClass: /medical/.test(cl) ? 'Medical only' : /den|contest/.test(cl) ? 'Denied / contested' : cl ? 'Lost time' : '',
+      disability: /ttd|temporary total/.test(dis) ? 'Temporary total (TTD)' : /tpd|temporary partial/.test(dis) ? 'Temporary partial (TPD)' : /ppd|permanent partial/.test(dis) ? 'Permanent partial (PPD)' : /ptd|permanent total/.test(dis) ? 'Permanent total (PTD)' : 'None',
+      medicalPaid:nn(g('medPaid')), indemnityPaid:nn(g('indPaid')), medicalReserve:nn(g('medRes')), indemnityReserve:nn(g('indRes')), hearingDate:dxNormDate(g('hearing'))};
+  }
   const dd = dxNormDate(g('demandDeadline'));
   if (dd) {
     const hm = /^(\d{1,2}):(\d{2})$/.exec(g('demandTime')) ? g('demandTime') : '';
@@ -5204,6 +5237,91 @@ function revDemoSeed(){
     if (b[3] === 'Appealed') rv.appeal = {date:'2026-09-12', restored: Math.round(revTotals(rv).acc * 0.18), note:'Firm supplied detail for the discovery responses; part of the block-billing reduction restored.'};
     c.billing.reviews.push(rv);
   });
+}
+
+/* ══ WORKERS' COMP: claim fields, flags, and the comp desk ══
+   Comp claims are managed by statutory benefits rather than liability demands, so they carry their own fields.
+   The flags below are prompts for a person to look at a claim. They are not legal deadlines, which differ by state. */
+const COMP_CLASSES = ['Medical only','Lost time','Denied / contested'];
+const COMP_DISABILITY = ['None','Temporary total (TTD)','Temporary partial (TPD)','Permanent partial (PPD)','Permanent total (PTD)'];
+const COMP_RTW = ['Not yet determined','Off work','Modified duty','Full duty'];
+const COMP_SETTLE = ['None','Compromise and release','Stipulated award','Awarded after hearing'];
+const COMP_YN = ['Unknown','No','Yes'];
+function isComp(c){ return !!c && (/workers/i.test(c.type || '') || /workers/i.test((c.insurance && c.insurance.coverageType) || c.coverageType || '') || !!(c.comp && c.comp.on)); }
+const compNum = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.-]/g, '')); return isNaN(n) ? 0 : n; };
+function compSet(cid, key, val, kind){
+  const c = CASES.find(x => x.id === cid); if (!c) return;
+  val = kind === 'num' ? compNum(val) : String(val || '').trim();
+  if (kind === 'date' && val && !/^\d{4}-\d{2}-\d{2}$/.test(val)) return;
+  c.comp = c.comp || {}; c.comp[key] = val; sc(c); render();
+}
+function compPaid(c){ const k = c.comp || {}; return compNum(k.medicalPaid) + compNum(k.indemnityPaid); }
+function compReserve(c){ const k = c.comp || {}; return compNum(k.medicalReserve) + compNum(k.indemnityReserve); }
+function compDaysSince(d){ return d ? demandDaysBetween(d, demandToday()) : null; }
+function compFlags(c){
+  const k = c.comp || {}, out = [], today = demandToday(), lost = k.claimClass === 'Lost time';
+  const dsi = compDaysSince(k.injuryDate);
+  if (lost && (k.rtwStatus === 'Off work') && dsi !== null && dsi > 90 && !k.rtwDate) out.push({sev:'med', key:'offwork', text:'Off work ' + dsi + ' days since the injury with no return-to-work date.'});
+  if (lost && !compNum(k.aww)) out.push({sev:'med', key:'data', text:'No average weekly wage recorded on a lost-time claim.'});
+  if (k.mmiDate && k.mmiDate <= today && (!k.settlementType || k.settlementType === 'None')) out.push({sev:'med', key:'mmi', text:'Reached maximum medical improvement on ' + k.mmiDate + ' with no resolution recorded.'});
+  if (k.hearingDate) { const d = demandDaysBetween(today, k.hearingDate);
+    if (d !== null && d >= 0 && d <= 30) out.push({sev: d <= 7 ? 'high' : 'med', key:'hearing', text:'Hearing in ' + d + ' day' + (d === 1 ? '' : 's') + ' (' + k.hearingDate + ').'});
+    else if (d !== null && d < 0 && (!k.settlementType || k.settlementType === 'None')) out.push({sev:'med', key:'hearing', text:'Hearing date ' + k.hearingDate + ' has passed and no outcome is recorded.'}); }
+  if (k.injuryDate && k.reportedDate) { const n = demandDaysBetween(k.injuryDate, k.reportedDate); if (n !== null && n > 30) out.push({sev:'info', key:'late', text:'Reported ' + n + ' days after the injury. Check your state\'s reporting rules.'}); }
+  if (k.medicare === 'Yes' && k.settlementType && k.settlementType !== 'None') out.push({sev:'info', key:'medicare', text:'Medicare beneficiary with a resolution recorded. Confirm Medicare reporting and any set-aside review.'});
+  if (compNum(k.medicalReserve) > 0 && compNum(k.medicalPaid) > compNum(k.medicalReserve)) out.push({sev:'med', key:'reserve', text:'Medical paid exceeds the medical reserve.'});
+  if (compNum(k.indemnityReserve) > 0 && compNum(k.indemnityPaid) > compNum(k.indemnityReserve)) out.push({sev:'med', key:'reserve', text:'Indemnity paid exceeds the indemnity reserve.'});
+  if (k.claimClass === 'Denied / contested' && !k.boardCaseNo) out.push({sev:'info', key:'data', text:'Contested claim with no board case number recorded.'});
+  const rank = {high:0, med:1, info:2}; return out.sort((a, b) => rank[a.sev] - rank[b.sev]);
+}
+function compRows(){
+  return acctScope().filter(c => isComp(c) && c.status !== 'Closed').map(c => {
+    const k = c.comp || {}, fl = compFlags(c); const today = demandToday();
+    const hd = k.hearingDate ? demandDaysBetween(today, k.hearingDate) : null;
+    return {c, k, fl, dsi:compDaysSince(k.injuryDate), incurred:compPaid(c) + compReserve(c), hearingSoon: hd !== null && hd >= 0 && hd <= 30};
+  });
+}
+function compTabOf(c){
+  const cid = escAttr(c.id), k = c.comp || {}, f = (key, lbl, type, kind) => inp(lbl, k[key] == null ? '' : k[key], 'compSet(\'' + cid + '\',\'' + key + '\',this.value' + (kind ? ',\'' + kind + '\'' : '') + ')', type);
+  const s = (key, lbl, opts) => sel(lbl, 'compSet(\'' + cid + '\',\'' + key + '\',this.value)', opts, k[key] || opts[0]);
+  return {f, s};
+}
+function tabComp(c){
+  const k = c.comp || {}, {f, s} = compTabOf(c), fl = compFlags(c), inc = compPaid(c) + compReserve(c), dsi = compDaysSince(k.injuryDate);
+  const grid = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;">';
+  let h = '<div style="font-size:12.5px;color:var(--muted);margin-bottom:12px;max-width:820px;line-height:1.6;">Workers\' compensation details for this claim. Comp claims run on benefits and hearings, not liability demands, so these fields replace the demand tracking. The flags are prompts to look at the claim, not legal deadlines. Deadlines differ by state.</div>';
+  h += '<div class="kpi-grid"><div class="kpi"><div class="kpi-l">Total incurred</div><div class="kpi-v">' + fM(inc) + '</div><div class="kpi-sub">paid plus reserve</div></div><div class="kpi"><div class="kpi-l">Paid</div><div class="kpi-v">' + fM(compPaid(c)) + '</div><div class="kpi-sub">medical ' + fM(compNum(k.medicalPaid)) + ' &middot; indemnity ' + fM(compNum(k.indemnityPaid)) + '</div></div><div class="kpi"><div class="kpi-l">Reserve</div><div class="kpi-v">' + fM(compReserve(c)) + '</div><div class="kpi-sub">medical ' + fM(compNum(k.medicalReserve)) + ' &middot; indemnity ' + fM(compNum(k.indemnityReserve)) + '</div></div><div class="kpi"><div class="kpi-l">Days since injury</div><div class="kpi-v">' + (dsi === null ? '&mdash;' : dsi) + '</div><div class="kpi-sub">' + esc(k.claimClass || 'Class not set') + '</div></div></div>';
+  if (fl.length) h += '<div class="card" style="padding:12px 16px;margin-bottom:14px;border-left:4px solid ' + (fl[0].sev === 'high' ? 'var(--red)' : fl[0].sev === 'med' ? 'var(--amber)' : 'var(--pri2)') + ';"><div style="font-weight:800;font-size:13px;margin-bottom:4px;">Look at this claim</div>' + fl.map(x => '<div style="font-size:12.5px;line-height:1.6;">' + (x.sev === 'high' ? '<strong style="color:var(--red);">Soon.</strong> ' : '') + esc(x.text) + '</div>').join('') + '</div>';
+  else if (k.claimClass) h += '<div class="alert-good" style="margin-bottom:14px;">Nothing needs attention on this claim right now.</div>';
+  h += '<div class="section-band">The injury</div>' + grid + f('claimant', 'Injured worker', 'text') + f('employer', 'Employer', 'text') + s('claimClass', 'Claim type', COMP_CLASSES) + f('injuryDate', 'Date of injury', 'date', 'date') + f('reportedDate', 'Date the employer knew', 'date', 'date') + f('bodyPart', 'Body part', 'text') + f('injuryNature', 'Nature or cause of injury', 'text') + '</div>';
+  h += '<div class="section-band">Wages, disability and return to work</div>' + grid + f('aww', 'Average weekly wage ($)', 'number', 'num') + f('compRate', 'Weekly compensation rate ($)', 'number', 'num') + s('disability', 'Disability status', COMP_DISABILITY) + s('rtwStatus', 'Return to work', COMP_RTW) + f('rtwDate', 'Expected return-to-work date', 'date', 'date') + f('mmiDate', 'Maximum medical improvement date', 'date', 'date') + f('impairment', 'Impairment rating (%)', 'number', 'num') + '</div>';
+  h += '<div style="font-size:11px;color:var(--dim);margin:4px 0 12px;">The weekly rate is usually a share of the average weekly wage, set within your state\'s minimum and maximum. Enter the figure your state produces.</div>';
+  h += '<div class="section-band">Hearing and resolution</div>' + grid + f('boardCaseNo', 'Board or commission case no.', 'text') + f('hearingDate', 'Next hearing date', 'date', 'date') + s('settlementType', 'Resolution', COMP_SETTLE) + s('medicare', 'Medicare beneficiary', COMP_YN) + s('subro', 'Third-party recovery possible', COMP_YN) + '</div>';
+  h += '<div class="section-band">Money</div>' + grid + f('medicalPaid', 'Medical paid ($)', 'number', 'num') + f('indemnityPaid', 'Indemnity paid ($)', 'number', 'num') + f('medicalReserve', 'Medical reserve ($)', 'number', 'num') + f('indemnityReserve', 'Indemnity reserve ($)', 'number', 'num') + '</div>';
+  return h;
+}
+function compExport(){
+  const rows = compRows().map(x => [x.c.matterNo || x.c.id, x.k.claimant || '', x.k.employer || x.c.client, caseStateName(x.c), x.k.claimClass || '', x.k.injuryDate || '', x.k.bodyPart || '', x.k.disability || '', x.k.rtwStatus || '', compNum(x.k.aww), compPaid(x.c), compReserve(x.c), x.incurred, x.k.hearingDate || '', x.fl.map(f => f.text).join(' | ')]);
+  downloadCSV('Workers-Comp-claims-' + td() + '.csv', ['Matter','Injured worker','Employer','State','Claim type','Date of injury','Body part','Disability','Return to work','Average weekly wage','Paid','Reserve','Incurred','Next hearing','Flags'], rows);
+}
+function compV(){
+  const rows = compRows(), f = S.compFilter || '', all = rows.length;
+  const n = k => rows.filter(x => x.fl.some(y => y.key === k)).length;
+  const sum = fn => rows.reduce((a, x) => a + fn(x), 0);
+  const lost = rows.filter(x => x.k.claimClass === 'Lost time').length;
+  const shown = rows.filter(x => !f || (f === 'lost' && x.k.claimClass === 'Lost time') || (f === 'hearing' && x.hearingSoon) || (f === 'flag' && x.fl.some(y => y.sev !== 'info')) || (f === 'offwork' && x.fl.some(y => y.key === 'offwork')) || (f === 'mmi' && x.fl.some(y => y.key === 'mmi')));
+  const tile = (label, v, sub, key, col) => '<div class="kpi" style="cursor:pointer;' + (key && f === key ? 'box-shadow:0 0 0 2px var(--pri2);' : '') + '" onclick="st({compFilter:\'' + (f === key ? '' : key) + '\'})" title="Click to see these"><div class="kpi-bar" style="background:' + (col || 'var(--pri2)') + ';"></div><div class="kpi-l">' + label + '</div><div class="kpi-v">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>';
+  let h = '<div class="wrap" style="padding-top:18px;"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-end;"><div><div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">Workers\' Comp</div><div style="font-size:13px;color:var(--muted);margin:4px 0 14px;max-width:780px;line-height:1.6;">Every open workers\' compensation claim in one place: what is paid and reserved, who is off work, and which hearings are coming. Click a number to see those claims.</div></div><div>' + acctPickerV() + '</div></div>';
+  h += '<div class="kpi-grid">' + tile('Open comp claims', all, lost + ' lost time', '') + tile('Total incurred', fM(Math.round(sum(x => x.incurred))), 'paid ' + fM(Math.round(sum(x => compPaid(x.c)))) + ', reserve ' + fM(Math.round(sum(x => compReserve(x.c)))), '', 'var(--gold)') +
+    tile('Need attention', rows.filter(x => x.fl.some(y => y.sev !== 'info')).length, 'flagged claims', 'flag', 'var(--amber)') + tile('Hearings in 30 days', rows.filter(x => x.hearingSoon).length, 'coming up', 'hearing', 'var(--red)') + tile('Off work 90+ days', n('offwork'), 'no return-to-work date', 'offwork', 'var(--purple)') + tile('At MMI, unresolved', n('mmi'), 'no resolution recorded', 'mmi', 'var(--teal)') + '</div>';
+  if (!all) return h + '<div class="card" style="padding:16px;font-size:13px;color:var(--muted);">No workers\' comp claims yet. Set a matter\'s type to Workers Comp, or import claims with the comp columns in the CSV template.</div></div>';
+  if (f) h += '<div style="font-size:12.5px;margin:0 0 10px;">Showing a filtered list (' + shown.length + '). <span class="muted-link" style="cursor:pointer;font-weight:700;" onclick="st({compFilter:\'\'})">Show all</span></div>';
+  h += '<div style="display:flex;justify-content:flex-end;margin-bottom:8px;"><button class="btn btn-out" onclick="compExport()">Export claims</button></div>';
+  h += '<div class="card" style="padding:0;overflow-x:auto;"><table><thead><tr><th>Claim</th><th>Injured worker</th><th>State</th><th>Type</th><th>Status</th><th style="text-align:right;">Days since injury</th><th style="text-align:right;">Incurred</th><th>Next hearing</th><th>Look at</th></tr></thead><tbody>';
+  shown.sort((a, b) => (a.fl[0] ? ({high:0, med:1, info:2}[a.fl[0].sev]) : 3) - (b.fl[0] ? ({high:0, med:1, info:2}[b.fl[0].sev]) : 3) || b.incurred - a.incurred);
+  shown.forEach(x => { const top = x.fl[0];
+    h += '<tr style="cursor:pointer;" onclick="stCase(\'' + escAttr(x.c.id) + '\',\'comp\')"><td style="font-weight:700;">' + esc(x.c.matterNo || x.c.id) + '<div style="font-size:10.5px;color:var(--dim);font-weight:400;">' + esc(x.k.employer || x.c.client) + '</div></td><td>' + esc(x.k.claimant || '') + '<div style="font-size:10.5px;color:var(--dim);">' + esc(x.k.bodyPart || '') + '</div></td><td>' + esc(caseStateName(x.c)) + '</td><td>' + esc(x.k.claimClass || '') + '</td><td>' + esc(x.k.disability && x.k.disability !== 'None' ? x.k.disability : (x.k.rtwStatus || '')) + '</td><td style="text-align:right;">' + (x.dsi === null ? '' : x.dsi) + '</td><td style="text-align:right;font-weight:700;">' + fM(Math.round(x.incurred)) + '</td><td>' + esc(x.k.hearingDate || '') + '</td><td style="max-width:340px;font-size:11.5px;">' + (top ? '<span style="color:' + (top.sev === 'high' ? 'var(--red)' : top.sev === 'med' ? 'var(--amber)' : 'var(--muted)') + ';font-weight:700;">' + esc(top.text) + '</span>' + (x.fl.length > 1 ? ' <span style="color:var(--dim);">+' + (x.fl.length - 1) + ' more</span>' : '') : '') + '</td></tr>'; });
+  return h + '</tbody></table></div><div style="font-size:11.5px;color:var(--dim);max-width:820px;line-height:1.55;margin-top:14px;">The flags are prompts for a person to look at a claim. They are not legal deadlines, which vary by state and by the rules of the commission that hears the claim.</div></div>';
 }
 
 function attentionData(scopeCases, opts){
@@ -10437,13 +10555,13 @@ async function submitCreateOrg(){
    book. See the matching /api/admin/sentinel-health-check route in
    server.js for why this deliberately uses OPEN cases, never closed
    ones with an already-known outcome. */
-const HEALTH_CHECK_CSV_HEADERS = ['Client','Type','Status','Attorney','Carrier','ClaimNo','Filed','SOL','Value','Reserve','Demand','Offer','LastActivity','TotalBilled','State','Account','Adjuster','BackupAdjuster','DefenseCounsel','DefenseFirm','PlaintiffAttorney','PlaintiffFirm','FNOL','RepDate','DemandReceived','DemandDeadline','DemandTime','DemandAmount','PolicyLimits'];
+const HEALTH_CHECK_CSV_HEADERS = ['Client','Type','Status','Attorney','Carrier','ClaimNo','Filed','SOL','Value','Reserve','Demand','Offer','LastActivity','TotalBilled','State','Account','Adjuster','BackupAdjuster','DefenseCounsel','DefenseFirm','PlaintiffAttorney','PlaintiffFirm','FNOL','RepDate','DemandReceived','DemandDeadline','DemandTime','DemandAmount','PolicyLimits','InjuryDate','Employer','BodyPart','AWW','ClaimClass','Disability','MedicalPaid','IndemnityPaid','MedicalReserve','IndemnityReserve','HearingDate'];
 // One clean example row only — anything else here would risk being
 // parsed as a real matter if someone forgets to delete it before
 // sending the CSV back. Column notes live in the modal's own copy
 // instead, not in the file.
 const HEALTH_CHECK_CSV_TEMPLATE = HEALTH_CHECK_CSV_HEADERS.join(',') + '\n' +
-  'Acme Manufacturing Co,Auto Liability,Active,,Zurich,CLM-2025-1234,2025-03-01,2027-03-01,1200000,450000,1500000,300000,2025-09-15,18500,Georgia,Southeast Auto Book,Jordan Lee,Casey Morgan,Dana Whitfield,Whitfield & Burke LLP,Pat Harlan,"Harlan & Pike, LLP",2025-02-10,2025-03-15,,,,,\n';
+  'Acme Manufacturing Co,Auto Liability,Active,,Zurich,CLM-2025-1234,2025-03-01,2027-03-01,1200000,450000,1500000,300000,2025-09-15,18500,Georgia,Southeast Auto Book,Jordan Lee,Casey Morgan,Dana Whitfield,Whitfield & Burke LLP,Pat Harlan,"Harlan & Pike, LLP",2025-02-10,2025-03-15,,,,,,,,,,,,,,,\n';
 
 /* Upload a .csv instead of pasting it. Reads the file in the browser (nothing is sent anywhere until
    you run the check or import) and drops its text into the box so it can still be reviewed and edited. */
@@ -10515,7 +10633,8 @@ function parseHealthCheckCSV(text){
     lastActivity: col('LastActivity'), totalBilled: col('TotalBilled'),
     state: col('State'), account: col('Account'), adjuster: col('Adjuster'), backupAdjuster: col('BackupAdjuster'), defenseCounsel: col('DefenseCounsel'), defenseFirm: col('DefenseFirm'),
     plaintiffAttorney: col('PlaintiffAttorney'), plaintiffFirm: col('PlaintiffFirm'), fnol: col('FNOL'), repDate: col('RepDate'),
-    demandReceived: col('DemandReceived'), demandDeadline: col('DemandDeadline'), demandTime: col('DemandTime'), demandAmount: col('DemandAmount'), policyLimits: col('PolicyLimits')
+    demandReceived: col('DemandReceived'), demandDeadline: col('DemandDeadline'), demandTime: col('DemandTime'), demandAmount: col('DemandAmount'), policyLimits: col('PolicyLimits'),
+    injuryDate: col('InjuryDate'), employer: col('Employer'), bodyPart: col('BodyPart'), aww: col('AWW'), claimClass: col('ClaimClass'), disability: col('Disability'), medPaid: col('MedicalPaid'), indPaid: col('IndemnityPaid'), medRes: col('MedicalReserve'), indRes: col('IndemnityReserve'), hearing: col('HearingDate')
   };
   if (idx.client === -1) throw new Error('CSV is missing a required "Client" column. Download the template to see the expected format.');
   const num = v => { const n = parseFloat(String(v||'').replace(/[^0-9.-]/g,'')); return isNaN(n) ? 0 : n; };
@@ -11443,6 +11562,7 @@ function ws(){
     { label:'Premium', tabs:[['sentinel','Sentinel Suite']] },
     { label:'Records', tabs:[['tasks','Tasks'],['documents','Documents'],['audit','Audit Trail'],['ai','AI Assistant']] }
   ];
+  if (isComp(c)) tabGroups[0].tabs.splice(2, 0, ['comp', "Workers' Comp"]);
   const idx = cci(c);
   let h = '<div class="modal-bg" onclick="if(event.target===this)st({caseId:null})">';
   h += '<div class="modal" style="max-width:1240px;max-height:94vh;">';
@@ -11488,6 +11608,7 @@ function ws(){
   else if (S.tab === 'demands') h += tabDemands(c);
   else if (S.tab === 'sentinel') h += tabSentinel(c);
   else if (S.tab === 'ai') h += tabAI(c);
+  else if (S.tab === 'comp') h += tabComp(c);
   h += '</div></div></div>';
   return h;
 }
