@@ -2813,7 +2813,7 @@ function hdr(){
 
   const roleBtns = groups.map((g,gi) =>
     (gi>0 ? '<div class="nav-divider"></div>' : '') +
-    (g.label ? '<span class="nav-group-label">'+g.label+'</span>' : '') +
+
     g.items.map(btn).join('')
   ).join('');
 
