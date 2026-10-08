@@ -4133,6 +4133,18 @@ function demandBannerV(){
     '<div style="font-size:12.5px;color:'+(late?'#FECACA':'var(--muted)')+';margin-top:2px;">'+rows.map(r => esc(r.c.client)+' ('+demandWhen(r.left).toLowerCase()+')').join(' · ')+(late?'. Escalate to counsel now.':'. Open Verdict Shield to respond.')+'</div></div>'+
     '<button onclick="st({role:\'demands\',caseId:null,showWelcome:false})" class="btn btn-pri" style="background:'+(late?'#fff':'#DC2626')+';color:'+(late?'#7F1D1D':'#fff')+';border-color:'+(late?'#fff':'#DC2626')+';font-weight:800;white-space:nowrap;">Open Verdict Shield →</button></div>';
 }
+function vsFilterLabel(k){ return {late:'past deadline, no response', crit:'due within 3 days', soon:'due in 4 to '+DEMAND_WARN_DAYS+' days', all:'all open demands', unack:'not fully acknowledged', d24:'due within 24 hours', d72:'due in 24 to 72 hours', esc:'escalated to leadership', nobk:'matters with no backup adjuster', sol30:'statutes due within 30 days'}[k] || k; }
+function vsFilterRows(rows, k){
+  if (!k || k === 'all') return rows;
+  if (k === 'late') return rows.filter(r => r.left < 0);
+  if (k === 'crit') return rows.filter(r => r.left >= 0 && r.left <= 3);
+  if (k === 'soon') return rows.filter(r => r.left > 3 && r.left <= DEMAND_WARN_DAYS);
+  if (k === 'unack') return rows.filter(r => !demandFullyAcked(r.c, r.d));
+  if (k === 'd24') return rows.filter(r => r.hrs >= 0 && r.hrs <= 24);
+  if (k === 'd72') return rows.filter(r => r.hrs > 24 && r.hrs <= 72);
+  if (k === 'esc') return rows.filter(r => demandLadderStatus(r.c, r.d).some(x => x.state === 'notified' || x.state === 'due'));
+  return rows;
+}
 function demandWatchV(){
   const n = demandCounts();
   let h = '<div class="wrap" style="padding-top:18px;">';
@@ -4142,11 +4154,14 @@ function demandWatchV(){
   h += demandEmailsV();
   h += demandLadderCardV();
   h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">';
-  const kpi = (label, v, col) => '<div style="flex:1 1 150px;border:1px solid #E5E7EB;border-radius:10px;padding:10px 14px;background:#fff;"><div style="font-size:11px;color:var(--muted);">'+label+'</div><div style="font-size:26px;font-weight:800;color:'+col+';">'+v+'</div></div>';
-  h += kpi('Past deadline, no response', n.late, n.late?'#7F1D1D':'#15803D')+kpi('Due within 3 days', n.crit, n.crit?'#B91C1C':'#15803D')+kpi('Due in 4 to '+DEMAND_WARN_DAYS+' days', n.soon, n.soon?'#B45309':'#15803D')+kpi('All open demands', n.all, 'var(--ink)')+kpi('Not fully acknowledged', n.rows.filter(r=>!demandFullyAcked(r.c,r.d)).length, n.rows.some(r=>!demandFullyAcked(r.c,r.d))?'#B45309':'#15803D');
+  const kpi = (label, v, col, key) => '<div onclick="st({vsFilter:\''+(S.vsFilter===key?'':key)+'\'})" title="Click to see these" style="cursor:pointer;flex:1 1 150px;border:1px solid '+(S.vsFilter===key?'var(--pri2)':'#E5E7EB')+';box-shadow:'+(S.vsFilter===key?'0 0 0 2px var(--pri2)':'none')+';border-radius:10px;padding:10px 14px;background:#fff;"><div style="font-size:11px;color:var(--muted);">'+label+'</div><div style="font-size:26px;font-weight:800;color:'+col+';">'+v+'</div><div style="font-size:10.5px;color:var(--dim);">click to see them</div></div>';
+  h += kpi('Past deadline, no response', n.late, n.late?'#7F1D1D':'#15803D','late')+kpi('Due within 3 days', n.crit, n.crit?'#B91C1C':'#15803D','crit')+kpi('Due in 4 to '+DEMAND_WARN_DAYS+' days', n.soon, n.soon?'#B45309':'#15803D','soon')+kpi('All open demands', n.all, 'var(--ink)','all')+kpi('Not fully acknowledged', n.rows.filter(r=>!demandFullyAcked(r.c,r.d)).length, n.rows.some(r=>!demandFullyAcked(r.c,r.d))?'#B45309':'#15803D','unack');
   h += '</div>';
   if (!n.all) h += '<div class="alert-good" style="margin-bottom:16px;">No open time-limit demands. Log one from a case\'s Time-Limit Demands tab the day it arrives.</div>';
-  n.rows.forEach(r => { h += demandCardV(r.c, r.d, true); });
+  { const f = S.vsFilter || '', shown = vsFilterRows(n.rows, f);
+    if (f && f !== 'all') h += '<div style="font-size:12.5px;margin:0 0 10px;">Showing <strong>'+esc(vsFilterLabel(f))+'</strong> ('+shown.length+'). <span class="muted-link" style="cursor:pointer;font-weight:700;" onclick="st({vsFilter:\'\'})">Show all open demands</span></div>';
+    if (f && !shown.length) h += '<div class="alert-good" style="margin-bottom:12px;">None right now.</div>';
+    shown.forEach(r => { h += demandCardV(r.c, r.d, true); }); }
   const closed = []; CASES.forEach(c => demandsOf(c).forEach(d => { if (d.status !== 'open') closed.push({c, d}); }));
   if (closed.length) { h += '<details style="margin:10px 0 18px;"><summary style="font-size:13px;font-weight:700;cursor:pointer;">Answered demands ('+closed.length+')</summary><div style="margin-top:8px;">'+closed.map(x=>demandCardV(x.c, x.d, true)).join('')+'</div></details>'; }
   h += '<div class="serif" style="font-size:22px;font-weight:700;margin:26px 0 4px;">State law library</div>';
@@ -4503,14 +4518,23 @@ function execVsV(){
   const sol30 = open.filter(c => { const n = solDaysLeft(c); return n !== null && n <= 30; });
   const sum = (a, f) => a.reduce((s, x) => s + (Number(f(x)) || 0), 0);
   const demanded = sum(rows, r => r.d.demandAmount), limits = sum(rows, r => r.d.policyLimits);
-  const tile = (label, v, col, sub) => '<div style="flex:1 1 150px;border:1px solid #E5E7EB;border-radius:10px;padding:10px 14px;background:#fff;"><div style="font-size:11px;color:var(--muted);">'+label+'</div><div style="font-size:28px;font-weight:800;color:'+col+';line-height:1.15;">'+v+'</div>'+(sub?'<div style="font-size:11px;color:var(--dim);">'+sub+'</div>':'')+'</div>';
+  const tile = (label, v, col, sub, key) => '<div onclick="st({evsFilter:\''+(S.evsFilter===key?'':key)+'\'})" title="Click to see these" style="cursor:pointer;flex:1 1 150px;border:1px solid '+(S.evsFilter===key?'var(--pri2)':'#E5E7EB')+';box-shadow:'+(S.evsFilter===key?'0 0 0 2px var(--pri2)':'none')+';border-radius:10px;padding:10px 14px;background:#fff;"><div style="font-size:11px;color:var(--muted);">'+label+'</div><div style="font-size:28px;font-weight:800;color:'+col+';line-height:1.15;">'+v+'</div>'+(sub?'<div style="font-size:11px;color:var(--dim);">'+sub+'</div>':'')+'</div>';
   const bad = n => n ? '#B91C1C' : '#15803D';
   let h = '<div class="wrap" style="padding-top:18px;">';
   h += '<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;"><div><div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">Verdict Shield: executive view</div>'+
     '<div style="font-size:13px;color:var(--muted);margin-top:4px;">As of '+new Date().toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:'America/New_York'})+' ET · '+open.length+' open matters in view</div></div>'+
     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'+acctPickerV()+'<button class="btn btn-out" onclick="exportDemandsCSV()">Export CSV</button><button class="btn btn-out" onclick="window.print()">Print</button></div></div>';
-  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">'+tile('Open time-limit demands', rows.length, 'var(--ink)', fM(demanded)+' demanded')+tile('Past deadline, no response', late.length, bad(late.length))+tile('Due within 24 hours', d24.length, bad(d24.length))+tile('Due in 24 to 72 hours', d72.length, d72.length?'#B45309':'#15803D')+'</div>';
-  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">'+tile('Not fully acknowledged', unacked.length, bad(unacked.length), rows.length ? Math.round((rows.length-unacked.length)/rows.length*100)+'% acknowledged by both adjusters' : '')+tile('Escalated to leadership', esc2.length, esc2.length?'#B45309':'#15803D')+tile('No backup adjuster', nobk.length, bad(nobk.length), 'matters with a date inside 120 days')+tile('Statutes due within 30 days', sol30.length, sol30.length?'#B45309':'#15803D')+'</div>';
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">'+tile('Open time-limit demands', rows.length, 'var(--ink)', fM(demanded)+' demanded','all')+tile('Past deadline, no response', late.length, bad(late.length),'','late')+tile('Due within 24 hours', d24.length, bad(d24.length),'','d24')+tile('Due in 24 to 72 hours', d72.length, d72.length?'#B45309':'#15803D','','d72')+'</div>';
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">'+tile('Not fully acknowledged', unacked.length, bad(unacked.length), rows.length ? Math.round((rows.length-unacked.length)/rows.length*100)+'% acknowledged by both adjusters' : '','unack')+tile('Escalated to leadership', esc2.length, esc2.length?'#B45309':'#15803D','','esc')+tile('No backup adjuster', nobk.length, bad(nobk.length), 'matters with a date inside 120 days','nobk')+tile('Statutes due within 30 days', sol30.length, sol30.length?'#B45309':'#15803D','','sol30')+'</div>';
+  { const f = S.evsFilter || '';
+    if (f) {
+      const mRow = c => '<div class="row-link" onclick="stCase(\''+esc(c.id)+'\',\'demands\')" style="padding:8px 0;border-top:1px solid #E5E7EB;font-size:12.5px;"><strong>'+esc(c.client)+'</strong> <span style="color:var(--dim);">'+esc(c.matterNo||c.id)+(caseStateName(c)?' · '+esc(caseStateName(c)):'')+'</span> · adjuster '+esc(claimsPrimary(c)||'none')+' · backup '+(backupMissing(c)?'<strong style="color:#B91C1C;">none</strong>':esc(claimsBackup(c)))+(f==='sol30'?' · statute '+esc(String(c.keyDates.sol).slice(0,10)):'')+'</div>';
+      const list = f === 'nobk' ? nobk : f === 'sol30' ? sol30 : null;
+      h += '<div class="card" style="padding:12px 16px;margin:-6px 0 18px;border-left:4px solid var(--pri2);"><div style="display:flex;justify-content:space-between;"><div style="font-weight:800;font-size:13.5px;">'+esc(vsFilterLabel(f))+' ('+(list ? list.length : vsFilterRows(rows, f).length)+')</div><span class="muted-link" style="cursor:pointer;font-size:12px;" onclick="st({evsFilter:\'\'})">Close</span></div>';
+      if (list) h += list.length ? list.map(mRow).join('') : '<div style="font-size:12.5px;color:var(--muted);margin-top:6px;">None.</div>';
+      else { const dr = vsFilterRows(rows, f); h += dr.length ? dr.map(r => '<div class="row-link" onclick="stCase(\''+esc(r.c.id)+'\',\'demands\')" style="padding:8px 0;border-top:1px solid #E5E7EB;font-size:12.5px;"><strong>'+esc(r.c.client)+'</strong> <span style="color:var(--dim);">'+esc(r.c.matterNo||r.c.id)+(r.d.state?' · '+esc(r.d.state):'')+'</span> · '+(r.d.demandAmount?fM(r.d.demandAmount)+' · ':'')+'respond by '+esc(demandEff(r.d))+' <strong style="color:'+(r.hrs<0?'#7F1D1D':r.hrs<=72?'#B91C1C':'#92400E')+';">'+esc(demandCountdown(r.hrs))+'</strong> · adjuster '+esc(claimsPrimary(r.c)||'none')+' / backup '+(backupMissing(r.c)?'<strong style="color:#B91C1C;">none</strong>':esc(claimsBackup(r.c)))+'</div>').join('') : '<div style="font-size:12.5px;color:var(--muted);margin-top:6px;">None.</div>'; }
+      h += '<div style="font-size:11.5px;color:var(--dim);margin-top:6px;">Click a row to open the matter.</div></div>';
+    } }
   h += '<div class="grid-2">';
   /* most urgent */
   h += '<div class="card"><div class="sh"><span>Most urgent</span></div>';
