@@ -1907,7 +1907,7 @@ function demoModeBannerV(){
   return '<div style="background:linear-gradient(90deg,#B45309,#D97706);color:#fff;padding:9px 18px;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;font-size:12.5px;font-weight:600;text-align:center;">' +
     '<span>🔎 You\'re viewing a live demo with sample data — nothing here is a real customer\'s.</span>' +
     '<a href="mailto:sales@cclosed.com?subject=Case%20Closed%20Pro%20Demo%20Request" style="background:#fff;color:#92400E;padding:5px 14px;border-radius:20px;font-weight:700;text-decoration:none;white-space:nowrap;">Talk to Sales →</a>' +
-    '<span style="font-size:10px;opacity:.75;font-weight:500;">build 10/7 6:00pm</span>' +
+    '<span style="font-size:10px;opacity:.75;font-weight:500;">build 10/8</span>' +
   '</div>';
 }
 
@@ -2650,6 +2650,7 @@ function render(){
   else if (S.role === 'execvs') html += execVsV();
   else if (S.role === 'plaintiffs') html += plaintiffV();
   else if (S.role === 'dcscore') html += dcScoreV();
+  else if (S.role === 'review') html += revV();
   else if (S.role === 'counsel') html += counselV();
   else if (S.role === 'partner') html += partV();
   else if (S.role === 'executive') html += execV();
@@ -2782,6 +2783,7 @@ function hdr(){
       ['claims','Claims Desk'],
       ['activity','Activity Hub'],
       ['billing','Invoice Hub'],
+      ['review','🔍 Sentinel Review'],
       ['payables','Payables']
     ]},
     { label:'Insights', items:[
@@ -4797,6 +4799,411 @@ function roiV(){
     num('Annual price you are weighing ($)','price',r.price,200,'Leave at 0 to hide')+num('Cost of one missed time-limit demand ($)','missCost',r.missCost,220,'Use your own number')+num('Days faster each claim closes','daysFaster',r.daysFaster,170,'Leave at 0 unless you have a basis')+'</div></div></details>';
   h += '<div style="font-size:11.5px;color:var(--dim);max-width:820px;line-height:1.55;margin-top:10px;">This is an estimate built from the numbers above. It is not a guarantee of savings or of any result on a claim. Case Closed Pro supports claims staff and does not decide how a demand or a claim should be handled.</div>';
   return h + '</div>';
+}
+
+/* ══ SENTINEL REVIEW: legal bill review ══
+   Reads each line of a defense-counsel bill against the billing guidelines and suggests reductions.
+   Nothing is cut or paid automatically: a person accepts or rejects every suggestion.
+   Reviews live on the matter at billing.reviews[] so they save with the case. */
+const REV_DEFAULTS = {text:'', capPartner:325, capAssoc:250, capPara:130, usePanelRate:true, maxDay:10, maxEntry:8, blockPct:25, travelPct:50, intraPct:100, clericalOn:true, tenthOn:true, mealsOn:true};
+function revGuide(){
+  if (!S.revGuide) { let g = null; try { g = JSON.parse(localStorage.getItem('ccp_rev_guide') || 'null'); } catch (e) {} S.revGuide = Object.assign({}, REV_DEFAULTS, g || {}); }
+  return S.revGuide;
+}
+function revSaveGuide(){ try { localStorage.setItem('ccp_rev_guide', JSON.stringify(revGuide())); } catch (e) {} }
+const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+function revClass(s){
+  s = String(s || '');
+  if (/partner|principal|shareholder|of counsel|member/i.test(s)) return 'Partner';
+  if (/paralegal|legal assistant|law clerk|clerk|litigation support/i.test(s)) return 'Paralegal';
+  return 'Associate';
+}
+function revPanelRate(firm){
+  const f = String(firm || '').toLowerCase().trim(); if (!f) return 0;
+  const hit = counselAll().find(x => { const n = String(x.firm || '').toLowerCase().trim(); return n && (n === f || n.indexOf(f) >= 0 || f.indexOf(n) >= 0); });
+  return hit ? (Number(hit.hourlyRate) || 0) : 0;
+}
+function revCapFor(l, firm){
+  const g = revGuide();
+  if (l.cls !== 'Paralegal' && g.usePanelRate) { const pr = revPanelRate(firm); if (pr > 0) return {cap:pr, src:'approved-panel rate'}; }
+  return {cap: l.cls === 'Partner' ? g.capPartner : l.cls === 'Paralegal' ? g.capPara : g.capAssoc, src:'guideline'};
+}
+function revDow(d){ const t = new Date(d + 'T12:00:00Z'); return isNaN(t) ? -1 : t.getUTCDay(); }
+function revNorm(s){ return String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 48); }
+
+/* The rules engine. Re-runnable: it keeps AI and manual findings and rebuilds the rest. */
+function revCheck(rv, c){
+  const g = revGuide(), L = rv.lines;
+  L.forEach(l => { l.flags = (l.flags || []).filter(f => f.rule === 'AI' || f.rule === 'Reviewer'); });
+  const rem = l => Math.max(0, r2(l.amount - l.flags.reduce((s, f) => s + (f.cut || 0), 0)));
+  const add = (l, rule, sev, msg, cut) => { const want = r2(cut || 0); cut = Math.min(rem(l), want); if (sev === 'cut' && want > 0 && cut <= 0) return; l.flags.push({rule, sev, msg, cut}); };
+  const prior = []; ((c && c.billing && c.billing.reviews) || []).forEach(o => { if (o.id !== rv.id) o.lines.forEach(x => prior.push(Object.assign({inv:o.invoiceNo}, x))); });
+  const seen = {}; prior.forEach(x => { if (x.type !== 'E') seen[[x.tk, x.date, x.hours, revNorm(x.desc)].join('|')] = x.inv; });
+  const dayHrs = {}, evt = {};
+  L.forEach(l => { if (l.type !== 'E') { const k = l.tk + '|' + l.date; dayHrs[k] = (dayHrs[k] || 0) + l.hours; if (/^L(330|450|230)/.test(l.code) && !/\btravel/i.test(l.desc)) { const e = l.date + '|' + l.code; (evt[e] = evt[e] || []).push(l); } } });
+  const dayDone = {};
+  L.forEach(l => {
+    const d = l.desc || '', fee = l.type !== 'E';
+    const k = [l.tk, l.date, l.hours, revNorm(d)].join('|');
+    if (fee && seen[k]) add(l, 'Duplicate', 'cut', 'Same timekeeper, date, time and narrative already billed on ' + seen[k] + '.', l.amount);
+    else if (fee) seen[k] = rv.invoiceNo;
+    if (fee) {
+      if (g.clericalOn && /\b(photocopy|photocopying|copying|scanning|bates[- ]stamp(ing)?|calendar(ing)?|scheduling|organi[sz](e|ing) (the )?(file|binder|documents)|file maintenance|e-?filing|filing|mailing|faxing|data entry|opening (a |the )?file)\b/i.test(d))
+        add(l, 'Clerical', 'cut', 'Clerical or administrative task. Normally covered by firm overhead.', l.amount);
+      const cp = revCapFor(l, rv.firm);
+      if (l.rate > cp.cap + 0.001) add(l, 'Rate over cap', 'cut', 'Billed at $' + l.rate + '/hr; ' + cp.src + ' is $' + cp.cap + '/hr for a ' + l.cls.toLowerCase() + '.', (l.rate - cp.cap) * l.hours);
+      if (l.hours >= 1.5 && (d.split(/;|\.\s+(?=[A-Z])/).filter(x => x.trim().length > 3).length >= 3 || (d.match(/[,;]\s*(and\s+)?(draft|review|prepare|call|conference|confer|email|research|revise|analy[sz]e|attend|telephone|speak|meet)/gi) || []).length >= 2))
+        add(l, 'Block billing', 'cut', 'Several tasks lumped into one entry, so the time for each cannot be checked.', rem(l) * g.blockPct / 100);
+      if (!/(client|adjuster|insured|expert|plaintiff|opposing|court|mediator|witness|carrier)/i.test(d) && /(intra-?office|internal) (conference|meeting|discussion)|office conference|(conference|conferred|discussion|meeting|confer) (with|w\/) (the )?(partner|associate|paralegal|[a-z]\. ?[a-z]+)/i.test(d))
+        add(l, 'Internal conference', 'cut', 'Conference between members of the same firm.', rem(l) * g.intraPct / 100);
+      if (/\b(travel(ed|ing)?|drive|driving|commut\w+)\b/i.test(d)) add(l, 'Travel', 'cut', 'Travel time is usually paid at a reduced share of the hourly rate.', rem(l) * g.travelPct / 100);
+      if ((d.trim().length < 18 || /\b(various|miscellaneous|attention to|work on)\b/i.test(d)) && l.hours >= 1) add(l, 'Vague', 'query', 'Narrative is too thin to show what was done. Ask the firm to explain.', 0);
+      if (l.hours > g.maxEntry) add(l, 'Long entry', 'query', l.hours + ' hours in one entry; guideline is ' + g.maxEntry + '.', 0);
+      const dk = l.tk + '|' + l.date;
+      if (dayHrs[dk] > g.maxDay && !dayDone[dk] && L.filter(x => x.tk + '|' + x.date === dk).pop() === l) { dayDone[dk] = 1; add(l, 'Daily hours', 'query', l.tk + ' billed ' + r2(dayHrs[dk]) + ' hours on ' + l.date + '; guideline is ' + g.maxDay + '.', 0); }
+      if (g.tenthOn && Math.abs(l.hours * 10 - Math.round(l.hours * 10)) > 1e-6) add(l, 'Increment', 'query', 'Not billed in tenths of an hour.', 0);
+      if (/research/i.test(d) && l.hours >= 4) add(l, 'Research', 'query', 'Entry includes research and runs ' + l.hours + ' hours. Check for prior approval.', 0);
+      if (/\bdepos(ition|e)\b/i.test(d) && !/^L33|^L34/.test(l.code)) add(l, 'Task code', 'query', 'Narrative mentions a deposition but the task code is ' + l.code + '.', 0);
+      if (/interrogator|requests? for production|\brfp\b/i.test(d) && !/^L31|^L32/.test(l.code)) add(l, 'Task code', 'query', 'Narrative mentions written discovery but the task code is ' + l.code + '.', 0);
+      if (c && c.filed && l.date && l.date < c.filed) add(l, 'Date', 'query', 'Work dated before the matter was opened (' + c.filed + ').', 0);
+    } else {
+      if (/overhead|postage|in-?house|secretar|computer research|westlaw|lexis|office suppl|long distance|word processing|local copy|\bcopies\b/i.test(d)) add(l, 'Overhead expense', 'cut', 'Overhead item, not a billable expense.', l.amount);
+      else if (g.mealsOn && /\b(meal|lunch|dinner|breakfast|catering)\b/i.test(d)) add(l, 'Meals', 'cut', 'Meals are not reimbursed under most guidelines.', l.amount);
+      else if (l.amount >= 1000 && !/E119|E121/.test(l.code)) add(l, 'Large expense', 'query', 'Expense of $' + l.amount + '. Ask for the receipt.', 0);
+    }
+  });
+  Object.keys(evt).forEach(k => { const g2 = evt[k]; if (new Set(g2.map(x => x.tk)).size > 1) { const o = g2.slice().sort((a, b) => b.amount - a.amount); o.slice(1).forEach(l => { if (!l.flags.some(f => f.rule === 'Second attendee')) add(l, 'Second attendee', 'cut', 'More than one timekeeper billed the same event (' + l.code + ' on ' + l.date + ').', rem(l)); }); } });
+  L.forEach(l => { l.cut = Math.min(l.amount, r2(l.flags.reduce((s, f) => s + (f.cut || 0), 0))); if (!l.flags.length) l.decision = ''; else if (!l.decision) l.decision = 'pending'; if (l.flags.length && l.decision === '') l.decision = 'pending'; });
+  rv.billed = r2(L.reduce((s, l) => s + l.amount, 0));
+  return rv;
+}
+function revLineCut(l){ return l.decision === 'accept' ? Math.min(l.amount, r2(l.cutOverride != null ? l.cutOverride : l.cut)) : 0; }
+function revTotals(rv){
+  const L = rv.lines || [];
+  const billed = r2(L.reduce((s, l) => s + l.amount, 0)), sugg = r2(L.reduce((s, l) => s + l.cut, 0)), acc = r2(L.reduce((s, l) => s + revLineCut(l), 0));
+  const pending = L.filter(l => l.cut > 0 && l.decision === 'pending').length, restored = r2((rv.appeal && rv.appeal.restored) || 0);
+  return {billed, sugg, acc, pending, restored, net: r2(acc - restored), flagged: L.filter(l => l.flags.length).length};
+}
+function revAll(){
+  revDemoSeed();
+  const out = []; acctScope().forEach(c => ((c.billing && c.billing.reviews) || []).forEach(rv => out.push({c, rv}))); return out;
+}
+function revFind(cid, rid){ const c = CASES.find(x => x.id === cid); const rv = c && c.billing && (c.billing.reviews || []).find(x => x.id === rid); return rv ? {c, rv} : null; }
+function revPct(a, b){ return b ? (Math.round(a / b * 1000) / 10) + '%' : '0%'; }
+
+/* ── Intake ── */
+function revNewId(){ return 'RV-' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36); }
+function revMakeLine(o, i){
+  const type = o.type === 'E' ? 'E' : 'F', hours = Number(o.hours) || 0, rate = Number(o.rate) || 0;
+  const amount = r2(o.amount != null && o.amount !== '' && !isNaN(Number(o.amount)) ? Number(o.amount) : hours * rate);
+  return {id:'l' + (i + 1), date:o.date || '', tk:o.tk || '', cls: type === 'E' ? '' : revClass(o.cls || (o.tk ? '' : '')), code:String(o.code || '').trim(), hours, rate, amount, desc:String(o.desc || '').slice(0, 600), type, flags:[], cut:0, decision:''};
+}
+function revCreate(c, firm, invoiceNo, invDate, rows, source){
+  c.billing = c.billing || {}; c.billing.reviews = c.billing.reviews || [];
+  const rv = {id:revNewId(), invoiceNo:invoiceNo || ('INV-' + td()), invDate:invDate || td(), firm:firm || (c.defenseCounsel && c.defenseCounsel.firm) || c.attorney || 'Unknown firm', source, created:td(), status:'Needs review', lines:rows.map(revMakeLine), appeal:null};
+  revCheck(rv, c);
+  c.billing.reviews.push(rv);
+  c.updates = c.updates || []; c.updates.push({date:td(), author:'Sentinel Review', type:'Billing', text:'Bill ' + rv.invoiceNo + ' from ' + rv.firm + ' loaded for review (' + fM(rv.billed) + ', ' + rv.lines.length + ' lines).'});
+  sc(c);
+  return rv;
+}
+function revFromEntries(cid){
+  const c = CASES.find(x => x.id === cid); if (!c) return;
+  const te = ((c.billing && c.billing.timeEntries) || []).filter(t => !t._reviewed);
+  if (!te.length) { alert('Every time entry on this matter has already been sent to Sentinel Review.'); return; }
+  const rows = te.map(t => ({date:t.date, tk:t.atty, cls:t.cls || '', code:String(t.code || '').split(' - ')[0], hours:t.hours, rate:t.rate, amount:t.amount != null ? t.amount : t.hours * t.rate, desc:t.desc, type:/^E/.test(t.code || '') && !t.hours ? 'E' : 'F'}));
+  const rv = revCreate(c, (c.defenseCounsel && c.defenseCounsel.firm) || '', 'ENTRIES-' + td(), td(), rows, 'time entries');
+  te.forEach(t => { t._reviewed = true; });
+  st({role:'review', caseId:null, showWelcome:false, revTab:'bills', revOpen:{cid:c.id, rid:rv.id}});
+}
+const REV_MAP = {inv:['invoicenumber','invoice','invoiceno','invoice#','invoiceid'], invDate:['invoicedate'], firm:['lawfirmname','lawfirm','firm','vendor','firmname'],
+  matter:['clientmatterid','matter','matterno','matternumber','lawfirmmatterid','claimno','claimnumber','claim','matterid'], date:['lineitemdate','date','workdate','servicedate'],
+  tk:['timekeepername','timekeeper','attorney','name','timekeeperid'], cls:['timekeeperclassification','class','classification','role','title','level'],
+  code:['lineitemtaskcode','taskcode','code','utbms','lineitemexpensecode','expensecode'], hours:['lineitemnumberofunits','hours','units','qty','quantity'],
+  rate:['lineitemunitcost','rate','hourlyrate','unitcost'], amount:['lineitemtotal','amount','total','linetotal','fees'], desc:['lineitemdescription','description','narrative','desc'], type:['expfeeinvadjtype','type','feeexpense']};
+function revDate(v){
+  v = String(v || '').trim(); if (/^\d{8}$/.test(v)) return v.slice(0, 4) + '-' + v.slice(4, 6) + '-' + v.slice(6);
+  let m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/); if (m) return (m[3].length === 2 ? '20' + m[3] : m[3]) + '-' + m[1].padStart(2, '0') + '-' + m[2].padStart(2, '0');
+  return /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : v;
+}
+function revParseBill(text){
+  text = String(text || '').replace(/^﻿/, '').trim(); if (!text) return {rows:[], error:'Nothing to read.'};
+  let lines = text.split(/\r?\n/).filter(x => x.trim());
+  let table;
+  if (/^LEDES1998B/i.test(lines[0])) lines = lines.slice(1);
+  if (lines[0] && lines[0].indexOf('|') >= 0) table = lines.map(x => x.replace(/\[\]\s*$/, '').split('|').map(s => s.trim()));
+  else table = parseCsvText(text).filter(r => r.some(x => String(x).trim()));
+  if (table.length < 2) return {rows:[], error:'Needs a header row and at least one bill line.'};
+  const head = table[0].map(h => String(h).toLowerCase().replace(/[^a-z0-9#]/g, '')), ix = {};
+  Object.keys(REV_MAP).forEach(k => { for (const a of REV_MAP[k]) { const j = head.indexOf(a); if (j >= 0) { ix[k] = j; break; } } });
+  if (ix.desc == null || (ix.hours == null && ix.amount == null)) return {rows:[], error:'Could not find the description and hours or amount columns. Use the template.'};
+  const get = (r, k) => ix[k] == null ? '' : String(r[ix[k]] == null ? '' : r[ix[k]]).trim();
+  const rows = table.slice(1).map(r => {
+    const code = get(r, 'code'), tp = get(r, 'type').toUpperCase(), isE = tp === 'E' || tp === 'EXPENSE' || (/^E\d/.test(code) && !get(r, 'tk'));
+    return {inv:get(r, 'inv'), invDate:revDate(get(r, 'invDate')), firm:get(r, 'firm'), matter:get(r, 'matter'), date:revDate(get(r, 'date')), tk:get(r, 'tk'), cls:get(r, 'cls'), code, hours:isE ? 0 : parseFloat(get(r, 'hours')) || 0, rate:parseFloat(get(r, 'rate')) || 0, amount:get(r, 'amount') === '' ? null : parseFloat(String(get(r, 'amount')).replace(/[$,]/g, '')), desc:get(r, 'desc'), type:isE ? 'E' : 'F'};
+  }).filter(r => r.desc || r.amount || r.hours);
+  return {rows};
+}
+function revImportText(text){
+  const p = revParseBill(text); if (p.error) { st({revMsg:p.error}); return; }
+  const forced = S.revImportCase ? CASES.find(x => x.id === S.revImportCase) : null;
+  const find = key => { const k = String(key || '').toLowerCase().trim(); if (!k) return null; return CASES.find(c => [c.matterNo, c.id, c.insurance && c.insurance.claimNo].some(v => v && String(v).toLowerCase() === k)); };
+  const groups = {}, miss = {};
+  p.rows.forEach(r => {
+    const c = forced || find(r.matter); if (!c) { miss[r.matter || '(no matter number)'] = (miss[r.matter || '(no matter number)'] || 0) + 1; return; }
+    const k = c.id + '||' + (r.inv || 'IMPORT-' + td()); (groups[k] = groups[k] || {c, inv:r.inv, invDate:r.invDate, firm:r.firm, rows:[]}).rows.push(r);
+  });
+  let made = 0, dup = 0, lastRv = null; const notes = [];
+  Object.keys(groups).forEach(k => {
+    const g = groups[k]; const have = (g.c.billing && g.c.billing.reviews || []).some(x => x.invoiceNo === (g.inv || 'IMPORT-' + td()) && x.firm === (g.firm || x.firm));
+    if (have) { dup++; return; }
+    lastRv = {cid:g.c.id, rid:revCreate(g.c, g.firm, g.inv, g.invDate, g.rows, 'file').id}; made++;
+  });
+  Object.keys(miss).forEach(m => notes.push(miss[m] + ' line' + (miss[m] > 1 ? 's' : '') + ' for matter "' + m + '" matched no matter in this account'));
+  if (dup) notes.push(dup + ' bill' + (dup > 1 ? 's were' : ' was') + ' already loaded and skipped');
+  st({revMsg:(made ? 'Loaded ' + made + ' bill' + (made > 1 ? 's' : '') + ' (' + p.rows.length + ' lines read). ' : 'No bills loaded. ') + notes.join('; ') + (notes.length ? '.' : ''), revTab:'bills', revOpen: made === 1 ? lastRv : null, revPaste:''});
+}
+function revFile(inp){
+  const f = inp.files && inp.files[0]; if (!f) return;
+  if (f.size > 15e6) { st({revMsg:'That file is over 15 MB. Split it and load the parts.'}); return; }
+  const rd = new FileReader(); rd.onload = () => revImportText(String(rd.result || '')); rd.readAsText(f); inp.value = '';
+}
+function revTemplate(){
+  downloadCSV('Sentinel-Review-bill-template.csv', ['Invoice','InvoiceDate','Firm','Matter','Date','Timekeeper','Class','Code','Hours','Rate','Amount','Description','Type'],
+    [['INV-1001','2026-09-30','Example Law Firm LLP', (CASES[0] && (CASES[0].matterNo || CASES[0].id)) || 'M-1001','2026-09-02','Pat Example','Associate','L310','2.5','210','525','Draft interrogatories to plaintiff','F'],
+     ['INV-1001','2026-09-30','Example Law Firm LLP', (CASES[0] && (CASES[0].matterNo || CASES[0].id)) || 'M-1001','2026-09-04','','','E112','','','412.50','Court reporter, plaintiff deposition','E']]);
+}
+
+/* ── AI second read (optional; needs a signed-in account with the AI module) ── */
+async function revRunAI(cid, rid){
+  const f = revFind(cid, rid); if (!f) return;
+  const {c, rv} = f; S.revAiBusy = rid; S.revMsg = ''; render();
+  try {
+    const guide = revGuide();
+    const r = await apiFetch('/api/ai/sentinel-review', {method:'POST', body:JSON.stringify({lines:rv.lines.map(l => ({id:l.id, date:l.date, tk:l.tk, cls:l.cls, code:l.code, hours:l.hours, rate:l.rate, amount:l.amount, desc:l.desc, type:l.type})), guidelines:Object.assign({}, guide, {text:undefined}), matterType:c.type, state:caseStateName(c), matterSummary:c.summary || '', guidelineText:guide.text || ''})});
+    rv.lines.forEach(l => { l.flags = l.flags.filter(x => x.rule !== 'AI'); });
+    (r.findings || []).forEach(x => { const l = rv.lines.find(y => y.id === x.lineId); if (!l) return; const room = l.amount - l.flags.reduce((s, y) => s + (y.cut || 0), 0); l.flags.push({rule:'AI', sev:'query', msg:(x.issue ? x.issue + '. ' : '') + (x.reason || ''), cut:r2(Math.max(0, Math.min(room, l.amount * (x.pct || 0) / 100)))}); });
+    revCheck(rv, c); rv.aiSummary = r.summary || ''; rv.aiRan = td(); sc(c);
+    S.revAiBusy = ''; S.revMsg = 'AI read finished: ' + ((r.findings || []).length) + ' extra line' + ((r.findings || []).length === 1 ? '' : 's') + ' to look at.'; render();
+  } catch (e) { S.revAiBusy = ''; S.revMsg = e.message || 'The AI read could not run.'; render(); }
+}
+
+/* ── Decisions ── */
+function revDecide(cid, rid, lid, d){
+  const f = revFind(cid, rid); if (!f) return; const l = f.rv.lines.find(x => x.id === lid); if (!l || !l.flags.length) return;
+  l.decision = l.decision === d ? 'pending' : d; sc(f.c); render();
+}
+function revDecideAll(cid, rid, d){
+  const f = revFind(cid, rid); if (!f) return;
+  f.rv.lines.forEach(l => { if (l.flags.length && l.decision === 'pending') l.decision = d; }); sc(f.c); render();
+}
+function revEditCut(cid, rid, lid){
+  const f = revFind(cid, rid); if (!f) return; const l = f.rv.lines.find(x => x.id === lid); if (!l) return;
+  const v = prompt('Reduction for this line, in dollars (billed ' + fM(l.amount) + '):', String(l.cutOverride != null ? l.cutOverride : l.cut)); if (v === null) return;
+  const n = parseFloat(String(v).replace(/[$,]/g, '')); if (isNaN(n) || n < 0 || n > l.amount) { alert('Enter an amount from 0 to ' + l.amount + '.'); return; }
+  l.cutOverride = r2(n); if (!l.flags.length) { l.flags.push({rule:'Reviewer', sev:'cut', msg:'Added by the reviewer.', cut:r2(n)}); l.cut = r2(n); } l.decision = 'accept'; sc(f.c); render();
+}
+function revAddNote(cid, rid, lid){
+  const f = revFind(cid, rid); if (!f) return; const l = f.rv.lines.find(x => x.id === lid); if (!l) return;
+  const why = prompt('Why is this line questionable? (shown to the firm)'); if (!why) return;
+  const v = prompt('Suggested reduction in dollars (0 to just ask the firm a question):', '0'); if (v === null) return;
+  const n = Math.max(0, Math.min(l.amount, parseFloat(String(v).replace(/[$,]/g, '')) || 0));
+  l.flags = l.flags.filter(x => x.rule !== 'Reviewer'); l.flags.push({rule:'Reviewer', sev: n > 0 ? 'cut' : 'query', msg:String(why).slice(0, 300), cut:r2(n)});
+  l.cut = Math.min(l.amount, r2(l.flags.reduce((s, x) => s + (x.cut || 0), 0))); l.decision = 'pending'; sc(f.c); render();
+}
+function revRecheck(cid, rid){ const f = revFind(cid, rid); if (!f) return; revCheck(f.rv, f.c); sc(f.c); S.revMsg = 'Checks re-run with the current guidelines.'; render(); }
+function revSetStatus(cid, rid, status){
+  const f = revFind(cid, rid); if (!f) return; const t = revTotals(f.rv);
+  if (status === 'Reviewed' && t.pending) { alert(t.pending + ' suggested cut' + (t.pending > 1 ? 's still need' : ' still needs') + ' a decision. Accept or reject each one first.'); return; }
+  f.rv.status = status; f.rv.statusDate = td();
+  if (status === 'Reviewed') { f.c.updates = f.c.updates || []; f.c.updates.push({date:td(), author:'Sentinel Review', type:'Billing', text:'Bill ' + f.rv.invoiceNo + ' reviewed: ' + fM(t.acc) + ' of ' + fM(t.billed) + ' reduction accepted (' + revPct(t.acc, t.billed) + ').'}); }
+  sc(f.c); render();
+}
+function revSaveAppeal(cid, rid){
+  const f = revFind(cid, rid); if (!f) return; const t = revTotals(f.rv);
+  const restored = parseFloat(String((document.getElementById('revRestored') || {}).value || '0').replace(/[$,]/g, '')) || 0;
+  if (restored < 0 || restored > t.acc) { alert('Restored amount must be between $0 and the accepted reduction of ' + fM(t.acc) + '.'); return; }
+  f.rv.appeal = {date:td(), restored:r2(restored), note:String((document.getElementById('revAppealNote') || {}).value || '').slice(0, 600)};
+  f.rv.status = 'Appealed'; f.rv.statusDate = td(); sc(f.c); render();
+}
+function revLetter(cid, rid){
+  const f = revFind(cid, rid); if (!f) return; const {c, rv} = f, t = revTotals(rv);
+  const rows = rv.lines.filter(l => l.decision === 'accept' && revLineCut(l) > 0);
+  let s = 'Re: ' + (c.client || 'Matter') + ' (' + (c.matterNo || c.id) + (c.insurance && c.insurance.claimNo ? ', claim ' + c.insurance.claimNo : '') + ')\nInvoice ' + rv.invoiceNo + ' dated ' + rv.invDate + '\n\nDear ' + rv.firm + ',\n\n';
+  s += 'We reviewed the above invoice against our litigation billing guidelines. Of ' + fM(t.billed) + ' billed, we are approving ' + fM(t.billed - t.acc) + ' and adjusting ' + fM(t.acc) + ', as follows:\n\n';
+  const qs = rv.lines.filter(l => l.decision === 'accept' && !(revLineCut(l) > 0));
+  rows.forEach(l => { s += '- ' + (l.date || 'n/a') + ', ' + (l.tk || 'expense') + ', ' + (l.code || '') + ', billed ' + fM(l.amount) + ', adjusted by ' + fM(revLineCut(l)) + '. ' + l.flags.map(x => x.msg).join(' ') + '\n'; });
+  if (qs.length) { s += '\nPlease also explain or support the following entries:\n\n'; qs.forEach(l => { s += '- ' + (l.date || 'n/a') + ', ' + (l.tk || 'expense') + ', ' + (l.code || '') + ', ' + fM(l.amount) + '. ' + l.flags.map(x => x.msg).join(' ') + '\n'; }); }
+  s += '\nIf you disagree with any adjustment, please send a written explanation and any supporting detail within 30 days of this letter, and we will reconsider it.\n\nThank you,\n' + ((S.currentUser && (S.currentUser.name || S.currentUser.email)) || '') + '\n';
+  st({revLetterText:s, revLetterFor:rid});
+}
+function revCopy(id){ const el = document.getElementById(id); if (!el) return; el.select(); try { navigator.clipboard.writeText(el.value); } catch (e) { document.execCommand('copy'); } S.revMsg = 'Copied.'; }
+function revExport(cid, rid){
+  const f = revFind(cid, rid); if (!f) return;
+  downloadCSV('Sentinel-Review-' + f.rv.invoiceNo + '.csv', ['Line','Date','Timekeeper','Class','Code','Hours','Rate','Billed','Findings','Suggested reduction','Decision','Accepted reduction'],
+    f.rv.lines.map((l, i) => [i + 1, l.date, l.tk, l.cls, l.code, l.hours, l.rate, l.amount, l.flags.map(x => x.rule + ': ' + x.msg).join(' | '), l.cut, l.decision, revLineCut(l)]));
+}
+function revExportAll(){
+  const rows = []; revAll().forEach(x => { const t = revTotals(x.rv); rows.push([x.c.matterNo || x.c.id, x.c.client, x.rv.firm, x.rv.invoiceNo, x.rv.invDate, x.rv.status, t.billed, t.sugg, t.acc, t.restored, t.net]); });
+  downloadCSV('Sentinel-Review-all-bills-' + td() + '.csv', ['Matter','Client','Firm','Invoice','Invoice date','Status','Billed','Suggested reduction','Accepted reduction','Restored on appeal','Net reduction'], rows);
+}
+
+/* ── Screens ── */
+function revKpi(label, v, sub, col){ return '<div class="kpi"><div class="kpi-bar" style="background:' + (col || 'var(--pri2)') + ';"></div><div class="kpi-l">' + label + '</div><div class="kpi-v">' + v + '</div><div class="kpi-sub">' + sub + '</div></div>'; }
+function revV(){
+  const all = revAll(), tab = S.revTab || 'bills';
+  let h = '<div class="wrap" style="padding-top:18px;">';
+  h += '<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-end;"><div><div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">Sentinel Review</div>' +
+    '<div style="font-size:13px;color:var(--muted);margin:4px 0 14px;max-width:780px;line-height:1.6;">Legal bill review. Every line of a defense bill is checked against your billing guidelines before it is paid. Suggested reductions wait for a person to accept or reject them. Nothing is cut or paid automatically.</div></div><div>' + acctPickerV() + '</div></div>';
+  const T = all.reduce((a, x) => { const t = revTotals(x.rv); a.billed += t.billed; a.sugg += t.sugg; a.acc += t.acc; a.rest += t.restored; if (x.rv.status === 'Needs review') a.wait++; return a; }, {billed:0, sugg:0, acc:0, rest:0, wait:0});
+  h += '<div class="kpi-grid">' + revKpi('Billed under review', fM(Math.round(T.billed)), all.length + ' bill' + (all.length === 1 ? '' : 's')) + revKpi('Suggested reductions', fM(Math.round(T.sugg)), revPct(T.sugg, T.billed) + ' of billed', 'var(--amber)') +
+    revKpi('Accepted by reviewers', fM(Math.round(T.acc)), revPct(T.acc, T.billed) + ' of billed', 'var(--green)') + revKpi('Restored on appeal', fM(Math.round(T.rest)), 'Net held: ' + fM(Math.round(T.acc - T.rest)) + ' (' + revPct(T.acc - T.rest, T.billed) + ')', 'var(--purple)') +
+    revKpi('Waiting for review', T.wait, 'bills with open decisions', T.wait ? 'var(--red)' : 'var(--green)') + '</div>';
+  if (S.revMsg) h += '<div class="alert-good" style="margin-bottom:12px;">' + esc(S.revMsg) + '</div>';
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">' + [['bills', 'Bills'], ['firms', 'Firms and findings'], ['rules', 'Guidelines'], ['import', 'Load a bill']].map(([k, l]) => '<span class="pill' + (tab === k ? ' on' : '') + '" onclick="st({revTab:\'' + k + '\',revOpen:null,revMsg:\'\'})">' + l + '</span>').join('') + '</div>';
+  if (tab === 'bills') h += S.revOpen ? revDetailV() : revListV(all);
+  else if (tab === 'firms') h += revFirmsV(all);
+  else if (tab === 'rules') h += revRulesV();
+  else h += revImportV();
+  h += '<div style="font-size:11.5px;color:var(--dim);max-width:820px;line-height:1.55;margin-top:14px;">Suggested reductions are recommendations for a trained reviewer. Rules follow common litigation billing guidelines; your own guidelines control, so set them under Guidelines. Savings shown are the amounts your reviewers accepted, less anything the firm won back on appeal.</div>';
+  return h + '</div>';
+}
+function revListV(all){
+  const f = S.revFilter || '';
+  const rows = all.filter(x => !f || x.rv.status === f).sort((a, b) => (b.rv.invDate || '').localeCompare(a.rv.invDate || ''));
+  let h = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">';
+  ['', 'Needs review', 'Reviewed', 'Sent to firm', 'Appealed', 'Closed'].forEach(s => { h += '<span class="pill' + (f === s ? ' on' : '') + '" onclick="st({revFilter:\'' + s + '\'})">' + (s || 'All') + '</span>'; });
+  h += '<span style="flex:1"></span><button class="btn btn-out" onclick="revExportAll()">Export all bills</button></div>';
+  if (!rows.length) return h + '<div class="card" style="padding:16px;font-size:13px;color:var(--muted);">No bills here yet. Load one under <strong>Load a bill</strong>, or open a matter\'s Billing tab and send its time entries to Sentinel Review.</div>';
+  h += '<div class="card" style="padding:0;overflow-x:auto;"><table><thead><tr><th>Invoice</th><th>Matter</th><th>Firm</th><th style="text-align:right;">Billed</th><th style="text-align:right;">Suggested</th><th style="text-align:right;">Accepted</th><th>Status</th></tr></thead><tbody>';
+  rows.forEach(x => { const t = revTotals(x.rv);
+    h += '<tr style="cursor:pointer;" onclick="st({revOpen:{cid:\'' + escAttr(x.c.id) + '\',rid:\'' + escAttr(x.rv.id) + '\'},revMsg:\'\',revLetterText:\'\'})"><td style="font-weight:700;">' + esc(x.rv.invoiceNo) + '<div style="font-size:10.5px;color:var(--dim);font-weight:400;">' + esc(x.rv.invDate) + '</div></td><td>' + esc(x.c.client) + '<div style="font-size:10.5px;color:var(--dim);">' + esc(x.c.matterNo || x.c.id) + '</div></td><td>' + esc(x.rv.firm) + '</td><td style="text-align:right;">' + fM(Math.round(t.billed)) + '</td><td style="text-align:right;color:var(--amber);font-weight:700;">' + fM(Math.round(t.sugg)) + '<div style="font-size:10.5px;font-weight:400;">' + t.flagged + ' flagged</div></td><td style="text-align:right;color:var(--green);font-weight:700;">' + fM(Math.round(t.acc)) + '</td><td>' + esc(x.rv.status) + (t.pending ? '<div style="font-size:10.5px;color:var(--red);">' + t.pending + ' to decide</div>' : '') + '</td></tr>'; });
+  return h + '</tbody></table></div>';
+}
+function revDetailV(){
+  const o = S.revOpen, f = revFind(o.cid, o.rid);
+  if (!f) return '<div class="alert-good">That bill is no longer here.</div>';
+  const {c, rv} = f, t = revTotals(rv), A = (fn, ...a) => fn + '(\'' + escAttr(c.id) + '\',\'' + escAttr(rv.id) + '\'' + a.map(x => ',\'' + x + '\'').join('') + ')';
+  let h = '<div style="margin-bottom:10px;"><span class="muted-link" style="cursor:pointer;font-weight:700;" onclick="st({revOpen:null,revMsg:\'\',revLetterText:\'\'})">&larr; All bills</span></div>';
+  h += '<div class="card" style="padding:14px 16px;margin-bottom:12px;"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;"><div><div style="font-weight:800;font-size:16px;">' + esc(rv.invoiceNo) + ' &middot; ' + esc(rv.firm) + '</div><div style="font-size:12.5px;color:var(--muted);margin-top:2px;">' + esc(c.client) + ' (' + esc(c.matterNo || c.id) + ') &middot; invoice date ' + esc(rv.invDate) + ' &middot; loaded from ' + esc(rv.source) + ' &middot; status <strong>' + esc(rv.status) + '</strong></div></div>' +
+    '<div style="text-align:right;font-size:12.5px;">Billed <strong>' + fM(Math.round(t.billed)) + '</strong> &middot; Suggested <strong style="color:var(--amber);">' + fM(Math.round(t.sugg)) + '</strong> &middot; Accepted <strong style="color:var(--green);">' + fM(Math.round(t.acc)) + '</strong> (' + revPct(t.acc, t.billed) + ')' + (t.restored ? ' &middot; Restored <strong>' + fM(Math.round(t.restored)) + '</strong>' : '') + '</div></div>';
+  if (rv.aiSummary) h += '<div style="font-size:12.5px;margin-top:8px;"><strong>AI read:</strong> ' + esc(rv.aiSummary) + '</div>';
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">' +
+    '<button class="btn btn-out" onclick="' + A('revDecideAll', 'accept') + '">Accept all suggestions</button><button class="btn btn-out" onclick="' + A('revDecideAll', 'reject') + '">Reject all</button>' +
+    '<button class="btn btn-out" onclick="' + A('revRecheck') + '">Re-run checks</button><button class="btn btn-out" ' + (S.revAiBusy ? 'disabled' : '') + ' onclick="' + A('revRunAI') + '">' + (S.revAiBusy === rv.id ? 'Reading&hellip;' : 'AI second read') + '</button>' +
+    '<button class="btn btn-out" onclick="' + A('revLetter') + '">Draft letter to firm</button><button class="btn btn-out" onclick="' + A('revExport') + '">Export lines</button></div>';
+  const next = {'Needs review':['Reviewed', 'Mark reviewed'], 'Reviewed':['Sent to firm', 'Mark sent to firm'], 'Sent to firm':['Closed', 'Close, no appeal'], 'Appealed':['Closed', 'Close']}[rv.status];
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center;">' + (next ? '<button class="btn btn-pri" onclick="' + A('revSetStatus', next[0]) + '">' + next[1] + '</button>' : '') + (rv.status === 'Closed' ? '<button class="btn btn-out" onclick="' + A('revSetStatus', 'Needs review') + '">Reopen</button>' : '') + (t.pending ? '<span style="font-size:12px;color:var(--red);">' + t.pending + ' suggested cut' + (t.pending > 1 ? 's' : '') + ' still need a decision</span>' : '') + '</div></div>';
+  if (S.revLetterText && S.revLetterFor === rv.id) h += '<div class="card" style="padding:14px 16px;margin-bottom:12px;"><div style="font-weight:800;margin-bottom:6px;">Letter to the firm (edit before sending)</div><textarea id="revLetterTa" class="inp" style="width:100%;min-height:220px;font-size:12.5px;" oninput="S.revLetterText=this.value">' + esc(S.revLetterText) + '</textarea><div style="margin-top:8px;"><button class="btn btn-out" onclick="revCopy(\'revLetterTa\')">Copy letter</button></div></div>';
+  h += '<div class="card" style="padding:0;overflow-x:auto;margin-bottom:12px;"><table><thead><tr><th>Date</th><th>Timekeeper</th><th>Code</th><th style="text-align:right;">Hrs</th><th style="text-align:right;">Rate</th><th style="text-align:right;">Billed</th><th>What the review found</th><th style="text-align:right;">Cut</th><th>Decision</th></tr></thead><tbody>';
+  rv.lines.forEach(l => {
+    const cut = l.decision === 'accept' ? revLineCut(l) : (l.cutOverride != null ? l.cutOverride : l.cut), fl = l.flags.length;
+    h += '<tr style="' + (fl ? 'background:' + (l.decision === 'accept' ? 'rgba(5,150,105,.07)' : l.decision === 'reject' ? 'rgba(100,116,139,.07)' : 'rgba(180,83,9,.07)') : '') + '"><td style="white-space:nowrap;">' + esc(l.date) + '</td><td>' + esc(l.tk || (l.type === 'E' ? 'Expense' : '')) + '<div style="font-size:10.5px;color:var(--dim);">' + esc(l.cls) + '</div></td><td>' + esc(l.code) + '</td><td style="text-align:right;">' + (l.type === 'E' ? '' : l.hours) + '</td><td style="text-align:right;">' + (l.type === 'E' ? '' : l.rate) + '</td><td style="text-align:right;">' + fM(l.amount) + '</td>' +
+      '<td style="min-width:280px;"><div style="font-size:12px;">' + esc(l.desc) + '</div>' + l.flags.map(x => '<div style="font-size:11.5px;margin-top:3px;"><span class="pill" style="cursor:default;background:' + (x.sev === 'cut' ? 'rgba(180,83,9,.12)' : 'rgba(109,40,217,.1)') + ';color:' + (x.sev === 'cut' ? 'var(--amber)' : 'var(--purple)') + ';border-color:transparent;">' + esc(x.rule) + '</span> ' + esc(x.msg) + (x.cut ? ' <strong>(' + fM(x.cut) + ')</strong>' : '') + '</div>').join('') + '</td>' +
+      '<td style="text-align:right;font-weight:700;">' + (fl ? fM(cut) : '') + '</td><td style="white-space:nowrap;">' + (fl ? '<button class="btn ' + (l.decision === 'accept' ? 'btn-pri' : 'btn-out') + '" style="padding:4px 9px;" onclick="' + A('revDecide', l.id, 'accept') + '">' + (l.cut > 0 ? 'Accept' : 'Ask firm') + '</button> <button class="btn ' + (l.decision === 'reject' ? 'btn-pri' : 'btn-out') + '" style="padding:4px 9px;" onclick="' + A('revDecide', l.id, 'reject') + '">' + (l.cut > 0 ? 'Reject' : 'Dismiss') + '</button> <span class="muted-link" style="cursor:pointer;font-size:11px;" onclick="' + A('revEditCut', l.id) + '">edit</span>' : '<span class="muted-link" style="cursor:pointer;font-size:11px;" onclick="' + A('revAddNote', l.id) + '">flag</span>') + '</td></tr>';
+  });
+  h += '</tbody></table></div>';
+  if (['Sent to firm', 'Appealed', 'Closed'].indexOf(rv.status) >= 0 && t.acc > 0) {
+    const ap = rv.appeal || {};
+    h += '<div class="card" style="padding:14px 16px;"><div style="font-weight:800;margin-bottom:6px;">Appeal outcome</div><div style="font-size:12.5px;color:var(--muted);margin-bottom:8px;">If the firm disputed adjustments and you restored some, record how much. Net savings are the accepted reductions less this amount.</div><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;"><div class="fld" style="margin:0;"><label class="lbl">Amount restored ($)</label><input id="revRestored" class="inp" type="number" min="0" value="' + (ap.restored || 0) + '"></div><div class="fld" style="margin:0;flex:1 1 260px;"><label class="lbl">Note</label><input id="revAppealNote" class="inp" value="' + esc(ap.note || '') + '"></div><button class="btn btn-pri" onclick="' + A('revSaveAppeal') + '">Save appeal result</button></div></div>';
+  }
+  return h;
+}
+function revFirmsV(all){
+  const by = {}, rules = {};
+  all.forEach(x => { const t = revTotals(x.rv), k = x.rv.firm; const b = by[k] = by[k] || {bills:0, billed:0, sugg:0, acc:0, rest:0, rules:{}}; b.bills++; b.billed += t.billed; b.sugg += t.sugg; b.acc += t.acc; b.rest += t.restored;
+    x.rv.lines.forEach(l => l.flags.forEach(f => { const a = rules[f.rule] = rules[f.rule] || {n:0, sugg:0, acc:0}; a.n++; a.sugg += f.cut || 0; if (l.decision === 'accept' && l.cut > 0) a.acc += (f.cut || 0) * revLineCut(l) / l.cut; b.rules[f.rule] = (b.rules[f.rule] || 0) + 1; })); });
+  const firms = Object.keys(by).sort((a, b) => by[b].acc - by[a].acc);
+  let h = '<div class="serif" style="font-size:20px;font-weight:700;margin-bottom:6px;">By firm</div>';
+  if (!firms.length) return h + '<div class="card" style="padding:16px;font-size:13px;color:var(--muted);">Nothing to show until a bill is loaded.</div>';
+  h += '<div class="card" style="padding:0;overflow-x:auto;margin-bottom:18px;"><table><thead><tr><th>Firm</th><th style="text-align:right;">Bills</th><th style="text-align:right;">Billed</th><th style="text-align:right;">Accepted</th><th style="text-align:right;">Restored</th><th style="text-align:right;">Net held</th><th style="text-align:right;">% of billed</th><th>Most common finding</th></tr></thead><tbody>';
+  firms.forEach(k => { const b = by[k], top = Object.keys(b.rules).sort((x, y) => b.rules[y] - b.rules[x])[0] || '';
+    h += '<tr><td style="font-weight:700;">' + esc(k) + '</td><td style="text-align:right;">' + b.bills + '</td><td style="text-align:right;">' + fM(Math.round(b.billed)) + '</td><td style="text-align:right;">' + fM(Math.round(b.acc)) + '</td><td style="text-align:right;">' + fM(Math.round(b.rest)) + '</td><td style="text-align:right;font-weight:700;color:var(--green);">' + fM(Math.round(b.acc - b.rest)) + '</td><td style="text-align:right;">' + revPct(b.acc - b.rest, b.billed) + '</td><td>' + esc(top) + '</td></tr>'; });
+  h += '</tbody></table></div><div class="serif" style="font-size:20px;font-weight:700;margin-bottom:6px;">Where the reductions come from</div><div class="card" style="padding:0;overflow-x:auto;"><table><thead><tr><th>Finding</th><th style="text-align:right;">Lines</th><th style="text-align:right;">Suggested</th><th style="text-align:right;">Accepted</th></tr></thead><tbody>';
+  Object.keys(rules).sort((a, b) => rules[b].sugg - rules[a].sugg).forEach(k => { h += '<tr><td>' + esc(k) + '</td><td style="text-align:right;">' + rules[k].n + '</td><td style="text-align:right;">' + fM(Math.round(rules[k].sugg)) + '</td><td style="text-align:right;">' + fM(Math.round(rules[k].acc)) + '</td></tr>'; });
+  return h + '</tbody></table></div>';
+}
+function revSetText(v){ revGuide().text = String(v || '').slice(0, 12000); revSaveGuide(); const el = document.getElementById('revGtCount'); if (el) el.textContent = revGuide().text.length.toLocaleString(); }
+function revGuideFile(inp){ const f = inp.files && inp.files[0]; if (!f) return; if (f.size > 2e6) { alert('Use a text file under 2 MB. For a PDF, paste the text in.'); return; } const rd = new FileReader(); rd.onload = () => { revSetText(String(rd.result || '')); render(); }; rd.readAsText(f); inp.value = ''; }
+function revSetG(k, v, bool){ const g = revGuide(); g[k] = bool ? !!v : (parseFloat(v) || 0); revSaveGuide(); }
+function revResetG(){ const t = revGuide().text; S.revGuide = Object.assign({}, REV_DEFAULTS, {text:t}); revSaveGuide(); render(); }
+function revRulesV(){
+  const g = revGuide();
+  const num = (label, k, hint) => '<div class="fld" style="flex:1 1 180px;margin:0;"><label class="lbl">' + label + '</label><input class="inp" type="number" min="0" value="' + g[k] + '" onchange="revSetG(\'' + k + '\',this.value)"><div style="font-size:10.5px;color:var(--dim);margin-top:2px;">' + (hint || '') + '</div></div>';
+  const chk = (label, k) => '<label style="font-size:12.5px;display:flex;gap:6px;align-items:center;text-transform:none;letter-spacing:0;font-weight:600;color:var(--ink);"><input type="checkbox" ' + (g[k] ? 'checked' : '') + ' onchange="revSetG(\'' + k + '\',this.checked,true)"> ' + label + '</label>';
+  let h = '<div class="card" style="padding:14px 16px;margin-bottom:12px;"><div style="font-weight:800;margin-bottom:8px;">Your billing guidelines</div><div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;">Change these to match the guidelines you give defense counsel. They apply the next time checks run (use Re-run checks on a bill).</div>' +
+    '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">' + num('Partner rate cap ($/hr)', 'capPartner') + num('Associate rate cap ($/hr)', 'capAssoc') + num('Paralegal rate cap ($/hr)', 'capPara') + '</div>' +
+    '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">' + num('Most hours one person can bill in a day', 'maxDay') + num('Most hours in one entry', 'maxEntry') + num('Block billing reduction (%)', 'blockPct') + num('Travel reduction (%)', 'travelPct') + num('Internal conference reduction (%)', 'intraPct') + '</div>' +
+    '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:10px;">' + chk('Use the firm\'s approved panel rate as the cap when we have it', 'usePanelRate') + chk('Flag clerical work', 'clericalOn') + chk('Require tenth-of-an-hour billing', 'tenthOn') + chk('Disallow meals', 'mealsOn') + '</div>' +
+    '<button class="btn btn-out" onclick="revResetG()">Restore defaults</button></div>';
+  h += '<div class="card" style="padding:14px 16px;margin-bottom:12px;"><div style="font-weight:800;margin-bottom:4px;">Your written billing guidelines</div><div style="font-size:12.5px;color:var(--muted);margin-bottom:8px;max-width:760px;line-height:1.6;">Paste the guidelines you give defense counsel, or load them from a text file. The AI second read applies them line by line and quotes the clause a line breaks. The built-in checks above do not read this text, so also set any numbers you care about in the boxes above.</div><textarea class="inp" style="width:100%;min-height:180px;font-size:12.5px;" placeholder="Example: Travel time is reimbursed at 50%. No more than one attorney may attend a deposition without prior written approval. Research over 3 hours requires approval..." oninput="revSetText(this.value)">' + esc(g.text || '') + '</textarea><div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;"><label class="btn btn-out" style="cursor:pointer;text-transform:none;letter-spacing:0;">Load from a text file<input type="file" accept=".txt,.md" style="display:none;" onchange="revGuideFile(this)"></label><button class="btn btn-out" onclick="revSetText(\'\');render()">Clear</button><span style="font-size:11.5px;color:var(--dim);"><span id="revGtCount">' + (g.text || '').length.toLocaleString() + '</span> of 12,000 characters. Saved in this browser.</span></div></div>';
+  h += '<div class="card" style="padding:14px 16px;"><div style="font-weight:800;margin-bottom:6px;">What gets checked</div><div style="font-size:12.5px;line-height:1.7;color:var(--muted);">Rates above the cap &middot; duplicate entries, including against earlier bills on the same matter &middot; block billing &middot; clerical and overhead work &middot; internal conferences &middot; travel time &middot; more than one person at the same deposition or hearing &middot; vague narratives &middot; very long entries and long days &middot; time not in tenths &middot; narratives that do not match the task code &middot; work dated before the matter opened &middot; overhead expenses, meals and large expenses. The optional AI second read adds a human-style pass for what rules miss.</div></div>';
+  return h;
+}
+function revImportV(){
+  const opts = '<option value="">Match by matter number in the file</option>' + acctScope().map(c => '<option value="' + esc(c.id) + '"' + (S.revImportCase === c.id ? ' selected' : '') + '>' + esc(c.client) + ' (' + esc(c.matterNo || c.id) + ')</option>').join('');
+  return '<div class="card" style="padding:14px 16px;"><div style="font-weight:800;margin-bottom:4px;">Load a bill</div><div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;max-width:760px;line-height:1.6;">Upload a LEDES 1998B file or a CSV, or paste the lines. A file with several invoices becomes several bills. You can also send a matter\'s own time entries from its Billing tab.</div>' +
+    '<div class="fld" style="max-width:420px;"><label class="lbl">Matter</label><select class="inp" onchange="S.revImportCase=this.value">' + opts + '</select></div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;"><label class="btn btn-pri" style="cursor:pointer;">Choose a file<input type="file" accept=".txt,.csv,.led,.ledes" style="display:none;" onchange="revFile(this)"></label><button class="btn btn-out" onclick="revTemplate()">Download CSV template</button></div>' +
+    '<textarea class="inp" style="width:100%;min-height:150px;font-size:12px;" placeholder="Or paste LEDES or CSV text here" oninput="S.revPaste=this.value">' + esc(S.revPaste || '') + '</textarea><div style="margin-top:8px;"><button class="btn btn-out" onclick="revImportText(S.revPaste)">Read pasted text</button></div></div>';
+}
+
+/* ── Sample bills for the public demo only ── */
+function revDemoSeed(){
+  if (S.revSeeded || !(DEMO_MODE || !authToken)) return; S.revSeeded = true;
+  const pool = CASES.filter(c => c.defenseCounsel && c.defenseCounsel.firm && !(c.billing && (c.billing.reviews || []).length)).concat(CASES).filter((c, i, a) => a.indexOf(c) === i).slice(0, 4); if (pool.length < 2) return;
+  const B = [
+    ['WB-2026-0412', '2026-09-15', [
+      ['2026-08-03', 'Dana Whitfield', 'Partner', 'L110', 2.0, 285, 'Review claim file and police report; confer with adjuster re coverage and liability; draft summary memo to file'],
+      ['2026-08-03', 'Jordan Pike', 'Associate', 'L110', 3.5, 210, 'Review file'],
+      ['2026-08-04', 'Dana Whitfield', 'Partner', 'L120', 0.5, 285, 'Conference with associate J. Pike regarding case strategy'],
+      ['2026-08-05', 'Jordan Pike', 'Associate', 'L210', 2.4, 210, 'Draft answer and affirmative defenses to complaint'],
+      ['2026-08-05', 'Marcy Lowe', 'Paralegal', 'L210', 0.8, 120, 'E-filing answer with court and calendaring response deadlines'],
+      ['2026-08-05', 'Marcy Lowe', 'Paralegal', 'L210', 0.8, 120, 'E-filing answer with court and calendaring response deadlines'],
+      ['2026-08-10', 'Jordan Pike', 'Associate', 'L310', 6.1, 210, 'Draft interrogatories and requests for production to plaintiff'],
+      ['2026-08-12', 'Dana Whitfield', 'Partner', 'L330', 9.0, 285, 'Prepare for and take deposition of plaintiff; research on spoliation law'],
+      ['2026-08-13', 'Jordan Pike', 'Associate', 'L330', 3.0, 210, 'Draft notice of deposition and subpoena for plaintiff\'s treating physician'],
+      ['2026-08-14', 'Dana Whitfield', 'Partner', 'L120', 2.0, 215, 'Negotiate protective order for medical records with plaintiff counsel'],
+      ['2026-08-12', 'Jordan Pike', 'Associate', 'L330', 2.5, 210, 'Travel to and from plaintiff counsel\'s office for deposition'],
+      ['2026-08-18', 'Jordan Pike', 'Associate', 'L120', 4.25, 210, 'Research premises liability standard of care'],
+      ['2026-08-12', '', '', 'E111', 0, 0, 'Lunch for deposition attendees', 'E', 64.5],
+      ['2026-08-12', '', '', 'E112', 0, 0, 'Court reporter transcript, plaintiff deposition', 'E', 842],
+      ['2026-08-31', '', '', 'E107', 0, 0, 'Postage and in-house copying', 'E', 18.75]], 'Needs review'],
+    ['HD-7781', '2026-09-20', [
+      ['2026-08-19', 'Marcus Hale', 'Partner', 'L120', 1.5, 240, 'Analysis of liability facts and comparative fault exposure for settlement authority request'],
+      ['2026-08-19', 'Marcus Hale', 'Partner', 'L160', 1.0, 240, 'Attention to matter'],
+      ['2026-08-20', 'Tess Ward', 'Associate', 'L310', 3.2, 175, 'Respond to plaintiff\'s first interrogatories and requests for production'],
+      ['2026-08-21', 'Tess Ward', 'Associate', 'L330', 2.0, 175, 'Draft deposition outline for treating physician'],
+      ['2026-08-24', 'Marcus Hale', 'Partner', 'L120', 0.6, 240, 'Internal conference regarding trial staffing'],
+      ['2026-08-25', 'Ben Ortiz', 'Paralegal', 'L140', 1.2, 95, 'Organize file and index medical records'],
+      ['2026-09-02', 'Tess Ward', 'Associate', 'L240', 5.5, 175, 'Draft motion for partial summary judgment on punitive damages']], 'Needs review'],
+    ['OR-20260901', '2026-09-30', [
+      ['2026-08-26', 'Priscilla Okafor', 'Partner', 'L210', 1.2, 205, 'Review complaint and prepare answer'],
+      ['2026-08-27', 'Priscilla Okafor', 'Partner', 'L120', 1.0, 205, 'Telephone call with adjuster regarding reserve and initial evaluation'],
+      ['2026-08-28', 'Dev Rao', 'Associate', 'L310', 2.3, 160, 'Prepare initial disclosures and document request responses'],
+      ['2026-08-28', 'Dev Rao', 'Associate', 'L310', 2.3, 160, 'Prepare initial disclosures and document request responses'],
+      ['2026-09-03', 'Dev Rao', 'Associate', 'L410', 3.0, 160, 'Interview insured and site manager re incident; review surveillance video'],
+      ['2026-09-08', '', '', 'E119', 0, 0, 'Liability expert retainer', 'E', 2500]], 'Reviewed'],
+    ['LS-55102', '2026-08-31', [
+      ['2026-07-14', 'Gregory Lang', 'Partner', 'L120', 3.0, 340, 'Evaluate exposure and prepare case plan and budget for carrier'],
+      ['2026-07-15', 'Gregory Lang', 'Partner', 'L210', 1.8, 340, 'Review and revise answer; conference with associate regarding affirmative defenses'],
+      ['2026-07-16', 'Nora Katz', 'Associate', 'L310', 7.4, 255, 'Draft responses to special interrogatories; review client documents; prepare privilege log'],
+      ['2026-07-17', 'Nora Katz', 'Associate', 'L410', 4.0, 255, 'Prepare insured for deposition and review prior testimony'],
+      ['2026-07-21', 'Nora Katz', 'Associate', 'L350', 2.0, 255, 'Meet and confer with plaintiff counsel regarding discovery dispute'],
+      ['2026-07-29', 'Gregory Lang', 'Partner', 'L330', 6.5, 340, 'Defend deposition of insured'],
+      ['2026-07-30', 'Nora Katz', 'Associate', 'L240', 6.0, 255, 'Draft motion in limine regarding prior claims history'],
+      ['2026-08-03', 'Nora Katz', 'Associate', 'L310', 5.0, 255, 'Review and organize plaintiff\'s document production and prepare discovery deficiency letter'],
+      ['2026-07-29', '', '', 'E112', 0, 0, 'Court reporter and transcript, insured deposition', 'E', 1180]], 'Appealed']
+  ];
+  pool.forEach((c, i) => {
+    const b = B[i]; if (!b) return; const firm = (c.defenseCounsel && c.defenseCounsel.firm) || ['Whitfield & Burke LLP', 'Hale Defense Group', 'Okafor Rivera PA', 'Lang Sutter LLP'][i];
+    c.billing = c.billing || {}; c.billing.reviews = c.billing.reviews || [];
+    const rv = {id:'RV-demo-' + (i + 1), invoiceNo:b[0], invDate:b[1], firm: i === 0 ? 'Whitfield & Burke LLP' : i === 1 ? 'Hale Defense Group' : i === 2 ? 'Okafor Rivera PA' : 'Lang Sutter LLP', source:'file', created:b[1], status:'Needs review', lines:b[2].map((r, j) => revMakeLine({date:r[0], tk:r[1], cls:r[2], code:r[3], hours:r[4], rate:r[5], desc:r[6], type:r[7], amount:r[8]}, j)), appeal:null};
+    revCheck(rv, c);
+    if (b[3] === 'Reviewed' || b[3] === 'Appealed') { rv.lines.forEach(l => { if (l.flags.length) l.decision = l.cut > 0 ? 'accept' : 'reject'; }); rv.status = b[3]; rv.statusDate = b[1]; }
+    if (b[3] === 'Appealed') rv.appeal = {date:'2026-09-12', restored: Math.round(revTotals(rv).acc * 0.18), note:'Firm supplied detail for the discovery responses; part of the block-billing reduction restored.'};
+    c.billing.reviews.push(rv);
+  });
 }
 
 function attentionData(scopeCases, opts){
@@ -11591,7 +11998,7 @@ function tabBilling(c){
   }
   h += '</div>';
 
-  h += '<div style="display:flex;gap:8px;margin-top:14px;"><button class="btn btn-out" onclick="genInv()">Generate Invoice</button><button class="btn btn-out" onclick="exportLEDES()">Export LEDES 1998B</button></div>';
+  h += '<div style="display:flex;gap:8px;margin-top:14px;"><button class="btn btn-out" onclick="genInv()">Generate Invoice</button><button class="btn btn-out" onclick="exportLEDES()">Export LEDES 1998B</button><button class="btn btn-out" onclick="revFromEntries(\''+escAttr(c.id)+'\')">Send entries to Sentinel Review</button></div>';
 
   if ((c.billing.invoices||[]).length > 0) {
     h += '<div class="section-band">Invoices Sent ('+c.billing.invoices.length+')</div>';
