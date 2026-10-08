@@ -52,7 +52,8 @@ const AI_CONFIGURED = !!ANTHROPIC_API_KEY;
 
 async function callClaude(systemPrompt, userPrompt, maxTokens = 1000) {
   if (!AI_CONFIGURED) {
-    const err = new Error('AI is not configured on this server. Set ANTHROPIC_API_KEY.');
+    console.error('Sentinel AI is not configured: set ANTHROPIC_API_KEY.');
+    const err = new Error('Sentinel analysis is not turned on for this server yet. Contact support.');
     err.statusCode = 503;
     throw err;
   }
@@ -72,7 +73,8 @@ async function callClaude(systemPrompt, userPrompt, maxTokens = 1000) {
   });
   if (!res.ok) {
     const body = await res.text();
-    const err = new Error('Claude API error: ' + body);
+    console.error('AI provider error:', res.status, String(body).slice(0, 500));
+    const err = new Error('Sentinel could not complete that analysis right now. Please try again in a moment.');
     err.statusCode = 502;
     throw err;
   }
