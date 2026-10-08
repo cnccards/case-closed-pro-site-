@@ -710,7 +710,7 @@ const LIT_STAGES = ['Pre-Suit','Pleadings','Initial Discovery','Discovery','Expe
 const STRATEGIC_TRACKS = ['Aggressive Defense','Early Settlement','Mediation Track','Trial Track','MSJ Track','Negotiated Resolution','Tender to Carrier','Coverage Defense'];
 const FAVORABILITY_LABELS = {1:'Poor',2:'Below Avg',3:'Even',4:'Favorable',5:'Strong'};
 const SOL_STATUSES = ['Active','Tolled','Expired','Stipulated','N/A'];
-const CARRIERS = ['AIG','Zurich','Hartford','Travelers','Chubb','CNA','Liberty Mutual','Nationwide','Allstate','State Farm','Progressive','USAA','Berkshire Hathaway','Markel','Tokio Marine','QBE','Self-Insured'];
+const CARRIERS = ['AIG','Zurich','Hartford','Travelers','Chubb','CNA','Liberty Mutual','Nationwide','Allstate','State Farm','Progressive','USAA','Berkshire Hathaway','Markel','Beazley','Tokio Marine','QBE','Self-Insured'];
 const PLAINTIFF_FIRMS = ['Brennan & Tate','Holloway Greene LLP','Delacroix Ruiz & Vega','Pemberton Clark Law','Sinclair Ashworth Law','Castellano Reyes PA','Hartwood Donovan & Finch','Bishop Marlow LLP','Ardent Trial Group','Whitcomb Briar Law','Solstice Litigation Partners','Rosewood Advocates'];
 const LCODES = ['L110 - Fact Investigation','L120 - Analysis/Strategy','L130 - Experts','L140 - Document Mgmt','L160 - Settlement/ADR','L210 - Pleadings','L230 - Court Conferences','L240 - Dispositive Motions','L310 - Written Discovery','L320 - Document Production','L330 - Depositions','L340 - Expert Discovery','L350 - Discovery Motions','L410 - Fact Witnesses','L420 - Expert Witnesses','L450 - Trial/Hearing','L510 - Appeal','E101 - Copying','E106 - Online Research','E107 - Delivery','E110 - Travel','E111 - Meals','E112 - Court Fees','E113 - Subpoena Fees','E114 - Witness Fees','E119 - Experts','E121 - Mediators','E122 - Local Counsel'];
 const EVTYPES = ['Contract','Email','Electronic','Photo','Video','Medical Record','Financial Record','Expert Report','Deposition','Correspondence','Police Report','Surveillance','Other'];
@@ -1509,11 +1509,11 @@ async function loadUserContextAfterAuth(session){
 
 async function apiFetch(path, opts = {}) {
   if (!API_BASE) throw new Error('API_BASE not configured');
-  // Live Claude calls only run inside a signed-in account (they use your
+  // Live Sentinel calls only run inside a signed-in account (they use your
   // account's plan and the server's API key). On the public sample demo
   // there's no login, so say that plainly instead of surfacing a raw 401.
   if (!authToken && /^\/api\/(ai\/|extract-claim|recommend-attorney)/.test(path)) {
-    throw new Error('Live Claude analysis runs inside a signed-in account. This sample demo uses sample data only.');
+    throw new Error('Live Sentinel analysis runs inside a signed-in account. This sample demo uses sample data only.');
   }
   const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
   if (authToken) headers.Authorization = 'Bearer ' + authToken;
@@ -8383,7 +8383,7 @@ function reportPreviewModal(){
   h += '<div class="modal-b">';
   if (S.aiLoad) {
     h += '<div class="card" style="padding:18px;background:var(--surf2);border-left:3px solid var(--pri2);margin-bottom:14px;">';
-    h += '<div style="font-size:10px;color:var(--pri2);font-weight:700;text-transform:uppercase;letter-spacing:1.3px;margin-bottom:6px;">★ Claude is analyzing this report…</div></div>';
+    h += '<div style="font-size:10px;color:var(--pri2);font-weight:700;text-transform:uppercase;letter-spacing:1.3px;margin-bottom:6px;">★ Sentinel is analyzing this report…</div></div>';
   } else if (S.aiText || aiSummary) {
     h += '<div class="card" style="padding:18px;background:var(--surf2);border-left:3px solid var(--pri2);margin-bottom:14px;">';
     h += '<div style="font-size:10px;color:var(--pri2);font-weight:700;text-transform:uppercase;letter-spacing:1.3px;margin-bottom:9px;">★ AI Insights</div>';
@@ -9152,7 +9152,7 @@ function invoiceHubV(){
   /* AI Insights output */
   if (S.billingAI) {
     h += '<div class="card" style="padding:18px;background:var(--surf);border-left:3px solid var(--pri2);">';
-    h += '<div style="font-size:10px;color:var(--pri2);font-weight:700;text-transform:uppercase;letter-spacing:1.3px;margin-bottom:9px;">★ Claude Billing Review</div>';
+    h += '<div style="font-size:10px;color:var(--pri2);font-weight:700;text-transform:uppercase;letter-spacing:1.3px;margin-bottom:9px;">★ Sentinel Billing Review</div>';
     h += '<div style="font-size:12.5px;line-height:1.7;color:var(--ink);white-space:pre-wrap;">'+esc(S.billingAI)+'</div></div>';
   }
 
@@ -9420,7 +9420,7 @@ Active matters: ${CASES.filter(c=>c.status!=='Closed').length}
 
 TOP MATTERS BY REVENUE:
 ${[...CASES].sort((a,b)=>(b.billing.totalBilled||0)-(a.billing.totalBilled||0)).slice(0,5).map(c=>`- ${c.matterNo||c.id} ${c.client}: billed ${fM(c.billing.totalBilled||0)}, paid ${fM(c.billing.totalPaid||0)}, budget ${fM(c.billing.budget||0)}`).join('\n')}`;
-  const result = await callClaude(summary + '\n\nProvide a concise billing review: collection health, write-down risks, budget concerns, and 3-4 specific actions to improve realization. Reference specific matter numbers.', 'You are a senior law firm financial controller advising firm leadership.');
+  const result = await callSentinel(summary + '\n\nProvide a concise billing review: collection health, write-down risks, budget concerns, and 3-4 specific actions to improve realization. Reference specific matter numbers.', 'You are a senior law firm financial controller advising firm leadership.');
   st({billingAI:result});
 }
 
@@ -12218,7 +12218,7 @@ function premiumHubV(){
 }
 
 function tabAI(c){
-  let h = '<div class="section-band">AI Case Assistant — Powered by Claude</div>';
+  let h = '<div class="section-band">Sentinel Case Assistant</div>';
   // Gated the same way as the Sentinel modules, and for the same
   // reason: this is a free-text box with full access to the matter's
   // data, so an unentitled org could otherwise get an equivalent
@@ -12251,10 +12251,10 @@ function tabAI(c){
   h += '<button class="btn btn-pri" style="margin-bottom:14px;" onclick="runAI(window._aiP||\'\')">★ Run AI Analysis</button>';
 
   if (S.aiLoad) {
-    h += '<div class="card" style="padding:24px;text-align:center;color:var(--muted);"><div style="font-size:24px;margin-bottom:8px;">★</div><div>Claude is analyzing this matter…</div></div>';
+    h += '<div class="card" style="padding:24px;text-align:center;color:var(--muted);"><div style="font-size:24px;margin-bottom:8px;">★</div><div>Sentinel is analyzing this matter…</div></div>';
   } else if (S.aiText) {
     h += '<div class="card" style="padding:18px;background:var(--surf);border-left:3px solid var(--pri2);">';
-    h += '<div style="font-size:10px;color:var(--pri2);font-weight:700;text-transform:uppercase;letter-spacing:1.3px;margin-bottom:9px;">★ Claude Analysis</div>';
+    h += '<div style="font-size:10px;color:var(--pri2);font-weight:700;text-transform:uppercase;letter-spacing:1.3px;margin-bottom:9px;">★ Sentinel Analysis</div>';
     h += '<div style="font-size:12.5px;line-height:1.7;color:var(--ink);white-space:pre-wrap;">'+esc(S.aiText)+'</div></div>';
   }
   return h;
@@ -12298,7 +12298,7 @@ function aiIntakeStep1V() {
       '<div class="modal-b">' +
         '<div style="background:var(--surf2);border-radius:8px;padding:14px;margin-bottom:18px;">' +
           '<div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:6px;">📋 Step 1 of 3: Paste Claim Information</div>' +
-          '<div style="font-size:11px;color:var(--muted);">Paste any claim details — email, notes, incident summary, anything. Claude will extract the key info.</div>' +
+          '<div style="font-size:11px;color:var(--muted);">Paste any claim details — email, notes, incident summary, anything. Sentinel will extract the key info.</div>' +
         '</div>' +
         '<div class="fld"><label class="lbl">Claim Details</label>' +
           '<textarea id="aiClaimText" class="inp" placeholder="Paste claim email, incident summary, or any claim details here. Example: Claim CLM-2025-1234, Insured Acme Corp, Auto accident 1/15/2025..." style="min-height:200px;margin-bottom:12px;">' + esc(S.aiClaimText) + '</textarea>' +
@@ -12328,7 +12328,7 @@ function aiIntakeStep2V() {
       '</div>' +
       '<div class="modal-b">' +
         '<div style="background:var(--surf2);border-radius:8px;padding:14px;margin-bottom:18px;">' +
-          '<div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:6px;">' + (S.aiSampleFallback ? 'Live AI was unavailable, so these fields came from built-in sample extraction. Please check them. You can edit any field.' : 'Claude extracted the following. You can edit any fields.') + '</div>' +
+          '<div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:6px;">' + (S.aiSampleFallback ? 'Live AI was unavailable, so these fields came from built-in sample extraction. Please check them. You can edit any field.' : 'Sentinel extracted the following. You can edit any fields.') + '</div>' +
         '</div>' +
         '<div class="grid-2">' +
           '<div>' + inp('Client / Insured', d.client, 'S.aiExtracted.client=this.value') + '</div>' +
@@ -12627,11 +12627,11 @@ async function selectAttorney(tier) {
    public ?demo=1 link). Pulls the obvious fields out of pasted text with
    simple pattern matching so the Sentinel Intake flow can be shown end to
    end without exposing a live AI key to the public. A signed-in account
-   uses the real Claude extraction instead. */
+   uses the real Sentinel extraction instead. */
 function sampleExtractClaim(text) {
   const t = String(text || '');
   const flat = t.replace(/\s+/g, ' ').trim();
-  const carriers = ['Liberty Mutual','State Farm','Travelers','Zurich','Hartford','Chubb','AIG','Progressive','Allstate','Nationwide','GEICO','CNA','Farmers'];
+  const carriers = ['Liberty Mutual','State Farm','Travelers','Zurich','Hartford','Chubb','AIG','Progressive','Allstate','Nationwide','GEICO','CNA','Farmers','Beazley'];
   const carrier = carriers.find(c => new RegExp('\\b' + c + '\\b', 'i').test(flat)) || '';
   const claimNo = (flat.match(/\bCLM[-\s]?[\w-]{4,}/i) || flat.match(/claim\s*(?:no\.?|number|#)?\s*[:#]?\s*([A-Z0-9][\w-]{4,})/i) || [])[0] || '';
   let client = '';
@@ -12672,7 +12672,7 @@ function sampleExtractClaim(text) {
   };
 }
 
-/* Process claim text with Claude API */
+/* Process claim text with AI service */
 async function aiProcessClaimIntake() {
   const claimText = document.getElementById('aiClaimText')?.value || S.aiClaimText;
   
@@ -12685,7 +12685,7 @@ async function aiProcessClaimIntake() {
   
   try {
     // Calls the real backend (POST /api/extract-claim), which calls
-    // Claude with the securely-stored API key. Replaces a raw,
+    // Sentinel with the securely-stored API key. Replaces a raw,
     // unauthenticated fetch() left over from the pre-real-backend
     // prototype — it carried no login token, so it 401'd for every
     // real signed-in customer. apiFetch() attaches the Bearer token
@@ -12870,11 +12870,11 @@ function rptModal(){
   h += '<div class="modal" style="max-width:640px;">';
   h += '<div class="modal-h"><div class="serif" style="font-size:18px;font-weight:700;">★ Custom Report Builder</div><button class="x" onclick="st({showRpt:false})">×</button></div>';
   h += '<div class="modal-b">';
-  h += '<div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Describe the report you want and Claude will analyze your portfolio.</div>';
+  h += '<div style="font-size:11px;color:var(--muted);margin-bottom:14px;">Describe the report you want and Sentinel will analyze your portfolio.</div>';
   h += '<div>'+ta('Report description', S._rptQ||'', 'window._rptQ=this.value;S._rptQ=this.value', 'e.g. "Show me all cases where reserves are below likely exposure" or "Compare carrier performance for AOB matters"')+'</div>';
   if (S.rptResult) {
     h += '<div class="card" style="padding:18px;background:var(--surf);border-left:3px solid var(--pri2);margin-top:14px;">';
-    h += '<div style="font-size:10px;color:var(--pri2);font-weight:700;text-transform:uppercase;letter-spacing:1.3px;margin-bottom:9px;">★ Claude Generated Report</div>';
+    h += '<div style="font-size:10px;color:var(--pri2);font-weight:700;text-transform:uppercase;letter-spacing:1.3px;margin-bottom:9px;">★ Sentinel Report</div>';
     h += '<div style="font-size:12.5px;line-height:1.7;color:var(--ink);white-space:pre-wrap;">'+esc(S.rptResult)+'</div></div>';
   }
   h += '</div>';
@@ -13019,11 +13019,11 @@ function setAuthReqStatus(idx, status){
 }
 
 /* Deterministic (no AI call needed) claims handoff summary —
-   works even without network access, unlike the Claude-powered
+   works even without network access, unlike the Sentinel-powered
    tabs, since this is the document that actually has to go out
    the door to close the file. */
 /* Deterministic (no AI call needed) claims handoff summary —
-   works even without network access, unlike the Claude-powered
+   works even without network access, unlike the Sentinel-powered
    tabs, since this is the document that actually has to go out
    the door to close the file. Pure function of a case record so
    it can be reused by both the UI button and CaseAPI. */
@@ -13322,33 +13322,19 @@ function submitCase(){
   }
 }
 
-/* ── AI INTEGRATION (Claude API) ───────────────────────── */
-async function callClaude(prompt, sys){
-  try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        model:'claude-sonnet-4-20250514',
-        max_tokens:1200,
-        system: sys || 'You are an expert insurance defense litigation analyst. Provide concise, actionable insights formatted in clear paragraphs. Avoid bullet point overuse.',
-        messages:[{role:'user', content:prompt}]
-      })
-    });
-    const d = await r.json();
-    return d.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
-  } catch(e) {
-    return 'AI request failed: ' + e.message + '\n\nNote: This prototype calls the Anthropic API directly. In production, route via your secure backend.';
-  }
+/* ── AI INTEGRATION (AI service) ───────────────────────── */
+async function callSentinel(prompt, sys){
+  /* Analysis runs on the server. This browser-side stub never contacts any service. */
+  return 'Sentinel analysis is unavailable here. Open the matter in a signed-in account to run it.';
 }
 
 // Calls the real backend (POST /api/ai/case-assistant/:caseId), which
 // builds the matter context server-side from caseSummaryForAI and
-// calls Claude with the securely-stored API key. This replaces an
+// calls Sentinel with the securely-stored API key. This replaces an
 // older version that built a big context string client-side and
-// called https://api.anthropic.com directly from the browser with no
+// called https://the AI service directly from the browser with no
 // key attached — that call could never actually succeed (browsers
-// can't call Anthropic's API directly like that), which is why it
+// can't call the AI provider's API directly like that), which is why it
 // always failed with "Failed to fetch".
 async function runAI(prompt){
   const c = gc(); if (!c || !prompt) return;
@@ -13365,9 +13351,9 @@ async function runAI(prompt){
 }
 
 // Calls the real backend (POST /api/ai/report-summary), which builds
-// the system prompt server-side and calls Claude with the securely
-// -stored API key. Replaces an older version that called callClaude()
-// — the direct-to-api.anthropic.com browser call that always failed
+// the system prompt server-side and calls Sentinel with the securely
+// -stored API key. Replaces an older version that called callSentinel()
+// — the direct-to-the AI service browser call that always failed
 // with "Failed to fetch" — same bug the AI Assistant had, fixed the
 // same way here.
 async function genRptAI(rptId){
@@ -13392,7 +13378,7 @@ async function genRptAI(rptId){
 // Calls the real backend (POST /api/ai/portfolio-query), which pulls
 // the org's current cases fresh from the database server-side rather
 // than trusting this browser tab's local CASES array, then calls
-// Claude. Replaces an older version with the same direct-to-Anthropic
+// Sentinel. Replaces an older version with the same direct-to-the AI provider
 // bug as genRptAI above.
 async function runCustomReport(){
   if (S.myFeatures && !S.myFeatures.ai_assistant) { alert('The AI custom report builder isn\'t included on your current plan. Contact your account team to add it.'); return; }
