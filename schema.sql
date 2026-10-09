@@ -492,3 +492,23 @@ DO $$ BEGIN
     CREATE POLICY firm_submissions_tenant_isolation ON firm_submissions USING (org_id = current_setting('app.current_org_id', true)::uuid);
   END IF;
 END $$;
+
+
+-- ---------------------------------------------------------------
+-- Claim feed keys (added October 2026). One key per sending system, per customer.
+-- The server also creates this on startup if missing. Safe to run more than once.
+-- ---------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS integration_keys (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE, name TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'claim_feed',
+  active BOOLEAN NOT NULL DEFAULT true, created_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(), last_used_at TIMESTAMPTZ, last_summary JSONB
+);
+ALTER TABLE integration_keys ENABLE ROW LEVEL SECURITY;
+ALTER TABLE integration_keys FORCE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'integration_keys' AND policyname = 'integration_keys_tenant_isolation') THEN
+    CREATE POLICY integration_keys_tenant_isolation ON integration_keys USING (org_id = current_setting('app.current_org_id', true)::uuid);
+  END IF;
+END $$;
