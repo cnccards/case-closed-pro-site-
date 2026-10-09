@@ -4850,24 +4850,25 @@ function dcMatchList(c, stateOverride){
        results against this plaintiff firm 7, phase-budget accuracy 5, clean invoices 5, response to demands 5,
        workload 5, panel status 3, rate 2. Not licensed in the state cuts the score by 30%. A conflict zeroes it. */
     let s = 0; const why = [], warn = [], parts = [];
-    const add = (name, pts, max) => { s += pts; parts.push(name + ' ' + (Math.round(pts * 10) / 10) + '/' + max); };
+    const raw = [], unk = [];
+    const add = (name, pts, max, unknown) => { s += pts; parts.push(name + ' ' + (Math.round(pts * 10) / 10) + '/' + max); raw.push({name, pts, max}); if (unknown) unk.push(name); };
     const states = (r.states || []).map(x => String(x).toUpperCase());
     const mine = dcFirmCases(r, c.id);
     let unlicensed = false;
     if (want) { if (states.indexOf(want) >= 0) { add('Licensing', 20, 20); why.push('Licensed in ' + want); } else { add('Licensing', 0, 20); unlicensed = true; warn.push('Not listed as licensed in ' + want); } }
     else { add('Licensing', 10, 20); warn.push('No state on the matter, so licensing was not checked'); }
     { const hit = toks.length ? String(r.practiceAreas || '').split(/[;,]/).map(x => x.trim()).find(x => toks.some(t => x.toLowerCase().indexOf(t) >= 0)) : '';
-      if (hit) { add('Practice area', 10, 10); why.push('Handles ' + hit.toLowerCase()); } else add('Practice area', toks.length ? 0 : 5, 10); }
+      if (hit) { add('Practice area', 10, 10); why.push('Handles ' + hit.toLowerCase()); } else add('Practice area', toks.length ? 0 : 5, 10, !toks.length); }
     /* results on this matter type */
     { const same = mine.filter(x => String(x.type || '').toLowerCase() === type), rs = same.map(dcRatio).filter(v => v != null), av = dcAvg(rs);
       if (av != null) { add('Results on this matter type', Math.max(0, Math.min(15, 15 - Math.max(0, av - 0.8) * 50)), 15); if (av <= 1) why.push('Settled at ' + dcPct(av) + ' of reserve on ' + dcPlural(rs.length, (c.type || 'similar') + ' matter')); }
-      else { add('Results on this matter type', same.length ? 9 : 7, 15); if (same.length) why.push('Has handled ' + dcPlural(same.length, (c.type || 'similar') + ' matter') + ' for you'); } }
+      else { add('Results on this matter type', same.length ? 9 : 7, 15, true); if (same.length) why.push('Has handled ' + dcPlural(same.length, (c.type || 'similar') + ' matter') + ' for you'); } }
     const card = cards.find(x => x.firm === (r.firm || r.name));
-    if (card && card.score != null) { add('Scorecard', card.score * 0.08, 8); why.push('Scorecard ' + card.score); } else add('Scorecard', 4, 8);
+    if (card && card.score != null) { add('Scorecard', card.score * 0.08, 8); why.push('Scorecard ' + card.score); } else add('Scorecard', 4, 8, true);
     /* venue */
     if (venue) { const hits = mine.filter(x => { const v = dcNorm((x.court && (x.court.venueCounty || x.court.name)) || ''); return v && (v === venue || v.indexOf(venue) >= 0 || venue.indexOf(v) >= 0); });
       if (hits.length) { add('Venue', hits.length > 1 ? 8 : 6, 8); why.push('Has appeared in ' + ((c.court && (c.court.venueCounty || c.court.name)) || 'this venue') + ' on ' + dcPlural(hits.length, 'matter')); } else add('Venue', 2, 8); }
-    else add('Venue', 4, 8);
+    else add('Venue', 4, 8, true);
     /* same client and adjuster */
     { const cm = acct ? mine.filter(x => (caseAcct(x) || String(x.client || '')) === acct) : [], am = adj ? mine.filter(x => claimsPrimary(x) === adj) : [];
       let pts = (cm.length || am.length) ? 0 : 1.5; if (cm.length) { pts += 4; why.push('Has worked ' + dcPlural(cm.length, 'matter') + ' for ' + acct); } if (am.length) { pts += 3; const ar = dcAvg(am.map(dcRatio).filter(v => v != null)); why.push('Has worked ' + dcPlural(am.length, 'matter') + ' with ' + adj + (ar != null && ar <= 1 ? ' (settled at ' + dcPct(ar) + ' of reserve)' : '')); }
@@ -4876,28 +4877,28 @@ function dcMatchList(c, stateOverride){
     if (pfirm) { const vs = mine.filter(x => dcNorm(plaintiffFirmOf(x)) === pfirm), vr = dcAvg(vs.map(dcRatio).filter(v => v != null));
       if (vs.length) { add('Against this plaintiff firm', vr != null ? Math.max(0, Math.min(7, 7 - Math.max(0, vr - 0.8) * 20)) : 5, 7); why.push('Has faced ' + plaintiffFirmOf(c) + ' on ' + dcPlural(vs.length, 'matter') + (vr != null && vr <= 1 ? ', settled at ' + dcPct(vr) + ' of reserve' : '')); }
       else add('Against this plaintiff firm', 3, 7); }
-    else add('Against this plaintiff firm', 3.5, 7);
+    else add('Against this plaintiff firm', 3.5, 7, true);
     /* phase-budget accuracy */
     { let tot = 0, ok = 0; mine.forEach(x => { try { const b = cdBilledByPhase(x); CD_PHASES.forEach(([k]) => { const bud = cdBudgetOf(x, k); if (bud > 0 && b[k] > 0) { tot++; if (b[k] <= bud) ok++; } }); } catch (e) {} });
-      if (tot) { add('Phase budgets', 5 * ok / tot, 5); if (ok / tot >= 0.75) why.push('Stayed within phase budget on ' + ok + ' of ' + tot + ' phases'); } else add('Phase budgets', 2.5, 5); }
+      if (tot) { add('Phase budgets', 5 * ok / tot, 5); if (ok / tot >= 0.75) why.push('Stayed within phase budget on ' + ok + ' of ' + tot + ' phases'); } else add('Phase budgets', 2.5, 5, true); }
     /* bill review results */
     { let billed = 0, cut = 0; mine.forEach(x => ((x.billing && x.billing.reviews) || []).forEach(rv => { try { const t = revTotals(rv); billed += t.billed; cut += t.acc - t.restored; } catch (e) {} }));
-      if (billed > 0) { const rate = Math.max(0, cut / billed); add('Clean invoices', 5 * Math.max(0, Math.min(1, 1 - rate / 0.10)), 5); if (rate <= 0.04) why.push('Invoices needed only ' + (Math.round(rate * 1000) / 10) + '% in cuts'); else if (rate >= 0.10) warn.push('Past invoices were cut ' + (Math.round(rate * 1000) / 10) + '% on average'); } else add('Clean invoices', 2.5, 5); }
+      if (billed > 0) { const rate = Math.max(0, cut / billed); add('Clean invoices', 5 * Math.max(0, Math.min(1, 1 - rate / 0.10)), 5); if (rate <= 0.04) why.push('Invoices needed only ' + (Math.round(rate * 1000) / 10) + '% in cuts'); else if (rate >= 0.10) warn.push('Past invoices were cut ' + (Math.round(rate * 1000) / 10) + '% on average'); } else add('Clean invoices', 2.5, 5, true); }
     /* response to demands */
     { let n = 0, on = 0, days = []; mine.forEach(x => demandsOf(x).forEach(d => { if (d.status !== 'open' && d.respondedDate) { n++; if (d.respondedDate <= demandEff(d)) on++; const dd = d.receivedDate ? demandDaysBetween(d.receivedDate, d.respondedDate) : null; if (dd != null && dd >= 0) days.push(dd); } }));
-      if (n) { add('Demand response', 5 * on / n, 5); if (on / n >= 0.75) why.push('Answered ' + on + ' of ' + n + ' demands in time' + (days.length ? ' (about ' + Math.max(1, Math.round(dcAvg(days))) + ' days)' : '')); } else add('Demand response', 2.5, 5); }
+      if (n) { add('Demand response', 5 * on / n, 5); if (on / n >= 0.75) why.push('Answered ' + on + ' of ' + n + ' demands in time' + (days.length ? ' (about ' + Math.max(1, Math.round(dcAvg(days))) + ' days)' : '')); } else add('Demand response', 2.5, 5, true); }
     const n = load[r.id] || 0;
     add('Workload', Math.max(0, 5 - n), 5); if (n) why.push(n + ' open matter' + (n === 1 ? '' : 's') + ' with you now'); else why.push('No open matters with you now, so can start right away');
     if (r.status === 'Preferred') { add('Panel status', 3, 3); why.push('Preferred panel'); }
     else if (r.status === 'Pending') { add('Panel status', 0, 3); warn.push('Panel approval still pending'); }
     else add('Panel status', 2, 3);
-    if (r.hourlyRate) { add('Rate', Math.max(0, Math.min(2, 2 - (Number(r.hourlyRate) - 150) / 100)), 2); why.push('$' + Number(r.hourlyRate) + ' an hour'); } else add('Rate', 1, 2);
+    if (r.hourlyRate) { add('Rate', Math.max(0, Math.min(2, 2 - (Number(r.hourlyRate) - 150) / 100)), 2); why.push('$' + Number(r.hourlyRate) + ' an hour'); } else add('Rate', 1, 2, true);
     if (mine.length) why.push(dcPlural(mine.length, 'matter') + ' handled for you already');
     if (unlicensed) s = s * 0.7;
     const cf = dcConflict(r, c); let conflict = '';
     if (cf.hard) { conflict = cf.hard; s = 0; warn.unshift('Conflict: ' + cf.hard + ' Do not assign.'); }
     cf.soft.forEach(t => warn.push(t));
-    return {r, s, why, warn, conflict, score: Math.max(0, Math.min(100, Math.round(s))), parts};
+    return {r, s, why, warn, conflict, score: Math.max(0, Math.min(100, Math.round(s))), parts, raw, unk, unlicensed};
   }).sort((a, b) => b.s - a.s);
 }
 function dcScoreV(){
@@ -5886,7 +5887,7 @@ function assignCasesV() {
       h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><div style="font-weight:700;font-size:11px;color:'+bgColor+';">'+medal+'</div>'+(atty.score!=null?'<div style="font-weight:800;font-size:13px;color:'+bgColor+';" title="'+escAttr('Score out of 100. '+(atty.parts||[]).join(', '))+'">'+atty.score+'<span style="font-size:10px;font-weight:600;"> /100</span></div>':'')+'</div>';
       h += '<div style="font-weight:700;font-size:13px;color:var(--ink);">'+esc(atty.name)+'</div>';
       if (atty.firm) h += '<div style="font-size:11px;color:var(--muted);">'+esc(atty.firm)+'</div>';
-      h += '<div style="font-size:11.5px;color:var(--muted);line-height:1.5;margin-top:8px;">'+esc(matchWriteup(c, atty, idx))+'</div>';
+      h += '<div style="font-size:11.5px;color:var(--muted);line-height:1.55;margin-top:8px;white-space:pre-line;">'+esc(matchWriteup(c, atty, idx, top3))+'</div>';
       h += '<div style="font-size:11.5px;color:#166534;margin-top:8px;line-height:1.5;"><div style="font-weight:700;margin-bottom:2px;">Why</div>'+(atty.why||[]).map(w => '<div>• '+esc(w)+'</div>').join('')+'</div>';
       if ((atty.warn||[]).length) h += '<div style="font-size:11.5px;color:#B45309;margin:6px 0 10px;line-height:1.5;"><div style="font-weight:700;margin-bottom:2px;">Check</div>'+atty.warn.map(w => '<div'+(/^Conflict:/.test(w)?' style="color:#B91C1C;font-weight:700;"':'')+'>• '+esc(w)+'</div>').join('')+'</div>';
       h += '<div style="height:12px;"></div>';
@@ -5903,20 +5904,38 @@ function assignCasesV() {
 }
 
 /* Plain-English summary of why this attorney is the pick, built only from the facts shown beside it. */
-function matchWriteup(c, a, idx){
+function matchWriteup(c, a, idx, all){
   const lead = ['the top choice', 'a strong alternative', 'a solid option'][idx] || 'an option';
-  const facts = (a.why || []).slice(0, 2).map(w => String(w).replace(/^./, ch => ch.toLowerCase()));
-  let t = a.name + ' is ' + lead + ' for this ' + (c.type ? c.type.toLowerCase() + ' ' : '') + 'matter' + (c.value ? ' ($' + Math.round(Number(c.value)).toLocaleString() + ')' : '') + '.';
-  if (facts.length) t += ' Main reasons: ' + facts.join(' and ') + '.';
-  if ((a.warn || []).length) t += ' Before assigning, note: ' + String(a.warn[0]).replace(/\.$/, '').replace(/^./, ch => ch.toLowerCase()) + '.';
-  return t;
+  const low = w => String(w).replace(/^./, ch => ch.toLowerCase()), cap = w => String(w).replace(/^./, ch => ch.toUpperCase());
+  const stop = w => String(w).replace(/\.$/, '');
+  const where = (c.type ? c.type.toLowerCase() + ' ' : '') + 'matter' + (c.value ? ' ($' + Math.round(Number(c.value)).toLocaleString() + ' value)' : '');
+  const paras = [];
+  paras.push(a.name + (a.firm ? ' of ' + a.firm : '') + ' is ' + lead + ' for this ' + where + (a.score != null ? ', with a fit score of ' + a.score + ' out of 100' : '') + '.');
+  const facts = (a.whyAll || a.why || []).filter(w => !/^\$\d+ an hour$/.test(w) || (a.whyAll || a.why).length < 4).slice(0, 7);
+  if (facts.length) paras.push('Why this attorney fits: ' + facts.map(stop).map(low).join('; ') + '.');
+  /* compare with the neighbours so the reader sees what separates the options */
+  const top = all && all[0], next = all && all[1];
+  const raw = a.raw || [];
+  const diffVs = o => { if (!o || !o.raw) return null; let best = null; raw.forEach(p => { const q = o.raw.find(x => x.name === p.name); if (!q) return; const d = p.pts - q.pts; if (!best || Math.abs(d) > Math.abs(best.d)) best = {name:p.name, d, p, q}; }); return best; };
+  const nice = n => ({'Results on this matter type':'results on this type of matter','Practice area':'practice-area match','Licensing':'licensing in the state','Venue':'experience in this venue','Client and adjuster history':'history with this client and adjuster','Against this plaintiff firm':'record against this plaintiff firm','Phase budgets':'staying within phase budgets','Clean invoices':'clean invoices','Demand response':'response to demands','Workload':'available capacity','Panel status':'panel status','Scorecard':'scorecard','Rate':'hourly rate'}[n] || n.toLowerCase());
+  if (idx === 0 && next) { const gap = a.score - next.score, d = diffVs(next);
+    paras.push('It leads ' + next.name + ' by ' + gap + ' point' + (gap === 1 ? '' : 's') + (d && d.d > 0 ? ', mainly on ' + nice(d.name) : '') + (gap <= 3 ? '. The two are close, so the written reasons and the checks below matter more than the score.' : '.')); }
+  else if (idx > 0 && top) { const gap = top.score - a.score, d = diffVs(top);
+    paras.push('It trails ' + top.name + ' by ' + gap + ' point' + (gap === 1 ? '' : 's') + (d && d.d < 0 ? ', mainly on ' + nice(d.name) : '') + '.' + (d && d.d > 0 ? '' : '') );
+    let win = null; raw.forEach(p => { const q = top.raw && top.raw.find(x => x.name === p.name); if (q && p.pts - q.pts > 0.9 && (!win || p.pts - q.pts > win.v)) win = {n:p.name, v:p.pts - q.pts}; });
+    if (win) paras[paras.length - 1] += ' It does better than ' + top.name + ' on ' + nice(win.n) + ', so it is the better pick if that matters most on this file.'; }
+  const w = (a.warn || []).map(stop);
+  if (w.length) paras.push('Before assigning: ' + w.map(low).join('; ') + '.');
+  const u = (a.unk || []).filter(n => n !== 'Rate');
+  if (u.length) paras.push('Not enough history yet to judge ' + u.slice(0, 4).map(nice).join(', ') + (u.length > 4 ? ' and ' + (u.length - 4) + ' more' : '') + '. Those count as neutral, so the score will sharpen as more of this attorney\'s matters close.');
+  return paras.join('\n\n');
 }
 /* Sentinel Match options: the approved panel when one is loaded (licensing, practice area, panel status,
    scorecard, workload, rate), otherwise the in-house attorney list. Every option carries its reasons. */
 function matchOptionsFor(c){
   if (counselAll().length) {
     const l = dcMatchList(c).slice(0, 3);
-    if (l.length) return l.map(m => ({name:m.r.name, firm:m.r.firm || '', panelId:m.r.id, why:m.why.slice(0,5), warn:m.warn, score:m.score, parts:m.parts, conflict:m.conflict}));
+    if (l.length) return l.map(m => ({name:m.r.name, firm:m.r.firm || '', panelId:m.r.id, why:m.why.slice(0,5), whyAll:m.why, warn:m.warn, score:m.score, parts:m.parts, raw:m.raw, unk:m.unk, conflict:m.conflict}));
   }
   return getTop3Recommendations(c);
 }
@@ -13431,7 +13450,7 @@ function attorneySelectorModalV() {
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:20px;">'+ico+'</span><span style="font-size:13px;font-weight:700;color:'+col+';">'+label+'</span></div>'+
       (r.score != null ? '<div style="font-weight:800;font-size:16px;color:'+col+';" title="'+escAttr('Score out of 100. '+(r.parts||[]).join(', '))+'">'+r.score+'<span style="font-size:11px;font-weight:600;"> /100</span></div>' : '')+'</div>'+
       '<div style="font-size:14px;font-weight:700;color:var(--ink);">'+esc(r.attorney)+'</div>'+(r.firm?'<div style="font-size:12px;color:var(--muted);">'+esc(r.firm)+'</div>':'')+
-      '<div style="font-size:12px;color:var(--muted);line-height:1.5;margin-top:6px;">'+esc(r.reasoning || '')+'</div>'+
+      '<div style="font-size:12px;color:var(--muted);line-height:1.55;margin-top:6px;white-space:pre-line;">'+esc(r.reasoning || '')+'</div>'+
       '<div style="font-size:12px;color:#166534;margin-top:10px;line-height:1.5;"><div style="font-weight:700;margin-bottom:2px;">Why</div>'+(r.why||[]).map(w => '<div>• '+esc(w)+'</div>').join('')+'</div>'+
       ((r.warn||[]).length ? '<div style="font-size:12px;color:#B45309;margin-top:6px;line-height:1.5;"><div style="font-weight:700;margin-bottom:2px;">Check</div>'+r.warn.map(w => '<div'+(/^Conflict:/.test(w)?' style="color:#B91C1C;font-weight:700;"':'')+'>• '+esc(w)+'</div>').join('')+'</div>' : '')+
     '</div>';
@@ -13461,7 +13480,7 @@ async function aiAssignBestAttorney() {
     if (!opts.length) throw new Error('No attorneys are available to recommend. Upload your approved panel first.');
     const tiers = ['gold', 'silver', 'bronze'];
     const recs = {};
-    opts.forEach((o, i) => { recs[tiers[i]] = Object.assign({}, o, { attorney:o.name, reasoning:matchWriteup(c, o, i) }); });
+    opts.forEach((o, i) => { recs[tiers[i]] = Object.assign({}, o, { attorney:o.name, reasoning:matchWriteup(c, o, i, opts) }); });
     if (authToken) {
       try {
         const ai = await apiFetch('/api/recommend-attorney', { method:'POST', body: JSON.stringify({
