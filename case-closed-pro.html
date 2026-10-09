@@ -4828,7 +4828,19 @@ function dcMatchList(c, stateOverride){
     const card = cards.find(x => x.firm === (r.firm || r.name)); if (card && card.score != null) { s += card.score * 0.15; why.push('Scorecard '+card.score); }
     const n = load[r.id] || 0; if (n) { s -= Math.min(10, n * 2); why.push(n+' open matter'+(n===1?'':'s')+' with you now'); }
     if (r.hourlyRate) { s += Math.max(0, 5 - (Number(r.hourlyRate) - 150) / 25); why.push('$'+Number(r.hourlyRate)+' an hour'); }
-    return {r, s, why, warn};
+    /* extra true reasons, so the picture is 3-5 lines deep */
+    if (!n) why.push('No open matters with you now, so can start right away');
+    if (card) {
+      const gp = nm => (card.parts || []).find(p => p.name === nm);
+      const a = gp('Settled against reserve'), b = gp('Billing against budget'), d = gp('Demands answered in time');
+      if (a && a.pts >= a.max * 0.99) why.push('Settles at '+a.have+' on your files');
+      if (b && b.pts >= b.max * 0.99) why.push('Bills at '+b.have+' on your files');
+      if (d && d.pts >= d.max * 0.99) why.push('Answered '+d.have+' demands in time');
+      if (card.cases && card.cases.length) why.push(card.cases.length+' matter'+(card.cases.length===1?'':'s')+' handled for you already');
+    }
+    if (states.length > 1 && want && states.indexOf(want) >= 0) why.push('Covers '+states.length+' states');
+    if (why.length < 3) why.push('On your approved panel');
+    return {r, s, why, warn, score: Math.max(0, Math.min(100, Math.round((s + 85) / 185 * 100)))};
   }).sort((a, b) => b.s - a.s);
 }
 function dcScoreV(){
@@ -5814,9 +5826,10 @@ function assignCasesV() {
       const medal = ['🥇 GOLD', '🥈 SILVER', '🥉 BRONZE'][idx];
       const bgColor = idx === 0 ? 'var(--good)' : idx === 1 ? 'var(--pri2)' : 'var(--muted)';
       h += '<div style="background:'+bgColor+'15;border:1px solid '+bgColor+'33;padding:12px;border-radius:6px;display:flex;flex-direction:column;">';
-      h += '<div style="font-weight:700;font-size:11px;color:'+bgColor+';margin-bottom:6px;">'+medal+'</div>';
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><div style="font-weight:700;font-size:11px;color:'+bgColor+';">'+medal+'</div>'+(atty.score!=null?'<div style="font-weight:800;font-size:13px;color:'+bgColor+';" title="Sentinel Match score out of 100">'+atty.score+'<span style="font-size:10px;font-weight:600;"> /100</span></div>':'')+'</div>';
       h += '<div style="font-weight:700;font-size:13px;color:var(--ink);">'+esc(atty.name)+'</div>';
       if (atty.firm) h += '<div style="font-size:11px;color:var(--muted);">'+esc(atty.firm)+'</div>';
+      h += '<div style="font-size:11.5px;color:var(--muted);line-height:1.5;margin-top:8px;">'+esc(matchWriteup(c, atty, idx))+'</div>';
       h += '<div style="font-size:11.5px;color:#166534;margin-top:8px;line-height:1.5;"><div style="font-weight:700;margin-bottom:2px;">Why</div>'+(atty.why||[]).map(w => '<div>• '+esc(w)+'</div>').join('')+'</div>';
       if ((atty.warn||[]).length) h += '<div style="font-size:11.5px;color:#B45309;margin:6px 0 10px;line-height:1.5;"><div style="font-weight:700;margin-bottom:2px;">Check</div>'+atty.warn.map(w => '<div>• '+esc(w)+'</div>').join('')+'</div>';
       h += '<button onclick="assignFromMatch(\''+escAttr(c.id)+'\','+idx+')" class="btn" style="background:'+bgColor+';color:white;margin-top:auto;width:100%;font-size:11px;padding:6px;cursor:pointer;border:none;border-radius:3px;font-weight:600;">Assign</button>';
@@ -5831,12 +5844,21 @@ function assignCasesV() {
   return h;
 }
 
+/* Plain-English summary of why this attorney is the pick, built only from the facts shown beside it. */
+function matchWriteup(c, a, idx){
+  const lead = ['the top choice', 'a strong alternative', 'a solid option'][idx] || 'an option';
+  const facts = (a.why || []).slice(0, 2).map(w => String(w).replace(/^./, ch => ch.toLowerCase()));
+  let t = a.name + ' is ' + lead + ' for this ' + (c.type ? c.type.toLowerCase() + ' ' : '') + 'matter' + (c.value ? ' ($' + Math.round(Number(c.value)).toLocaleString() + ')' : '') + '.';
+  if (facts.length) t += ' Main reasons: ' + facts.join(' and ') + '.';
+  if ((a.warn || []).length) t += ' Before assigning, note: ' + String(a.warn[0]).replace(/^./, ch => ch.toLowerCase()) + '.';
+  return t;
+}
 /* Sentinel Match options: the approved panel when one is loaded (licensing, practice area, panel status,
    scorecard, workload, rate), otherwise the in-house attorney list. Every option carries its reasons. */
 function matchOptionsFor(c){
   if (counselAll().length) {
     const l = dcMatchList(c).slice(0, 3);
-    if (l.length) return l.map(m => ({name:m.r.name, firm:m.r.firm || '', panelId:m.r.id, why:m.why, warn:m.warn}));
+    if (l.length) return l.map(m => ({name:m.r.name, firm:m.r.firm || '', panelId:m.r.id, why:m.why.slice(0,5), warn:m.warn, score:m.score}));
   }
   return getTop3Recommendations(c);
 }
