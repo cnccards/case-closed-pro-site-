@@ -512,3 +512,26 @@ DO $$ BEGIN
     CREATE POLICY integration_keys_tenant_isolation ON integration_keys USING (org_id = current_setting('app.current_org_id', true)::uuid);
   END IF;
 END $$;
+
+
+-- ---------------------------------------------------------------
+-- Single sign-on (added October 2026). One OpenID Connect setup per customer.
+-- The server also creates this on startup if missing. Safe to run more than once.
+-- ---------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sso_config (
+  org_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+  issuer TEXT NOT NULL, client_id TEXT NOT NULL, client_secret_enc TEXT NOT NULL,
+  domains TEXT[] NOT NULL DEFAULT '{}', enabled BOOLEAN NOT NULL DEFAULT false,
+  auto_create BOOLEAN NOT NULL DEFAULT true, default_role TEXT NOT NULL DEFAULT 'member' CHECK (default_role IN ('member','admin')),
+  updated_by UUID, updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), last_login_at TIMESTAMPTZ
+);
+ALTER TABLE sso_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sso_config FORCE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sso_config' AND policyname = 'sso_config_tenant_isolation') THEN
+    CREATE POLICY sso_config_tenant_isolation ON sso_config USING (org_id = current_setting('app.current_org_id', true)::uuid);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sso_config' AND policyname = 'sso_config_lookup') THEN
+    CREATE POLICY sso_config_lookup ON sso_config FOR SELECT USING (current_setting('app.is_platform_admin', true) = 'true');
+  END IF;
+END $$;
