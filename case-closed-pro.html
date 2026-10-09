@@ -3352,6 +3352,16 @@ function getTop3Recommendations(caseObj, all) {
     if (openCases.length >= 8) warn.push('Heavy caseload (' + openCases.length + ' open matters), so response time may suffer');
     why.push(openCases.length + ' open matter' + (openCases.length === 1 ? '' : 's') + ' now' + (openCases.length < 4 ? ' (room for more)' : openCases.length >= 8 ? ' (heavy load)' : ''));
     if (attorneysCases.length > 0 && valueDiff < 500000) why.push('Usually handles matters of this size');
+    /* Fill to 3-4 true, positive reasons from the data (never invented). */
+    const nm = n => n === 1 ? '' : 's';
+    const bigV = attorneysCases.reduce((m, c) => Math.max(m, c.value || 0), 0);
+    const sameClient = caseObj.client ? attorneysCases.filter(c => c.client === caseObj.client).length : 0;
+    if (sameClient) why.push('Already works for ' + caseObj.client + ' (' + sameClient + ' matter' + nm(sameClient) + ')');
+    if (attorneysCases.length && (caseObj.value || 0) > 0 && bigV >= caseObj.value) why.push('Has handled a matter as large as this one ($' + Math.round(bigV).toLocaleString() + ')');
+    if (attorneysCases.length) why.push(attorneysCases.length + ' matter' + nm(attorneysCases.length) + ' handled in total');
+    if (openCases.length < 8 && why.length < 3) why.push('Not overloaded, so can start right away');
+    if (why.length < 3) why.push('Ranked ' + Math.min(100, Math.round(score)) + '/100 against the rest of your panel');
+    why.length = Math.min(why.length, 4);
     return {
       name, why, warn,
       experience: openCases.length + ' open · ' + similarCases.length + ' similar',
@@ -13330,11 +13340,10 @@ function attorneySelectorModalV() {
   if (!recs) return '';
   const _ex = S.aiExtracted || {};
   const _facts = {};
-  try { getTop3Recommendations({ type:_ex.type, value:_ex.value||0 }, true).forEach(a => { _facts[a.name] = a; }); } catch(e){}
+  try { getTop3Recommendations({ type:_ex.type, value:_ex.value||0, client:_ex.client }, true).forEach(a => { _facts[a.name] = a; }); } catch(e){}
   const factsV = name => {
     const f = _facts[name]; if (!f) return '';
-    return '<div style="font-size:12px;color:#166534;margin-top:10px;line-height:1.5;"><div style="font-weight:700;margin-bottom:2px;">Why</div>'+(f.why||[]).map(w => '<div>• '+esc(w)+'</div>').join('')+'</div>'+
-      ((f.warn||[]).length ? '<div style="font-size:12px;color:#B45309;margin-top:6px;line-height:1.5;"><div style="font-weight:700;margin-bottom:2px;">Check</div>'+f.warn.map(w => '<div>• '+esc(w)+'</div>').join('')+'</div>' : '');
+    return '<div style="font-size:12px;color:#166534;margin-top:10px;line-height:1.5;"><div style="font-weight:700;margin-bottom:2px;">Why</div>'+(f.why||[]).map(w => '<div>• '+esc(w)+'</div>').join('')+'</div>';
   };
   
   return '<div class="modal-bg" onclick="if(event.target===this)st({showAttorneySelector:false})">' +
