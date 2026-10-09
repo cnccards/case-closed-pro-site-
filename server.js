@@ -28,6 +28,7 @@ import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
 import zlib from 'zlib';
+import { encryptSecret, decryptSecret, normDomains, emailDomain, checkIssuer, discover, newLoginRequest, buildAuthUrl, exchangeCode, verifyIdToken, emailFromClaims } from './sso.js';
 import { FEED_MAX_ROWS, rowsFromBody, normalizeRow, applyFields } from './claim-feed.js';
 
 const { Pool } = pkg;
@@ -1058,6 +1059,119 @@ app.post('/api/feed/claims', express.text({ type: ['text/csv', 'text/plain', 'ap
   } finally { f.client.release(); }
 });
 
+
+// ---------------------------------------------------------------
+// SINGLE SIGN-ON (OpenID Connect). An owner or admin enters their identity provider's address,
+// client ID and client secret in API & Import, Single sign-on. People then click "Sign in with
+// company SSO", type their work email, and the provider signs them in (including any MFA it
+// requires). Protocol steps live in sso.js. Rules that matter:
+//  * The provider must be a public https address, and its signed ID token is verified (RS256,
+//    audience, issuer, one-time nonce, PKCE) before anyone is signed in.
+//  * The email domain must be one the customer listed, and each domain belongs to one customer.
+//  * A person is only ever signed in to an account in the SAME customer. An email that belongs
+//    to another customer, or to a platform administrator, is refused.
+//  * The browser never receives a session token in a URL: it gets a 60-second one-time code and
+//    swaps it for the session.
+// ---------------------------------------------------------------
+let ssoTableReady = false;
+async function ensureSsoTable() {
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS sso_config (
+      org_id UUID PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+      issuer TEXT NOT NULL, client_id TEXT NOT NULL, client_secret_enc TEXT NOT NULL,
+      domains TEXT[] NOT NULL DEFAULT '{}', enabled BOOLEAN NOT NULL DEFAULT false,
+      auto_create BOOLEAN NOT NULL DEFAULT true, default_role TEXT NOT NULL DEFAULT 'member' CHECK (default_role IN ('member','admin')),
+      updated_by UUID, updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), last_login_at TIMESTAMPTZ)`);
+    await pool.query('ALTER TABLE sso_config ENABLE ROW LEVEL SECURITY');
+    await pool.query('ALTER TABLE sso_config FORCE ROW LEVEL SECURITY');
+    await pool.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sso_config' AND policyname = 'sso_config_tenant_isolation') THEN
+        CREATE POLICY sso_config_tenant_isolation ON sso_config USING (org_id = current_setting('app.current_org_id', true)::uuid);
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sso_config' AND policyname = 'sso_config_lookup') THEN
+        CREATE POLICY sso_config_lookup ON sso_config FOR SELECT USING (current_setting('app.is_platform_admin', true) = 'true');
+      END IF; END $$`);
+    ssoTableReady = true;
+  } catch (e) { console.error('SSO table could not be created automatically (run the sso_config block in schema.sql):', e.message); }
+}
+setTimeout(ensureSsoTable, 5000);
+const SSO_SECRET = EFFECTIVE_JWT_SECRET;
+const ssoApiBase = req => (process.env.API_PUBLIC_URL || ((/^(localhost|127\.)/.test(req.get('host') || '') ? 'http' : 'https') + '://' + req.get('host'))).replace(/\/$/, '');
+const ssoAppUrl = () => (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '') + '/case-closed-pro.html';
+const ssoBack = (res, msg) => res.redirect(302, ssoAppUrl() + '#sso_error=' + encodeURIComponent(String(msg).slice(0, 200)));
+const ssoUsed = new Map();
+// Reads one config row across customers (sign-in happens before we know the customer). Read-only, by domain or by org.
+async function ssoLookup(where, params) {
+  if (!ssoTableReady) await ensureSsoTable();
+  const c = await pool.connect();
+  try {
+    await c.query('BEGIN'); await c.query(`SET LOCAL app.is_platform_admin = 'true'`);
+    const r = await c.query(`SELECT * FROM sso_config WHERE ${where}`, params);
+    await c.query('COMMIT'); return r.rows;
+  } catch (e) { try { await c.query('ROLLBACK'); } catch (x) {} throw e; } finally { c.release(); }
+}
+app.get('/api/sso/start', async (req, res) => {
+  try {
+    if (!feedRate('sso:' + req.ip, 60)) return ssoBack(res, 'Too many sign-in attempts. Try again later.');
+    const email = String(req.query.email || '').trim().toLowerCase();
+    if (!isValidEmail(email)) return ssoBack(res, 'Enter your work email address.');
+    const cfg = (await ssoLookup('enabled = true AND $1 = ANY(domains)', [emailDomain(email)]))[0];
+    if (!cfg) return ssoBack(res, 'Single sign-on is not set up for that email address. Sign in with your password, or ask your administrator.');
+    const doc = await discover(cfg.issuer);
+    const lr = newLoginRequest();
+    const cookie = jwt.sign({ o: cfg.org_id, s: lr.state, n: lr.nonce, v: lr.verifier, e: email, p: 'sso' }, SSO_SECRET, { expiresIn: '10m' });
+    res.setHeader('Set-Cookie', `ccs_sso=${cookie}; Max-Age=600; Path=/api/sso; HttpOnly; Secure; SameSite=Lax`);
+    res.redirect(302, buildAuthUrl(doc, { clientId: cfg.client_id, redirectUri: ssoApiBase(req) + '/api/sso/callback', state: lr.state, nonce: lr.nonce, challenge: lr.challenge, loginHint: email }));
+  } catch (e) { console.error('sso start failed:', e.message); ssoBack(res, 'Single sign-on could not be started. Try again or sign in with your password.'); }
+});
+app.get('/api/sso/callback', async (req, res) => {
+  try {
+    if (!feedRate('ssocb:' + req.ip, 60)) return ssoBack(res, 'Too many sign-in attempts. Try again later.');
+    if (req.query.error) return ssoBack(res, 'The identity provider did not sign you in (' + String(req.query.error).slice(0, 60) + ').');
+    const ck = /(?:^|;\s*)ccs_sso=([^;]+)/.exec(req.headers.cookie || '');
+    if (!ck) return ssoBack(res, 'The sign-in expired or was opened in a different browser. Start again.');
+    let st; try { st = jwt.verify(ck[1], SSO_SECRET); } catch (e) { return ssoBack(res, 'The sign-in expired. Start again.'); }
+    res.setHeader('Set-Cookie', 'ccs_sso=; Max-Age=0; Path=/api/sso; HttpOnly; Secure; SameSite=Lax');
+    if (st.p !== 'sso' || !req.query.code || !req.query.state || req.query.state !== st.s) return ssoBack(res, 'The sign-in did not match the request that started it. Start again.');
+    const cfg = (await ssoLookup('org_id = $1 AND enabled = true', [st.o]))[0];
+    if (!cfg) return ssoBack(res, 'Single sign-on is turned off for this account.');
+    const doc = await discover(cfg.issuer);
+    const tok = await exchangeCode(doc, { clientId: cfg.client_id, clientSecret: decryptSecret(cfg.client_secret_enc, SSO_SECRET), redirectUri: ssoApiBase(req) + '/api/sso/callback', code: String(req.query.code), verifier: st.v });
+    const claims = await verifyIdToken(tok.id_token, doc, { issuer: cfg.issuer, clientId: cfg.client_id, nonce: st.n }, jwt);
+    const email = emailFromClaims(claims);
+    if (!cfg.domains.includes(emailDomain(email))) return ssoBack(res, 'That email address is not on the list of domains allowed for this account.');
+    if (isPlatformAdminEmail(email)) return ssoBack(res, 'This account cannot sign in with single sign-on.');
+    let user = (await q('SELECT * FROM users WHERE email = $1', [email])).rows[0];
+    if (user && (user.org_id !== cfg.org_id)) return ssoBack(res, 'That email address already belongs to a different account. Contact support.');
+    if (user && user.is_active === false) return ssoBack(res, 'This account has been deactivated. Contact your administrator.');
+    if (!user) {
+      if (!cfg.auto_create) return ssoBack(res, 'No account exists for ' + email + '. Ask your administrator to invite you.');
+      const org = (await q('SELECT persona, access_status FROM organizations WHERE id = $1', [cfg.org_id])).rows[0];
+      if (!org || org.access_status === 'suspended') return ssoBack(res, 'Access to this organization has been suspended.');
+      const nm = String(claims.name || email.split('@')[0]).trim().slice(0, 120);
+      const ph = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), BCRYPT_ROUNDS);
+      user = (await q(`INSERT INTO users (org_id, email, password_hash, name, persona, role) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`, [cfg.org_id, email, ph, nm, org.persona, cfg.default_role])).rows[0];
+      await audit(cfg.org_id, user.id, 'auth.sso_user_created', 'user', user.id, { email }, req.ip);
+    }
+    await q('UPDATE users SET last_login_at = now() WHERE id = $1', [user.id]);
+    await audit(cfg.org_id, user.id, 'auth.sso_login', 'user', user.id, null, req.ip);
+    const code = jwt.sign({ u: user.id, p: 'sso-handoff', j: crypto.randomBytes(8).toString('hex') }, SSO_SECRET, { expiresIn: '60s' });
+    res.redirect(302, ssoAppUrl() + '#sso=' + code);
+  } catch (e) { console.error('sso callback failed:', e.message); ssoBack(res, 'Single sign-on failed: ' + String(e.message).slice(0, 140)); }
+});
+app.post('/api/sso/exchange', async (req, res) => {
+  try {
+    if (!feedRate('ssoex:' + req.ip, 60)) return res.status(429).json({ error: 'Too many attempts.' });
+    let p; try { p = jwt.verify(String((req.body && req.body.code) || ''), SSO_SECRET); } catch (e) { return res.status(401).json({ error: 'This sign-in link expired. Start again.' }); }
+    if (p.p !== 'sso-handoff' || ssoUsed.has(p.j)) return res.status(401).json({ error: 'This sign-in link was already used. Start again.' });
+    ssoUsed.set(p.j, Date.now()); for (const [k, t] of ssoUsed) if (Date.now() - t > 120000) ssoUsed.delete(k);
+    const user = (await q('SELECT * FROM users WHERE id = $1 AND is_active = true', [p.u])).rows[0];
+    if (!user) return res.status(401).json({ error: 'Account not found.' });
+    const tokenStr = jwt.sign({ sub: user.id, orgId: user.org_id, email: user.email, persona: user.persona, role: user.role, platformAdmin: false, sso: true }, EFFECTIVE_JWT_SECRET, { expiresIn: JWT_EXPIRY });
+    res.json({ token: tokenStr, user: Object.assign(publicUser(user), { platformAdmin: false }) });
+  } catch (e) { console.error('sso exchange failed:', e.message); res.status(500).json({ error: 'Could not finish signing in.' }); }
+});
+
 // ---------------------------------------------------------------
 // Auth gate for everything else. Two ways in:
 //  1. User JWT (normal path) — req.user + req.orgId set from token.
@@ -1106,7 +1220,7 @@ app.use('/api', async (req, res, next) => {
           return res.status(401).json({ error: 'Unauthorized — this account has been deactivated' });
         }
         req.user.role = live.rows[0].role;
-        if (live.rows[0].require_2fa && !live.rows[0].totp_enabled && !payload.impersonation
+        if (live.rows[0].require_2fa && !live.rows[0].totp_enabled && !payload.impersonation && !payload.sso
             && !req.path.startsWith('/auth/') && req.path !== '/team/accept-invite') {
           return res.status(403).json({ error: 'Your organization requires two-factor authentication. Turn it on to continue.', code: '2FA_REQUIRED' });
         }
@@ -3163,6 +3277,46 @@ app.post('/api/feed/upload', requireOrgRole('admin'), express.text({ type: ['tex
     console.error('claim upload failed:', e.message);
     res.status(500).json({ error: 'The file could not be processed. Nothing was saved.' });
   }
+});
+
+
+// Single sign-on setup (signed-in customer admins). The client secret is stored encrypted and never sent back.
+app.get('/api/sso-config', requireOrgRole('admin'), async (req, res) => {
+  if (!ssoTableReady) await ensureSsoTable();
+  const r = await req.db.query('SELECT issuer, client_id, domains, enabled, auto_create, default_role, updated_at, last_login_at, (client_secret_enc IS NOT NULL) AS has_secret FROM sso_config WHERE org_id = $1', [req.orgId]);
+  res.json({ config: r.rows[0] || null, redirectUri: ssoApiBase(req) + '/api/sso/callback' });
+});
+app.put('/api/sso-config', requireOrgRole('admin'), async (req, res) => {
+  if (!ssoTableReady) await ensureSsoTable();
+  try {
+    const b = req.body || {};
+    const issuer = checkIssuer(b.issuer), clientId = String(b.clientId || '').trim().slice(0, 300), domains = normDomains(b.domains);
+    if (!clientId) return res.status(400).json({ error: 'Enter the client ID from your identity provider.' });
+    if (!domains.length) return res.status(400).json({ error: 'Enter at least one email domain, for example yourcompany.com.' });
+    const prev = (await req.db.query('SELECT client_secret_enc FROM sso_config WHERE org_id = $1', [req.orgId])).rows[0];
+    const secretIn = String(b.clientSecret || '').trim();
+    if (!secretIn && !prev) return res.status(400).json({ error: 'Enter the client secret from your identity provider.' });
+    const enabled = !!b.enabled, autoCreate = b.autoCreate !== false, role = b.defaultRole === 'admin' ? 'admin' : 'member';
+    // A domain can belong to one customer only.
+    const taken = (await ssoLookup('org_id <> $1 AND domains && $2::text[]', [req.orgId, domains]));
+    if (taken.length) return res.status(409).json({ error: 'One of those domains is already used by another customer. Contact support if it is yours.' });
+    if (enabled) {
+      try { await discover(issuer); } catch (e) { return res.status(400).json({ error: 'Could not reach that identity provider: ' + e.message }); }
+    }
+    const enc = secretIn ? encryptSecret(secretIn, SSO_SECRET) : prev.client_secret_enc;
+    await req.db.query(`INSERT INTO sso_config (org_id, issuer, client_id, client_secret_enc, domains, enabled, auto_create, default_role, updated_by, updated_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
+      ON CONFLICT (org_id) DO UPDATE SET issuer = EXCLUDED.issuer, client_id = EXCLUDED.client_id, client_secret_enc = EXCLUDED.client_secret_enc, domains = EXCLUDED.domains, enabled = EXCLUDED.enabled, auto_create = EXCLUDED.auto_create, default_role = EXCLUDED.default_role, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+      [req.orgId, issuer, clientId, enc, domains, enabled, autoCreate, role, req.user?.sub || null]);
+    await audit(req.orgId, req.user?.sub, 'sso.configure', 'organization', req.orgId, { issuer, domains, enabled }, req.ip);
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+app.delete('/api/sso-config', requireOrgRole('admin'), async (req, res) => {
+  if (!ssoTableReady) await ensureSsoTable();
+  await req.db.query('DELETE FROM sso_config WHERE org_id = $1', [req.orgId]);
+  await audit(req.orgId, req.user?.sub, 'sso.remove', 'organization', req.orgId, {}, req.ip);
+  res.json({ ok: true });
 });
 
 // Claim feed keys (signed-in customer admins).
