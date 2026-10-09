@@ -4363,7 +4363,7 @@ function demandWatchV(){
 
 
 /* ═══════════════════════════════════════════════════════════
-   BROADSPIRE BUILD: accounts, claim facts, letter reading, Today desk, executive view,
+   CLAIMS DESK BUILD: accounts, claim facts, letter reading, Today desk, executive view,
    plaintiff-counsel history, defense-counsel scorecards and matching.
    ═══════════════════════════════════════════════════════════ */
 function stateNameFrom(v){
@@ -10168,10 +10168,10 @@ async function loadFeedKeys(force){
   try { const r = await apiFetch('/api/integration-keys'); st({feedKeys:r.keys || [], feedLoading:false, feedErr:''}); }
   catch (e) { st({feedKeys:[], feedLoading:false, feedErr:e.message}); }
 }
-function feedDemoKeys(){ if (!S.feedDemo) S.feedDemo = [{id:'demo-1', name:'Broadspire claims system (sample)', active:true, created_at:td(), last_used_at:null, last_summary:null}]; return S.feedDemo; }
+function feedDemoKeys(){ if (!S.feedDemo) S.feedDemo = [{id:'demo-1', name:'Claims system (sample)', active:true, created_at:td(), last_used_at:null, last_summary:null}]; return S.feedDemo; }
 async function feedCreateKey(){
   const name = ((document.getElementById('fkName') || {}).value || '').trim();
-  if (!name) { alert('Name the system that will send claims, for example: Broadspire claims system.'); return; }
+  if (!name) { alert('Name the system that will send claims, for example: Claims system.'); return; }
   if (feedIsDemo()) { feedDemoKeys().unshift({id:'demo-'+Date.now(), name:name, active:true, created_at:td()}); S.feedNewKey = 'SAMPLE-KEY-NOT-REAL'; S.feedNewName = name; render(); return; }
   try { const r = await apiFetch('/api/integration-keys', {method:'POST', body:JSON.stringify({name})}); S.feedNewKey = r.token; S.feedNewName = name; S.feedKeys = null; await loadFeedKeys(true); render(); } catch (e) { alert(e.message); }
 }
@@ -10182,7 +10182,7 @@ async function feedRevokeKey(id){
 }
 function feedCopy(id){ const el = document.getElementById(id); if (!el) return; const t = el.textContent; try { navigator.clipboard.writeText(t); } catch (e) { const r = document.createRange(); r.selectNode(el); const g = window.getSelection(); g.removeAllRanges(); g.addRange(r); } }
 function feedSampleCsv(){
-  const csv = 'claimNo,client,state,adjuster,fnolDate,claimantAttorneyDate,defenseAssignedDate,filedDate,reserveAmount\nBSP-2026-004417,Acme Logistics LLC,TX,Dana Whitfield,2026-02-16,2026-03-10,2026-04-02,2026-04-20,125000\nBSP-2026-004502,Beta Foods Inc,FL,Luis Ortega,03/01/2026,,,,60000\n';
+  const csv = 'claimNo,client,state,adjuster,fnolDate,claimantAttorneyDate,defenseAssignedDate,filedDate,reserveAmount\nCLM-2026-004417,Acme Logistics LLC,TX,Dana Whitfield,2026-02-16,2026-03-10,2026-04-02,2026-04-20,125000\nCLM-2026-004502,Beta Foods Inc,FL,Luis Ortega,03/01/2026,,,,60000\n';
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'})); a.download = 'claims-sample.csv'; a.click();
 }
 function feedPick(inp){
@@ -10228,7 +10228,7 @@ function feedTabV(){
   if (S.feedErr) h += '<div class="alert-bad" style="margin-bottom:10px;">'+esc(S.feedErr)+'</div>';
   h += feedUploadV();
   if (S.feedNewKey) h += '<div class="card" style="padding:12px 14px;margin-bottom:12px;border-left:4px solid #15803D;"><div style="font-weight:800;margin-bottom:4px;">Key for '+esc(S.feedNewName || '')+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Copy it now and give it to the person who sets up the feed. For safety it cannot be shown again. If it is lost, turn it off and make a new one.'+(demo ? ' (This is a sample screen, so the key below is not real.)' : '')+'</div><div id="fkNew" style="'+mono+'">'+esc(S.feedNewKey)+'</div><div style="margin-top:8px;display:flex;gap:8px;"><button class="btn btn-out" onclick="feedCopy(\'fkNew\')">Copy key</button><button class="btn btn-out" onclick="S.feedNewKey=\'\';render()">Done</button></div></div>';
-  if (canMake) h += '<div class="card" style="padding:12px 14px;margin-bottom:12px;"><div style="font-weight:800;font-size:13px;margin-bottom:2px;">Automatic feed: make a key</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px;">For your IT team. A key lets your claims system send files on its own, without anyone uploading them.</div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;"><div><label class="lbl">System that will send claims</label><input id="fkName" class="inp" style="width:300px;" placeholder="Broadspire claims system"></div><button class="btn btn-pri" onclick="feedCreateKey()">Make key</button></div></div>';
+  if (canMake) h += '<div class="card" style="padding:12px 14px;margin-bottom:12px;"><div style="font-weight:800;font-size:13px;margin-bottom:2px;">Automatic feed: make a key</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px;">For your IT team. A key lets your claims system send files on its own, without anyone uploading them.</div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;"><div><label class="lbl">System that will send claims</label><input id="fkName" class="inp" style="width:300px;" placeholder="Claims system"></div><button class="btn btn-pri" onclick="feedCreateKey()">Make key</button></div></div>';
   else h += '<div style="font-size:12px;color:var(--dim);margin-bottom:10px;">An owner or admin makes the keys.</div>';
   h += '<div class="serif" style="font-size:20px;font-weight:700;margin-bottom:6px;">Keys</div>';
   if (S.feedLoading && !keys.length) h += '<div style="font-size:12.5px;color:var(--muted);">Loading…</div>';
@@ -10238,7 +10238,7 @@ function feedTabV(){
   h += '<div class="card" style="padding:14px 16px;margin-bottom:12px;"><div style="font-size:12.5px;color:var(--muted);line-height:1.7;margin-bottom:8px;max-width:820px;">Send a file of claims with the key in the header. Try it with <b>dryRun=1</b> first: it checks every row and tells you what would happen without saving anything. Only <b>claimNo</b> is required on every row, and <b>client</b> is also needed the first time a claim is sent. The one-page field map lists every column, with examples (ask us for the Claim Feed Field Map PDF).</div>'
     + '<div style="'+mono+'">curl -X POST "'+esc(base)+'/api/feed/claims?dryRun=1" \\\n  -H "Authorization: Bearer YOUR_KEY" \\\n  -H "Content-Type: text/csv" \\\n  --data-binary @claims.csv</div>'
     + '<div style="font-size:12px;color:var(--muted);margin:10px 0 6px;">Or as JSON (Content-Type: application/json):</div>'
-    + '<div style="'+mono+'">{ "claims": [ {\n  "claimNo": "BSP-2026-004417", "client": "Acme Logistics LLC",\n  "state": "TX", "adjuster": "Dana Whitfield",\n  "fnolDate": "2026-02-16", "claimantAttorneyDate": "2026-03-10",\n  "defenseAssignedDate": "2026-04-02", "reserveAmount": 125000\n} ] }</div>'
+    + '<div style="'+mono+'">{ "claims": [ {\n  "claimNo": "CLM-2026-004417", "client": "Acme Logistics LLC",\n  "state": "TX", "adjuster": "Dana Whitfield",\n  "fnolDate": "2026-02-16", "claimantAttorneyDate": "2026-03-10",\n  "defenseAssignedDate": "2026-04-02", "reserveAmount": 125000\n} ] }</div>'
     + '<div style="font-size:12px;color:var(--dim);margin-top:10px;line-height:1.6;">Up to 2,000 claims per request and 120 requests per hour per key. To check a key: GET '+esc(base)+'/api/feed/ping with the same header. Imported claims show up as new matters or updates, and the lifecycle reports read the dates automatically.</div></div>';
   return h;
 }
