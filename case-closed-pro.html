@@ -2675,7 +2675,7 @@ function render(){
   else if (S.role === 'execvs') html += execVsV();
   else if (S.role === 'plaintiffs') html += cdeskV('plaintiff');
   else if (S.role === 'dcscore') html += cdeskV('defense');
-  else if (S.role === 'review') html += revV();
+  else if (S.role === 'review') html += billingHubV('review');
   else if (S.role === 'cdesk') html += cdeskV();
   else if (S.role === 'comp') html += litigationRedirect();
   else if (S.role === 'counsel') html += apiHubV('counsel');
@@ -2686,8 +2686,8 @@ function render(){
   else if (S.role === 'attorney') html += myCasesV();
   else if (S.role === 'carrier') html += carrierPortalV();
   else if (S.role === 'activity') html += activityHubV();
-  else if (S.role === 'billing') html += invoiceHubV();
-  else if (S.role === 'payables') html += payablesHubV();
+  else if (S.role === 'billing') html += billingHubV();
+  else if (S.role === 'payables') html += billingHubV('payables');
   else if (S.role === 'claims') html += claimsDeskV();
   else if (S.role === 'api') html += apiHubV();
   else if (S.role === 'admin') html += adminPanelV();
@@ -2809,10 +2809,8 @@ function hdr(){
       ['demands','🛡 Verdict Shield'],
       ['claims','Claims Desk'],
       ['activity','Activity Hub'],
-      ['billing','Invoice Hub'],
-      ['review','🔍 Sentinel Review'],
-      ['cdesk','Counsel'],
-      ['payables','Payables']
+      ['billing','Billing'],
+      ['cdesk','Counsel']
     ]},
     { label:'Insights', items:[
       ['executive','Executive'],
@@ -2834,7 +2832,7 @@ function hdr(){
   groups.push({ label:'', items:[['roi','ROI']] });
 
   const btn = ([r, l]) =>
-    '<button onclick="'+(r==='admin' ? 'goToAdmin()' : r==='scorecard' ? "st({role:'scorecard',caseId:null,scorecardDetail:null,showWelcome:false})" : "st({role:'"+r+"',caseId:null,showWelcome:false})")+'" class="role-tab'+(S.role===r?' on':'')+(r==='admin'?' admin-tab':'')+(r==='premium'?' premium-tab':'')+'">'+l+(r==='litigation'?attnBadgeV():'')+(r==='demands'?demandBadgeV():'')+'</button>';
+    '<button onclick="'+(r==='admin' ? 'goToAdmin()' : r==='scorecard' ? "st({role:'scorecard',caseId:null,scorecardDetail:null,showWelcome:false})" : "st({role:'"+r+"',caseId:null,showWelcome:false})")+'" class="role-tab'+((S.role===r||(r==='billing'&&(S.role==='review'||S.role==='payables')))?' on':'')+(r==='admin'?' admin-tab':'')+(r==='premium'?' premium-tab':'')+'">'+l+(r==='litigation'?attnBadgeV():'')+(r==='demands'?demandBadgeV():'')+'</button>';
 
   const roleBtns = groups.map((g,gi) =>
     (gi>0 ? '<div class="nav-divider"></div>' : '') +
@@ -3347,8 +3345,14 @@ function getTop3Recommendations(caseObj) {
     if (attorneysCases.length > 0 && valueDiff < 500000) score += 10;
     else if (attorneysCases.length > 0 && valueDiff < 1000000) score += 5;
 
+    const why = [], warn = [];
+    if (similarCases.length) why.push('Has handled ' + similarCases.length + ' ' + (caseObj.type || 'similar') + ' matter' + (similarCases.length === 1 ? '' : 's'));
+    else warn.push('No ' + (caseObj.type || 'similar') + ' matters on record');
+    if (closedCases.length) why.push('Track record on ' + closedCases.length + ' closed matter' + (closedCases.length === 1 ? '' : 's')); else warn.push('No closed matters yet, so no track record');
+    why.push(openCases.length + ' open matter' + (openCases.length === 1 ? '' : 's') + ' now' + (openCases.length < 4 ? ' (room for more)' : openCases.length >= 8 ? ' (heavy load)' : ''));
+    if (attorneysCases.length > 0 && valueDiff < 500000) why.push('Usually handles matters of this size');
     return {
-      name,
+      name, why, warn,
       experience: openCases.length + ' open · ' + similarCases.length + ' similar',
       score: Math.min(100, Math.round(score))
     };
@@ -5235,6 +5239,56 @@ function revListV(all){
     h += '<tr style="cursor:pointer;" onclick="st({revOpen:{cid:\'' + escAttr(x.c.id) + '\',rid:\'' + escAttr(x.rv.id) + '\'},revMsg:\'\',revLetterText:\'\'})"><td style="font-weight:700;">' + esc(x.rv.invoiceNo) + '<div style="font-size:10.5px;color:var(--dim);font-weight:400;">' + esc(x.rv.invDate) + '</div></td><td>' + esc(x.c.client) + '<div style="font-size:10.5px;color:var(--dim);">' + esc(x.c.matterNo || x.c.id) + '</div></td><td>' + esc(x.rv.firm) + '</td><td style="text-align:right;">' + fM(Math.round(t.billed)) + '</td><td style="text-align:right;color:var(--amber);font-weight:700;">' + fM(Math.round(t.sugg)) + '<div style="font-size:10.5px;font-weight:400;">' + t.flagged + ' flagged</div></td><td style="text-align:right;color:var(--green);font-weight:700;">' + fM(Math.round(t.acc)) + '</td><td>' + esc(x.rv.status) + (t.pending ? '<div style="font-size:10.5px;color:var(--red);">' + t.pending + ' to decide</div>' : '') + '</td></tr>'; });
   return h + '</tbody></table></div>';
 }
+/* ── From a reviewed bill to a payable ──
+   The payable is for what the review leaves owing: billed, less accepted reductions, plus anything restored on
+   appeal. The bill keeps the link so Payables can show it was reviewed and how much was cut. */
+const fMc = n => '$' + Number(n || 0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+function revPayableAmount(rv){ const t = revTotals(rv); return r2(t.billed - t.acc + t.restored); }
+function revPayableBlock(rv){
+  const t = revTotals(rv);
+  if (rv.status === 'Needs review') return 'Mark the bill reviewed first.';
+  if (t.pending) return 'Decide the ' + t.pending + ' open suggested cut' + (t.pending === 1 ? '' : 's') + ' first.';
+  return '';
+}
+function revFindPayee(firm){
+  const k = String(firm || '').toLowerCase().trim(); if (!k) return null;
+  return PAYEES.find(x => String(x.name).toLowerCase().trim() === k) || PAYEES.find(x => x.type === 'Outside Counsel' && (String(x.name).toLowerCase().indexOf(k) >= 0 || k.indexOf(String(x.name).toLowerCase()) >= 0)) || null;
+}
+async function revCreatePayable(cid, rid){
+  const f = revFind(cid, rid); if (!f) return; const {c, rv} = f;
+  if (rv.payableId) return;
+  const block = revPayableBlock(rv); if (block) { S.revMsg = block; render(); return; }
+  const t = revTotals(rv), amt = revPayableAmount(rv), cut = r2(t.acc - t.restored);
+  if (amt <= 0) { S.revMsg = 'Nothing is owing on this bill after the reductions, so no payable was created.'; render(); return; }
+  if (!confirm('Create a payable for ' + fMc(amt) + ' to ' + rv.firm + '? That is ' + fM(Math.round(t.billed)) + ' billed less ' + fM(Math.round(cut)) + ' in accepted reductions.')) return;
+  const desc = 'Invoice ' + rv.invoiceNo + ' from ' + rv.firm + ': reviewed, ' + fM(Math.round(cut)) + ' cut (billed ' + fM(Math.round(t.billed)) + ')';
+  try {
+    let payee = revFindPayee(rv.firm), id;
+    if (authToken && !DEMO_MODE) {
+      if (!payee) { const np = await apiFetch('/api/payees', {method:'POST', body:JSON.stringify({name:rv.firm, type:'Outside Counsel'})}); payee = {id:np.id, name:rv.firm}; }
+      const r = await apiFetch('/api/payables', {method:'POST', body:JSON.stringify({payeeId:payee.id, amount:amt, description:desc, dueDate:null, relatedCaseId:c.id})});
+      id = r.id; await loadPayablesFromApi();
+    } else {
+      if (!payee) { payee = {id:'py' + Date.now(), name:rv.firm, type:'Outside Counsel', email:'', defaultRate:0}; PAYEES.push(payee); }
+      id = createPayable(payee.id, amt, desc, '', c.id).id;
+    }
+    rv.payableId = id; rv.payable = {id, amount:amt, billed:t.billed, cut, date:td(), by:(S.currentUser && S.currentUser.name) || 'User'};
+    c.updates = c.updates || []; c.updates.push({date:td(), author:(S.currentUser && S.currentUser.name) || 'User', type:'Billing', text:'Payable created for ' + fMc(amt) + ' to ' + rv.firm + ' from reviewed bill ' + rv.invoiceNo + ' (' + fM(Math.round(cut)) + ' cut).'});
+    S.revMsg = 'Payable created for ' + fMc(amt) + '. It is waiting for approval in Payables.'; sc(c); render();
+  } catch (e) { S.revMsg = 'Could not create the payable: ' + e.message; render(); }
+}
+function revPayableCardV(c, rv){
+  const A = (fn) => fn + '(\'' + escAttr(c.id) + '\',\'' + escAttr(rv.id) + '\')';
+  if (rv.payableId) {
+    const now = revPayableAmount(rv), was = rv.payable ? rv.payable.amount : now;
+    return '<div class="card" style="padding:12px 16px;margin-bottom:12px;border-left:4px solid var(--green);"><div style="font-weight:800;">Payable ' + esc(String(rv.payableId).slice(0, 12)) + ' for ' + fMc(was) + '</div><div style="font-size:12.5px;color:var(--muted);margin-top:2px;">Created ' + esc((rv.payable && rv.payable.date) || '') + (rv.payable && rv.payable.by ? ' by ' + esc(rv.payable.by) : '') + '. <span class="muted-link" style="cursor:pointer;" onclick="st({role:\'billing\',bTab:\'payables\',caseId:null})">Open Payables</span></div>' + (Math.abs(now - was) > 0.5 ? '<div style="font-size:12.5px;color:#92400E;margin-top:6px;font-weight:600;">⚠ The review now leaves ' + fMc(now) + ' owing (an appeal or decision changed after the payable was made). Check the payable before paying.</div>' : '') + '</div>';
+  }
+  const block = revPayableBlock(rv), amt = revPayableAmount(rv);
+  return '<div class="card" style="padding:12px 16px;margin-bottom:12px;"><div style="font-weight:800;margin-bottom:4px;">Payment</div><div style="font-size:12.5px;color:var(--muted);margin-bottom:8px;">When the review is settled, create the payable for what is owing: ' + fMc(amt) + ' (billed less accepted reductions). It goes to Payables for approval. Nothing is paid from here.</div><button class="btn btn-pri" ' + (block ? 'disabled' : '') + ' onclick="' + A('revCreatePayable') + '">Create payable for ' + fMc(amt) + '</button>' + (block ? ' <span style="font-size:12px;color:var(--dim);">' + esc(block) + '</span>' : '') + '</div>';
+}
+function payableReviewIndex(){
+  const m = {}; CASES.forEach(c => ((c.billing && c.billing.reviews) || []).forEach(rv => { if (rv.payableId) m[rv.payableId] = {c, rv}; })); return m;
+}
 function revDetailV(){
   const o = S.revOpen, f = revFind(o.cid, o.rid);
   if (!f) return '<div class="alert-good">That bill is no longer here.</div>';
@@ -5249,6 +5303,7 @@ function revDetailV(){
     '<button class="btn btn-out" onclick="' + A('revLetter') + '">Draft letter to firm</button><button class="btn btn-out" onclick="' + A('revExport') + '">Export lines</button></div>';
   const next = {'Needs review':['Reviewed', 'Mark reviewed'], 'Reviewed':['Sent to firm', 'Mark sent to firm'], 'Sent to firm':['Closed', 'Close, no appeal'], 'Appealed':['Closed', 'Close']}[rv.status];
   h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center;">' + (next ? '<button class="btn btn-pri" onclick="' + A('revSetStatus', next[0]) + '">' + next[1] + '</button>' : '') + (rv.status === 'Closed' ? '<button class="btn btn-out" onclick="' + A('revSetStatus', 'Needs review') + '">Reopen</button>' : '') + (t.pending ? '<span style="font-size:12px;color:var(--red);">' + t.pending + ' suggested cut' + (t.pending > 1 ? 's' : '') + ' still need a decision</span>' : '') + '</div></div>';
+  h += revPayableCardV(c, rv);
   if (S.revLetterText && S.revLetterFor === rv.id) h += '<div class="card" style="padding:14px 16px;margin-bottom:12px;"><div style="font-weight:800;margin-bottom:6px;">Letter to the firm (edit before sending)</div><textarea id="revLetterTa" class="inp" style="width:100%;min-height:220px;font-size:12.5px;" oninput="S.revLetterText=this.value">' + esc(S.revLetterText) + '</textarea><div style="margin-top:8px;"><button class="btn btn-out" onclick="revCopy(\'revLetterTa\')">Copy letter</button></div></div>';
   h += '<div class="card" style="padding:0;overflow-x:auto;margin-bottom:12px;"><table><thead><tr><th>Date</th><th>Timekeeper</th><th>Code</th><th style="text-align:right;">Hrs</th><th style="text-align:right;">Rate</th><th style="text-align:right;">Billed</th><th>What the review found</th><th style="text-align:right;">Cut</th><th>Decision</th></tr></thead><tbody>';
   rv.lines.forEach(l => {
@@ -5731,7 +5786,7 @@ function assignCasesV() {
   h += '<div style="display:grid;grid-template-columns:1fr;gap:20px;">';
   
   unassignedCases.forEach(c => {
-    const top3 = getTop3Recommendations(c);
+    const top3 = matchOptionsFor(c);
     
     h += '<div class="card" style="padding:20px;border-left:4px solid var(--pri2);">';
     h += '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:15px;">';
@@ -5746,12 +5801,13 @@ function assignCasesV() {
     top3.forEach((atty, idx) => {
       const medal = ['🥇 GOLD', '🥈 SILVER', '🥉 BRONZE'][idx];
       const bgColor = idx === 0 ? 'var(--good)' : idx === 1 ? 'var(--pri2)' : 'var(--muted)';
-      h += '<div style="background:'+bgColor+'15;border:1px solid '+bgColor+'33;padding:12px;border-radius:6px;text-align:center;">';
-      h += '<div style="font-weight:700;font-size:11px;color:'+bgColor+';margin-bottom:8px;">'+medal+'</div>';
+      h += '<div style="background:'+bgColor+'15;border:1px solid '+bgColor+'33;padding:12px;border-radius:6px;display:flex;flex-direction:column;">';
+      h += '<div style="font-weight:700;font-size:11px;color:'+bgColor+';margin-bottom:6px;">'+medal+'</div>';
       h += '<div style="font-weight:700;font-size:13px;color:var(--ink);">'+esc(atty.name)+'</div>';
-      h += '<div style="font-size:11px;color:var(--muted);margin-top:6px;">Score: '+atty.score+'/100</div>';
-      h += '<div style="font-size:10px;color:var(--dim);margin-top:2px;">'+atty.experience+'</div>';
-      h += '<button onclick="assignAttorney(\''+c.id+'\', \''+esc(atty.name)+'\', '+idx+'); st({showAssignCases:true});" class="btn" style="background:'+bgColor+';color:white;margin-top:10px;width:100%;font-size:11px;padding:6px;cursor:pointer;border:none;border-radius:3px;font-weight:600;">Assign</button>';
+      if (atty.firm) h += '<div style="font-size:11px;color:var(--muted);">'+esc(atty.firm)+'</div>';
+      h += '<div style="font-size:11.5px;color:#166534;margin-top:8px;line-height:1.5;"><div style="font-weight:700;margin-bottom:2px;">Why</div>'+(atty.why||[]).map(w => '<div>• '+esc(w)+'</div>').join('')+'</div>';
+      if ((atty.warn||[]).length) h += '<div style="font-size:11.5px;color:#B45309;margin:6px 0 10px;line-height:1.5;"><div style="font-weight:700;margin-bottom:2px;">Check</div>'+atty.warn.map(w => '<div>• '+esc(w)+'</div>').join('')+'</div>';
+      h += '<button onclick="assignFromMatch(\''+escAttr(c.id)+'\','+idx+')" class="btn" style="background:'+bgColor+';color:white;margin-top:auto;width:100%;font-size:11px;padding:6px;cursor:pointer;border:none;border-radius:3px;font-weight:600;">Assign</button>';
       h += '</div>';
     });
     
@@ -5763,6 +5819,26 @@ function assignCasesV() {
   return h;
 }
 
+/* Sentinel Match options: the approved panel when one is loaded (licensing, practice area, panel status,
+   scorecard, workload, rate), otherwise the in-house attorney list. Every option carries its reasons. */
+function matchOptionsFor(c){
+  if (counselAll().length) {
+    const l = dcMatchList(c).slice(0, 3);
+    if (l.length) return l.map(m => ({name:m.r.name, firm:m.r.firm || '', panelId:m.r.id, why:m.why, warn:m.warn}));
+  }
+  return getTop3Recommendations(c);
+}
+async function assignFromMatch(caseId, idx){
+  const c = CASES.find(x => x.id === caseId); if (!c) return;
+  const o = matchOptionsFor(c)[idx]; if (!o) return;
+  const medal = ['Gold', 'Silver', 'Bronze'][idx], reason = medal + ' Sentinel Match recommendation. ' + (o.why || []).join('; ') + ((o.warn || []).length ? '. To check: ' + o.warn.join('; ') : '') + '.';
+  const row = o.panelId ? counselAll().find(x => x.id === o.panelId) : null;
+  if (row) c.defenseCounsel = {panelId:row.id, name:row.name, firm:row.firm || '', email:row.email || '', phone:row.phone || ''};
+  const msg = await assignCaseToAttorney(c, o.name, {reason:reason.slice(0, 480), source:'sentinel_match'});
+  c.updates = c.updates || [];
+  c.updates.push({date:demandToday(), author:(S.currentUser && S.currentUser.name) || 'User', type:'Assignment', text:'Assigned to ' + o.name + ' by Sentinel Match. ' + reason});
+  sc(c); alert('✓ ' + (c.matterNo || c.id) + ': ' + msg); st({showAssignCases:true});
+}
 async function assignAttorney(caseId, attorneyName, ranking) {
   const caseObj = CASES.find(c => c.id === caseId);
   if (!caseObj) return;
@@ -9310,6 +9386,15 @@ function activityHubV(){
 }
 
 /* ── INVOICE HUB / FIRM-WIDE BILLING ────────────────────── */
+function billingHubV(forceTab){
+  const tab = forceTab || S.bTab || 'invoices';
+  const waiting = revAll().filter(x => x.rv.status === 'Needs review').length, pend = PAYABLES.filter(p => p.status === 'Submitted').length;
+  const tabs = [['invoices','Invoices'],['review','Bill review' + (waiting ? ' (' + waiting + ')' : '')],['payables','Payables' + (pend ? ' (' + pend + ')' : '')]];
+  const bar = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 18px 0;">' + tabs.map(([k, l]) => '<span class="pill' + (tab === k ? ' on' : '') + '" onclick="st({role:\'billing\',bTab:\'' + k + '\',caseId:null,showWelcome:false})">' + l + '</span>').join('') + '</div>';
+  if (tab === 'review') return bar + revV();
+  if (tab === 'payables') return bar + payablesHubV();
+  return bar + invoiceHubV();
+}
 function invoiceHubV(){
   /* Aggregate billing data across all cases */
   let totalBilled = 0, totalPaid = 0, totalBudget = 0;
@@ -9653,7 +9738,7 @@ function payablesHubV(){
       h += '<td style="font-weight:700;color:var(--pri2);font-size:11px;">'+esc(p.id)+'</td>';
       h += '<td>'+esc(p.payeeName)+'</td>';
       h += '<td><span class="tag">'+esc(p.payeeType)+'</span></td>';
-      h += '<td style="font-size:12px;color:var(--muted);max-width:220px;">'+esc(p.description)+'</td>';
+      { const rl = payableReviewIndex()[p.id]; h += '<td style="font-size:12px;color:var(--muted);max-width:240px;">'+esc(p.description)+(rl ? '<div style="color:#166534;font-weight:700;margin-top:2px;cursor:pointer;" onclick="st({role:\'review\',revTab:\'bills\',revOpen:{cid:\''+escAttr(rl.c.id)+'\',rid:\''+escAttr(rl.rv.id)+'\'},caseId:null})">Reviewed: '+fM(Math.round(rl.rv.payable ? rl.rv.payable.cut : revTotals(rl.rv).acc))+' cut. View the review</div>' : '')+'</td>'; }
       h += '<td style="font-weight:700;">'+fV(p.amount)+'</td>';
       h += '<td style="font-size:12px;color:'+(isOverdue?'var(--red)':'var(--dim)')+';font-weight:'+(isOverdue?'700':'400')+';">'+esc(p.dueDate||'—')+(isOverdue?' ⚠':'')+'</td>';
       h += '<td><span class="tag" style="background:'+statusColor+'18;color:'+statusColor+';font-weight:700;">'+esc(p.status)+'</span></td>';
@@ -13348,7 +13433,7 @@ async function aiAssignBestAttorney() {
         const tiers = ['gold', 'silver', 'bronze'];
         recommendations = {};
         top.forEach((a, i) => {
-          recommendations[tiers[i]] = { attorney: a.name, reasoning: a.name + ' scores ' + a.score + '/100 for this matter (' + a.experience + ') on matter-type experience, current workload, and track record.' };
+          recommendations[tiers[i]] = { attorney: a.name, reasoning: a.name + ' scores ' + a.score + '/100 for this matter. ' + ((a.why || []).join('; ') || a.experience) + '.' };
         });
       }
     }
