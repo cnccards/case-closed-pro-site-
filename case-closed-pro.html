@@ -3727,6 +3727,7 @@ function setClaimsPerson(caseId, which, name){
 function setDefenseCounsel(caseId, panelId){
   const c = CASES.find(x => x.id === caseId); if (!c) return;
   const row = counselAll().find(x => x.id === panelId);
+  if (row) { const cf = dcConflict(row, c); if (cf.hard) { alert('Not assigned. ' + cf.hard + ' Pick another attorney.'); return; } }
   c.defenseCounsel = row ? {panelId:row.id, name:row.name, firm:row.firm||'', email:row.email||'', phone:row.phone||''} : null;
   c.updates = c.updates || [];
   c.updates.push({date:demandToday(), author:(S.currentUser && S.currentUser.name) || 'User', type:'Defense Counsel', text: row ? 'Defense counsel set to '+row.name+(row.firm?' ('+row.firm+')':'')+'.' : 'Defense counsel removed.'});
@@ -4080,11 +4081,11 @@ const COUNSEL_HEADERS = {
 const COUNSEL_TEMPLATE_COLS = ['Name','Firm','Email','Phone','City','States','Practice Areas','Hourly Rate','Status','Your ID','Notes'];
 function counselDemoSeed(){
   const mk = (i,name,firm,email,states,areas,rate,status) => ({id:'demo-ac-'+i,name,firm,email,phone:'(404) 555-01'+String(i).padStart(2,'0'),city:'',states,practiceAreas:areas,hourlyRate:rate,status,externalId:'AC-'+(1000+i)});
-  return [mk(1,'Dana Whitfield','Whitfield & Burke LLP','dwhitfield@whitfieldburke.com',['GA'],'Auto liability; trucking',215,'Preferred'),
+  return [mk(1,'Dana Whitfield','Whitfield & Burke LLP','dwhitfield@whitfieldburke.com',['GA','NY','NJ'],'Auto liability; trucking; patent and intellectual property',215,'Preferred'),
     mk(2,'Marcus Hale','Hale Defense Group','mhale@haledefense.com',['GA','AL'],'Auto liability; premises',195,'Approved'),
-    mk(3,'Priscilla Okafor','Okafor Rivera PA','pokafor@okaforrivera.com',['FL'],'Premises; general liability',205,'Approved'),
-    mk(4,'Gregory Lang','Lang Sutter LLP','glang@langsutter.com',['CA'],'Auto liability; employment',265,'Approved'),
-    mk(5,'Helen Brandt','Brandt & Moss','hbrandt@brandtmoss.com',['TX','OK'],'Trucking; product liability',230,'Preferred'),
+    mk(3,'Priscilla Okafor','Okafor Rivera PA','pokafor@okaforrivera.com',['FL','NY'],'Premises; general liability; employment',205,'Approved'),
+    mk(4,'Gregory Lang','Lang Sutter LLP','glang@langsutter.com',['CA','NY'],'Auto liability; employment',265,'Approved'),
+    mk(5,'Helen Brandt','Brandt & Moss','hbrandt@brandtmoss.com',['TX','OK','NY'],'Trucking; product liability; patent litigation',230,'Preferred'),
     mk(6,'Samuel Reyes','Reyes Cole LLP','sreyes@reyescole.com',['MO','KS'],'General liability',185,'Pending')];
 }
 function counselAll(){ if (DEMO_MODE || !authToken) { if (!S.demoCounsel) S.demoCounsel = counselDemoSeed(); return S.demoCounsel; } return S.counselList || []; }
@@ -4813,34 +4814,90 @@ function dcScorecards(){
   }).sort((a, b) => (b.score == null ? -1 : b.score) - (a.score == null ? -1 : a.score));
 }
 function dcScoreFor(c){ const k = String(c.firm || c.name || '').trim(); const s = dcScorecards().find(x => x.firm === k); return s ? s.score : null; }
+/* ── History facts for one approved-panel attorney, drawn from every matter that attorney or firm has handled ── */
+function dcNorm(x){ return String(x || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\b(llp|llc|pa|pc|pllc|law|group|firm|the|and)\b/g, ' ').replace(/\s+/g, ' ').trim(); }
+function dcFirmCases(r, exceptId){
+  const fk = dcNorm(r.firm || ''), nk = dcNorm(r.name || '');
+  return CASES.filter(x => x.id !== exceptId && x.defenseCounsel && (x.defenseCounsel.panelId === r.id || (fk && dcNorm(x.defenseCounsel.firm) === fk) || (!fk && nk && dcNorm(x.defenseCounsel.name) === nk)));
+}
+function dcRatio(x){ const res = Number((x.insurance && x.insurance.reserveAmount) || (x.exposure && x.exposure.reserveAmount)) || 0, sa = Number(x.exposure && x.exposure.settlementAmount) || 0; return (x.status === 'Closed' && res > 0 && sa > 0) ? sa / res : null; }
+function dcAvg(a){ return a.length ? a.reduce((t, v) => t + v, 0) / a.length : null; }
+function dcPct(v){ return Math.round(v * 100) + '%'; }
+function dcPlural(n, w){ return n + ' ' + w + (n === 1 ? '' : 's'); }
+function dcConflict(r, c){
+  const out = {hard:'', soft:[]};
+  const pf = plaintiffFirmOf(c), pa = (typeof plaintiffAtty === 'function') ? plaintiffAtty(c) : '';
+  const fk = dcNorm(r.firm || ''), nk = dcNorm(r.name || '');
+  if ((fk && pf && dcNorm(pf) === fk) || (nk && pa && dcNorm(pa) === nk)) out.hard = (r.firm || r.name) + ' is listed as plaintiff counsel on this matter.';
+  else {
+    const tok = x => (dcNorm(x).split(' ').filter(w => w.length > 3)[0] || '');
+    if (fk && pf && tok(r.firm) && tok(r.firm) === tok(pf)) out.soft.push('Shares the name "' + tok(r.firm) + '" with plaintiff firm ' + pf + '. Confirm there is no conflict.');
+    const other = CASES.filter(x => x.id !== c.id && fk && dcNorm(plaintiffFirmOf(x)) === fk);
+    if (other.length) out.soft.push('Appears as plaintiff counsel on ' + (other[0].matterNo || other[0].id) + (other.length > 1 ? ' and ' + (other.length - 1) + ' more' : '') + '. Confirm there is no conflict.');
+  }
+  return out;
+}
 function dcMatchList(c, stateOverride){
   const want = stateAbbrOf(stateOverride || caseStateName(c)), type = String(c.type || '').toLowerCase();
   const toks = type.split(/[^a-z]+/).filter(w => w.length > 3 && !['liability','law','dispute','claim','defense','other'].includes(w));
   const load = {}; CASES.forEach(x => { if (x.status !== 'Closed' && x.defenseCounsel && x.defenseCounsel.panelId) load[x.defenseCounsel.panelId] = (load[x.defenseCounsel.panelId] || 0) + 1; });
   const cards = dcScorecards();
+  const venue = dcNorm((c.court && (c.court.venueCounty || c.court.name)) || '');
+  const acct = caseAcct(c) || String(c.client || ''), adj = claimsPrimary(c), pfirm = dcNorm(plaintiffFirmOf(c));
   return counselAll().filter(r => r.status !== 'Inactive').map(r => {
-    let s = 0; const why = [], warn = [];
+    /* Fit score out of 100. Missing information earns about half credit (unknown, not bad). Weights:
+       licensing 20, practice area 10, results on this matter type 15, scorecard 8, venue 8, client and adjuster history 7,
+       results against this plaintiff firm 7, phase-budget accuracy 5, clean invoices 5, response to demands 5,
+       workload 5, panel status 3, rate 2. Not licensed in the state cuts the score by 30%. A conflict zeroes it. */
+    let s = 0; const why = [], warn = [], parts = [];
+    const add = (name, pts, max) => { s += pts; parts.push(name + ' ' + (Math.round(pts * 10) / 10) + '/' + max); };
     const states = (r.states || []).map(x => String(x).toUpperCase());
-    if (want) { if (states.indexOf(want) >= 0) { s += 50; why.push('Licensed in '+want); } else { s -= 60; warn.push('Not listed as licensed in '+want); } } else warn.push('No state on the matter, so licensing was not checked');
-    const pa = String(r.practiceAreas || '').toLowerCase();
-    { const hit = toks.length ? String(r.practiceAreas||'').split(/[;,]/).map(x => x.trim()).find(x => toks.some(t => x.toLowerCase().indexOf(t) >= 0)) : ''; if (hit) { s += 20; why.push('Handles '+hit.toLowerCase()); } }
-    if (r.status === 'Preferred') { s += 10; why.push('Preferred panel'); } else if (r.status === 'Pending') { s -= 15; warn.push('Panel approval still pending'); }
-    const card = cards.find(x => x.firm === (r.firm || r.name)); if (card && card.score != null) { s += card.score * 0.15; why.push('Scorecard '+card.score); }
-    const n = load[r.id] || 0; if (n) { s -= Math.min(10, n * 2); why.push(n+' open matter'+(n===1?'':'s')+' with you now'); }
-    if (r.hourlyRate) { s += Math.max(0, 5 - (Number(r.hourlyRate) - 150) / 25); why.push('$'+Number(r.hourlyRate)+' an hour'); }
-    /* extra true reasons, so the picture is 3-5 lines deep */
-    if (!n) why.push('No open matters with you now, so can start right away');
-    if (card) {
-      const gp = nm => (card.parts || []).find(p => p.name === nm);
-      const a = gp('Settled against reserve'), b = gp('Billing against budget'), d = gp('Demands answered in time');
-      if (a && a.pts >= a.max * 0.99) why.push('Settles at '+a.have+' on your files');
-      if (b && b.pts >= b.max * 0.99) why.push('Bills at '+b.have+' on your files');
-      if (d && d.pts >= d.max * 0.99) why.push('Answered '+d.have+' demands in time');
-      if (card.cases && card.cases.length) why.push(card.cases.length+' matter'+(card.cases.length===1?'':'s')+' handled for you already');
-    }
-    if (states.length > 1 && want && states.indexOf(want) >= 0) why.push('Covers '+states.length+' states');
-    if (why.length < 3) why.push('On your approved panel');
-    return {r, s, why, warn, score: Math.max(0, Math.min(100, Math.round((s + 85) / 185 * 100)))};
+    const mine = dcFirmCases(r, c.id);
+    let unlicensed = false;
+    if (want) { if (states.indexOf(want) >= 0) { add('Licensing', 20, 20); why.push('Licensed in ' + want); } else { add('Licensing', 0, 20); unlicensed = true; warn.push('Not listed as licensed in ' + want); } }
+    else { add('Licensing', 10, 20); warn.push('No state on the matter, so licensing was not checked'); }
+    { const hit = toks.length ? String(r.practiceAreas || '').split(/[;,]/).map(x => x.trim()).find(x => toks.some(t => x.toLowerCase().indexOf(t) >= 0)) : '';
+      if (hit) { add('Practice area', 10, 10); why.push('Handles ' + hit.toLowerCase()); } else add('Practice area', toks.length ? 0 : 5, 10); }
+    /* results on this matter type */
+    { const same = mine.filter(x => String(x.type || '').toLowerCase() === type), rs = same.map(dcRatio).filter(v => v != null), av = dcAvg(rs);
+      if (av != null) { add('Results on this matter type', Math.max(0, Math.min(15, 15 - Math.max(0, av - 0.8) * 50)), 15); if (av <= 1) why.push('Settled at ' + dcPct(av) + ' of reserve on ' + dcPlural(rs.length, (c.type || 'similar') + ' matter')); }
+      else { add('Results on this matter type', same.length ? 9 : 7, 15); if (same.length) why.push('Has handled ' + dcPlural(same.length, (c.type || 'similar') + ' matter') + ' for you'); } }
+    const card = cards.find(x => x.firm === (r.firm || r.name));
+    if (card && card.score != null) { add('Scorecard', card.score * 0.08, 8); why.push('Scorecard ' + card.score); } else add('Scorecard', 4, 8);
+    /* venue */
+    if (venue) { const hits = mine.filter(x => { const v = dcNorm((x.court && (x.court.venueCounty || x.court.name)) || ''); return v && (v === venue || v.indexOf(venue) >= 0 || venue.indexOf(v) >= 0); });
+      if (hits.length) { add('Venue', hits.length > 1 ? 8 : 6, 8); why.push('Has appeared in ' + ((c.court && (c.court.venueCounty || c.court.name)) || 'this venue') + ' on ' + dcPlural(hits.length, 'matter')); } else add('Venue', 2, 8); }
+    else add('Venue', 4, 8);
+    /* same client and adjuster */
+    { const cm = acct ? mine.filter(x => (caseAcct(x) || String(x.client || '')) === acct) : [], am = adj ? mine.filter(x => claimsPrimary(x) === adj) : [];
+      let pts = (cm.length || am.length) ? 0 : 1.5; if (cm.length) { pts += 4; why.push('Has worked ' + dcPlural(cm.length, 'matter') + ' for ' + acct); } if (am.length) { pts += 3; const ar = dcAvg(am.map(dcRatio).filter(v => v != null)); why.push('Has worked ' + dcPlural(am.length, 'matter') + ' with ' + adj + (ar != null && ar <= 1 ? ' (settled at ' + dcPct(ar) + ' of reserve)' : '')); }
+      add('Client and adjuster history', Math.min(7, pts), 7); }
+    /* results against this plaintiff firm */
+    if (pfirm) { const vs = mine.filter(x => dcNorm(plaintiffFirmOf(x)) === pfirm), vr = dcAvg(vs.map(dcRatio).filter(v => v != null));
+      if (vs.length) { add('Against this plaintiff firm', vr != null ? Math.max(0, Math.min(7, 7 - Math.max(0, vr - 0.8) * 20)) : 5, 7); why.push('Has faced ' + plaintiffFirmOf(c) + ' on ' + dcPlural(vs.length, 'matter') + (vr != null && vr <= 1 ? ', settled at ' + dcPct(vr) + ' of reserve' : '')); }
+      else add('Against this plaintiff firm', 3, 7); }
+    else add('Against this plaintiff firm', 3.5, 7);
+    /* phase-budget accuracy */
+    { let tot = 0, ok = 0; mine.forEach(x => { try { const b = cdBilledByPhase(x); CD_PHASES.forEach(([k]) => { const bud = cdBudgetOf(x, k); if (bud > 0 && b[k] > 0) { tot++; if (b[k] <= bud) ok++; } }); } catch (e) {} });
+      if (tot) { add('Phase budgets', 5 * ok / tot, 5); if (ok / tot >= 0.75) why.push('Stayed within phase budget on ' + ok + ' of ' + tot + ' phases'); } else add('Phase budgets', 2.5, 5); }
+    /* bill review results */
+    { let billed = 0, cut = 0; mine.forEach(x => ((x.billing && x.billing.reviews) || []).forEach(rv => { try { const t = revTotals(rv); billed += t.billed; cut += t.acc - t.restored; } catch (e) {} }));
+      if (billed > 0) { const rate = Math.max(0, cut / billed); add('Clean invoices', 5 * Math.max(0, Math.min(1, 1 - rate / 0.10)), 5); if (rate <= 0.04) why.push('Invoices needed only ' + (Math.round(rate * 1000) / 10) + '% in cuts'); else if (rate >= 0.10) warn.push('Past invoices were cut ' + (Math.round(rate * 1000) / 10) + '% on average'); } else add('Clean invoices', 2.5, 5); }
+    /* response to demands */
+    { let n = 0, on = 0, days = []; mine.forEach(x => demandsOf(x).forEach(d => { if (d.status !== 'open' && d.respondedDate) { n++; if (d.respondedDate <= demandEff(d)) on++; const dd = d.receivedDate ? demandDaysBetween(d.receivedDate, d.respondedDate) : null; if (dd != null && dd >= 0) days.push(dd); } }));
+      if (n) { add('Demand response', 5 * on / n, 5); if (on / n >= 0.75) why.push('Answered ' + on + ' of ' + n + ' demands in time' + (days.length ? ' (about ' + Math.max(1, Math.round(dcAvg(days))) + ' days)' : '')); } else add('Demand response', 2.5, 5); }
+    const n = load[r.id] || 0;
+    add('Workload', Math.max(0, 5 - n), 5); if (n) why.push(n + ' open matter' + (n === 1 ? '' : 's') + ' with you now'); else why.push('No open matters with you now, so can start right away');
+    if (r.status === 'Preferred') { add('Panel status', 3, 3); why.push('Preferred panel'); }
+    else if (r.status === 'Pending') { add('Panel status', 0, 3); warn.push('Panel approval still pending'); }
+    else add('Panel status', 2, 3);
+    if (r.hourlyRate) { add('Rate', Math.max(0, Math.min(2, 2 - (Number(r.hourlyRate) - 150) / 100)), 2); why.push('$' + Number(r.hourlyRate) + ' an hour'); } else add('Rate', 1, 2);
+    if (mine.length) why.push(dcPlural(mine.length, 'matter') + ' handled for you already');
+    if (unlicensed) s = s * 0.7;
+    const cf = dcConflict(r, c); let conflict = '';
+    if (cf.hard) { conflict = cf.hard; s = 0; warn.unshift('Conflict: ' + cf.hard + ' Do not assign.'); }
+    cf.soft.forEach(t => warn.push(t));
+    return {r, s, why, warn, conflict, score: Math.max(0, Math.min(100, Math.round(s))), parts};
   }).sort((a, b) => b.s - a.s);
 }
 function dcScoreV(){
@@ -5826,13 +5883,14 @@ function assignCasesV() {
       const medal = ['🥇 GOLD', '🥈 SILVER', '🥉 BRONZE'][idx];
       const bgColor = idx === 0 ? 'var(--good)' : idx === 1 ? 'var(--pri2)' : 'var(--muted)';
       h += '<div style="background:'+bgColor+'15;border:1px solid '+bgColor+'33;padding:12px;border-radius:6px;display:flex;flex-direction:column;">';
-      h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><div style="font-weight:700;font-size:11px;color:'+bgColor+';">'+medal+'</div>'+(atty.score!=null?'<div style="font-weight:800;font-size:13px;color:'+bgColor+';" title="Sentinel Match score out of 100">'+atty.score+'<span style="font-size:10px;font-weight:600;"> /100</span></div>':'')+'</div>';
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><div style="font-weight:700;font-size:11px;color:'+bgColor+';">'+medal+'</div>'+(atty.score!=null?'<div style="font-weight:800;font-size:13px;color:'+bgColor+';" title="'+escAttr('Score out of 100. '+(atty.parts||[]).join(', '))+'">'+atty.score+'<span style="font-size:10px;font-weight:600;"> /100</span></div>':'')+'</div>';
       h += '<div style="font-weight:700;font-size:13px;color:var(--ink);">'+esc(atty.name)+'</div>';
       if (atty.firm) h += '<div style="font-size:11px;color:var(--muted);">'+esc(atty.firm)+'</div>';
       h += '<div style="font-size:11.5px;color:var(--muted);line-height:1.5;margin-top:8px;">'+esc(matchWriteup(c, atty, idx))+'</div>';
       h += '<div style="font-size:11.5px;color:#166534;margin-top:8px;line-height:1.5;"><div style="font-weight:700;margin-bottom:2px;">Why</div>'+(atty.why||[]).map(w => '<div>• '+esc(w)+'</div>').join('')+'</div>';
-      if ((atty.warn||[]).length) h += '<div style="font-size:11.5px;color:#B45309;margin:6px 0 10px;line-height:1.5;"><div style="font-weight:700;margin-bottom:2px;">Check</div>'+atty.warn.map(w => '<div>• '+esc(w)+'</div>').join('')+'</div>';
-      h += '<button onclick="assignFromMatch(\''+escAttr(c.id)+'\','+idx+')" class="btn" style="background:'+bgColor+';color:white;margin-top:auto;width:100%;font-size:11px;padding:6px;cursor:pointer;border:none;border-radius:3px;font-weight:600;">Assign</button>';
+      if ((atty.warn||[]).length) h += '<div style="font-size:11.5px;color:#B45309;margin:6px 0 10px;line-height:1.5;"><div style="font-weight:700;margin-bottom:2px;">Check</div>'+atty.warn.map(w => '<div'+(/^Conflict:/.test(w)?' style="color:#B91C1C;font-weight:700;"':'')+'>• '+esc(w)+'</div>').join('')+'</div>';
+      h += '<div style="height:12px;"></div>';
+      h += '<button '+(atty.conflict?'disabled title="Conflict: cannot assign" ':'')+'onclick="assignFromMatch(\''+escAttr(c.id)+'\','+idx+')" class="btn" style="'+(atty.conflict?'opacity:.45;':'')+'background:'+bgColor+';color:white;margin-top:auto;width:100%;font-size:11px;padding:6px;cursor:pointer;border:none;border-radius:3px;font-weight:600;">Assign</button>';
       h += '</div>';
     });
     
@@ -5850,7 +5908,7 @@ function matchWriteup(c, a, idx){
   const facts = (a.why || []).slice(0, 2).map(w => String(w).replace(/^./, ch => ch.toLowerCase()));
   let t = a.name + ' is ' + lead + ' for this ' + (c.type ? c.type.toLowerCase() + ' ' : '') + 'matter' + (c.value ? ' ($' + Math.round(Number(c.value)).toLocaleString() + ')' : '') + '.';
   if (facts.length) t += ' Main reasons: ' + facts.join(' and ') + '.';
-  if ((a.warn || []).length) t += ' Before assigning, note: ' + String(a.warn[0]).replace(/^./, ch => ch.toLowerCase()) + '.';
+  if ((a.warn || []).length) t += ' Before assigning, note: ' + String(a.warn[0]).replace(/\.$/, '').replace(/^./, ch => ch.toLowerCase()) + '.';
   return t;
 }
 /* Sentinel Match options: the approved panel when one is loaded (licensing, practice area, panel status,
@@ -5858,13 +5916,14 @@ function matchWriteup(c, a, idx){
 function matchOptionsFor(c){
   if (counselAll().length) {
     const l = dcMatchList(c).slice(0, 3);
-    if (l.length) return l.map(m => ({name:m.r.name, firm:m.r.firm || '', panelId:m.r.id, why:m.why.slice(0,5), warn:m.warn, score:m.score}));
+    if (l.length) return l.map(m => ({name:m.r.name, firm:m.r.firm || '', panelId:m.r.id, why:m.why.slice(0,5), warn:m.warn, score:m.score, parts:m.parts, conflict:m.conflict}));
   }
   return getTop3Recommendations(c);
 }
 async function assignFromMatch(caseId, idx){
   const c = CASES.find(x => x.id === caseId); if (!c) return;
   const o = matchOptionsFor(c)[idx]; if (!o) return;
+  if (o.conflict) { alert('Not assigned. ' + o.conflict + ' Pick another attorney.'); return; }
   const medal = ['Gold', 'Silver', 'Bronze'][idx], reason = medal + ' Sentinel Match recommendation. ' + (o.why || []).join('; ') + ((o.warn || []).length ? '. To check: ' + o.warn.join('; ') : '') + '.';
   const row = o.panelId ? counselAll().find(x => x.id === o.panelId) : null;
   if (row) c.defenseCounsel = {panelId:row.id, name:row.name, firm:row.firm || '', email:row.email || '', phone:row.phone || ''};
