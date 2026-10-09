@@ -284,7 +284,7 @@ const SM = {
 const PC = {High:'#DC2626', Medium:'#D97706', Low:'#059669'};
 /* f(n): thousands-separated number for dollar amounts. Several screens (Assign Cases, attorney portal) call it; it was never defined, which crashed them. */
 function f(n){ const v=Number(n); return isNaN(v)?'0':Math.round(v).toLocaleString('en-US'); }
-const ATTY = ['Sarah Chen','James Ortega','David Park','Maria Santos','Rachel Goldberg','Chase Meidroth','Lisa Johnson','Rickey Henderson','Jennifer Martinez','Michael Tomassi','Amanda Foster','Sean Green'];
+const ATTY = ['Natalie Brooks','Daniel Whitaker','Terrence Walsh','Elena Marchetti','Hannah Lindgren','Carla Mendoza','Rickey Henderson','Tessa Okonkwo','Michael Tomassi','Gwen Alvarado','Sean Green'];
 
 /* ══════════════════════════════════════════════════════════════
    PAYABLES — the org paying ITS OWN people (outside counsel,
@@ -298,18 +298,18 @@ const ATTY = ['Sarah Chen','James Ortega','David Park','Maria Santos','Rachel Go
 const PAYEE_TYPES = ['Outside Counsel','Claims Adjuster','Expert Witness','Court Reporter','Investigator','Vendor','Other'];
 const PAYABLES_STATUSES = ['Draft','Submitted','Approved','Paid','Rejected'];
 let PAYEES = [
-  {id:'py1', name:'Sarah Chen', type:'Outside Counsel', email:'schen@lawfirm.com', defaultRate:425},
-  {id:'py2', name:'James Ortega', type:'Outside Counsel', email:'jortega@lawfirm.com', defaultRate:395},
-  {id:'py3', name:'David Park', type:'Outside Counsel', email:'dpark@lawfirm.com', defaultRate:450},
-  {id:'py4', name:'Rachel Goldberg', type:'Claims Adjuster', email:'rgoldberg@carrier.com', defaultRate:0},
+  {id:'py1', name:'Natalie Brooks', type:'Outside Counsel', email:'nbrooks@lawfirm.com', defaultRate:425},
+  {id:'py2', name:'Daniel Whitaker', type:'Outside Counsel', email:'dwhitaker@lawfirm.com', defaultRate:395},
+  {id:'py3', name:'Terrence Walsh', type:'Outside Counsel', email:'twalsh@lawfirm.com', defaultRate:450},
+  {id:'py4', name:'Hannah Lindgren', type:'Claims Adjuster', email:'hlindgren@carrier.com', defaultRate:0},
   {id:'py5', name:'Michael Tomassi', type:'Claims Adjuster', email:'mtomassi@carrier.com', defaultRate:0},
   {id:'py6', name:'Dr. Elena Vasquez', type:'Expert Witness', email:'evasquez@medexperts.com', defaultRate:600},
   {id:'py7', name:'Capitol Court Reporting', type:'Court Reporter', email:'billing@capitolreporting.com', defaultRate:0},
 ];
 function nextPayableId(){ return 'PAY-' + String(1000 + PAYABLES.length + 1); }
 let PAYABLES = [
-  {id:'PAY-1001', payeeId:'py1', payeeName:'Sarah Chen', payeeType:'Outside Counsel', relatedCaseId: null, amount:12450, description:'January legal fees — Smith v. Acme', dueDate: new Date(Date.now()+10*864e5).toISOString().slice(0,10), submittedDate: new Date(Date.now()-3*864e5).toISOString().slice(0,10), status:'Approved', approvedBy:'Platform Admin', paidDate:null, paymentMethod:'ACH'},
-  {id:'PAY-1002', payeeId:'py4', payeeName:'Rachel Goldberg', payeeType:'Claims Adjuster', relatedCaseId: null, amount:3200, description:'Field inspection & reserve review, Q1', dueDate: new Date(Date.now()+5*864e5).toISOString().slice(0,10), submittedDate: new Date(Date.now()-1*864e5).toISOString().slice(0,10), status:'Submitted', approvedBy:null, paidDate:null, paymentMethod:'Check'},
+  {id:'PAY-1001', payeeId:'py1', payeeName:'Natalie Brooks', payeeType:'Outside Counsel', relatedCaseId: null, amount:12450, description:'January legal fees — Smith v. Acme', dueDate: new Date(Date.now()+10*864e5).toISOString().slice(0,10), submittedDate: new Date(Date.now()-3*864e5).toISOString().slice(0,10), status:'Approved', approvedBy:'Platform Admin', paidDate:null, paymentMethod:'ACH'},
+  {id:'PAY-1002', payeeId:'py4', payeeName:'Hannah Lindgren', payeeType:'Claims Adjuster', relatedCaseId: null, amount:3200, description:'Field inspection & reserve review, Q1', dueDate: new Date(Date.now()+5*864e5).toISOString().slice(0,10), submittedDate: new Date(Date.now()-1*864e5).toISOString().slice(0,10), status:'Submitted', approvedBy:null, paidDate:null, paymentMethod:'Check'},
   {id:'PAY-1003', payeeId:'py6', payeeName:'Dr. Elena Vasquez', payeeType:'Expert Witness', relatedCaseId: null, amount:8500, description:'Independent medical exam + report', dueDate: new Date(Date.now()-4*864e5).toISOString().slice(0,10), submittedDate: new Date(Date.now()-12*864e5).toISOString().slice(0,10), status:'Paid', approvedBy:'Platform Admin', paidDate: new Date(Date.now()-2*864e5).toISOString().slice(0,10), paymentMethod:'Wire'},
   {id:'PAY-1004', payeeId:'py7', payeeName:'Capitol Court Reporting', payeeType:'Court Reporter', relatedCaseId: null, amount:1875, description:'Deposition transcript — 3 witnesses', dueDate: new Date(Date.now()+18*864e5).toISOString().slice(0,10), submittedDate: new Date().toISOString().slice(0,10), status:'Draft', approvedBy:null, paidDate:null, paymentMethod:'ACH'},
 ];
@@ -348,7 +348,7 @@ async function updatePayableStatus(id, newStatus){
   render();
 }
 
-const ATTY_COLOR = {'Sarah Chen':'#1F4E8C','James Ortega':'#1A5C2A','David Park':'#5C1A1A','Maria Santos':'#3A1A5C','Rachel Goldberg':'#6B4226','Chase Meidroth':'#0F766E','Rickey Henderson':'#2A4C7C','Jennifer Martinez':'#7C2A4C','Michael Tomassi':'#4C7C2A','Amanda Foster':'#7C6B2A','Sean Green':'#2A4C7C'};
+const ATTY_COLOR = {'Natalie Brooks':'#1F4E8C','Daniel Whitaker':'#1A5C2A','Terrence Walsh':'#5C1A1A','Elena Marchetti':'#3A1A5C','Hannah Lindgren':'#6B4226','Rickey Henderson':'#2A4C7C','Tessa Okonkwo':'#7C2A4C','Michael Tomassi':'#4C7C2A','Gwen Alvarado':'#7C6B2A','Sean Green':'#2A4C7C'};
 
 
 /* ── SCORECARD ENGINE (LES — Litigation Effectiveness Score) ──
@@ -992,26 +992,26 @@ function addCustomerToCase(c, customerId) {
 }
 
 let CASES = [
-  mkC('CC-001','Harmon Industries','Contract Dispute','Discovery','High','Sarah Chen','2024-01-15','2026-05-01',2400000,65,'CLM-2024-8801','Zurich',850000,'Mark Peterson'),
-  mkC('CC-002','Novak & Sons LLC','Employment Law','Discovery','Medium','James Ortega','2024-03-08','2026-06-15',480000,30,'CLM-2024-9942','Hartford',200000,'Linda Ross'),
-  mkC('CC-003','Apex Pharma Corp','IP Litigation','Active','High','David Park','2024-07-01','2026-07-30',8200000,45,'CLM-2024-7721','AIG',3000000,'Tom Whitfield'),
-  mkC('CC-004','Gerald Whitmore','Premises Liability','Discovery','Medium','Sarah Chen','2024-05-22','2026-08-20',1100000,55,'PR-2024-4820','Nationwide',450000,'Rebecca Thornton'),
-  mkC('CC-005','Greenleaf Capital','Coverage Dispute','Mediation','Medium','James Ortega','2024-09-14','2026-05-10',5700000,55,'CLM-2024-3304','Chubb',2200000,'Karen Liu'),
-  mkC('CC-006','Westfield Medical','Malpractice Defense','Trial','High','Sarah Chen','2024-08-19','2026-09-01',3100000,80,'CLM-2024-6633','CNA',1200000,'Dr. Janet Wu'),
-  mkC('CC-007','Torres Construction','Personal Injury','Closed','Low','David Park','2023-11-02','2025-12-01',320000,100,'CLM-2023-5514','Travelers',150000,'Bob Simmons'),
-  mkC('CC-008','Kline Brothers Realty','Real Estate','Closing','Medium','David Park','2024-10-03','2026-04-30',950000,85,'CLM-2024-8812','Hartford',400000,'Steve Reeves'),
-  mkC('CC-009','Summit Energy Partners','Contract Dispute','Review','High','Maria Santos','2025-01-07','2026-10-01',6400000,15,'CLM-2025-0011','Chubb',2000000,'Alex Rodriguez'),
-  mkC('CC-010','Okafor Tech Inc','Employment Law','Discovery','Medium','Chase Meidroth','2024-11-20','2026-08-15',275000,20,'CLM-2024-9981','Hartford',125000,'Linda Ross'),
-  mkC('CC-011','Beacon Property LLC','Property Damage','Pleadings','Medium','Rachel Goldberg','2025-03-15','2026-12-01',680000,15,'CLM-2025-0142','Travelers',280000,'Maria Diaz'),
-  mkC('CC-012','Diaz Auto Group','Auto Liability','Discovery','High','Maria Santos','2024-10-22','2026-09-10',1850000,40,'CLM-2024-9112','Progressive',900000,'James Wong'),
-  mkC('CC-013','Coastal Restoration','Insurance Defense','Active','Medium','Rachel Goldberg','2025-02-10','2026-11-01',420000,25,'AOB-2025-0044','State Farm',180000,'Patty Singh'),
-  mkC('CC-014','Pinnacle Realty Trust','Premises Liability','Mediation','High','Sarah Chen','2024-06-30','2026-08-15',2200000,70,'CLM-2024-7203','Liberty Mutual',1100000,'Frank Toomey'),
-  mkC('CC-015','Lighthouse Aerospace','Product Liability','Trial','High','David Park','2023-12-12','2026-05-20',12500000,85,'CLM-2023-9971','AIG',5500000,'Tom Whitfield'),
+  mkC('CC-001','Harmon Industries','Contract Dispute','Discovery','High','Natalie Brooks','2024-01-15','2026-05-01',2400000,65,'CLM-2024-8801','Zurich',850000,'Mark Peterson'),
+  mkC('CC-002','Novak & Sons LLC','Employment Law','Discovery','Medium','Daniel Whitaker','2024-03-08','2026-06-15',480000,30,'CLM-2024-9942','Hartford',200000,'Linda Ross'),
+  mkC('CC-003','Apex Pharma Corp','IP Litigation','Active','High','Terrence Walsh','2024-07-01','2026-07-30',8200000,45,'CLM-2024-7721','AIG',3000000,'Tom Whitfield'),
+  mkC('CC-004','Gerald Whitmore','Premises Liability','Discovery','Medium','Natalie Brooks','2024-05-22','2026-08-20',1100000,55,'PR-2024-4820','Nationwide',450000,'Rebecca Thornton'),
+  mkC('CC-005','Greenleaf Capital','Coverage Dispute','Mediation','Medium','Daniel Whitaker','2024-09-14','2026-05-10',5700000,55,'CLM-2024-3304','Chubb',2200000,'Karen Liu'),
+  mkC('CC-006','Westfield Medical','Malpractice Defense','Trial','High','Natalie Brooks','2024-08-19','2026-09-01',3100000,80,'CLM-2024-6633','CNA',1200000,'Dr. Janet Wu'),
+  mkC('CC-007','Torres Construction','Personal Injury','Closed','Low','Terrence Walsh','2023-11-02','2025-12-01',320000,100,'CLM-2023-5514','Travelers',150000,'Bob Simmons'),
+  mkC('CC-008','Kline Brothers Realty','Real Estate','Closing','Medium','Terrence Walsh','2024-10-03','2026-04-30',950000,85,'CLM-2024-8812','Hartford',400000,'Steve Reeves'),
+  mkC('CC-009','Summit Energy Partners','Contract Dispute','Review','High','Elena Marchetti','2025-01-07','2026-10-01',6400000,15,'CLM-2025-0011','Chubb',2000000,'Alex Rodriguez'),
+  mkC('CC-010','Okafor Tech Inc','Employment Law','Discovery','Medium','Terrence Walsh','2024-11-20','2026-08-15',275000,20,'CLM-2024-9981','Hartford',125000,'Linda Ross'),
+  mkC('CC-011','Beacon Property LLC','Property Damage','Pleadings','Medium','Hannah Lindgren','2025-03-15','2026-12-01',680000,15,'CLM-2025-0142','Travelers',280000,'Maria Diaz'),
+  mkC('CC-012','Diaz Auto Group','Auto Liability','Discovery','High','Elena Marchetti','2024-10-22','2026-09-10',1850000,40,'CLM-2024-9112','Progressive',900000,'James Wong'),
+  mkC('CC-013','Coastal Restoration','Insurance Defense','Active','Medium','Hannah Lindgren','2025-02-10','2026-11-01',420000,25,'AOB-2025-0044','State Farm',180000,'Patty Singh'),
+  mkC('CC-014','Pinnacle Realty Trust','Premises Liability','Mediation','High','Natalie Brooks','2024-06-30','2026-08-15',2200000,70,'CLM-2024-7203','Liberty Mutual',1100000,'Frank Toomey'),
+  mkC('CC-015','Lighthouse Aerospace','Product Liability','Trial','High','Terrence Walsh','2023-12-12','2026-05-20',12500000,85,'CLM-2023-9971','AIG',5500000,'Tom Whitfield'),
   
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
   /* DEMO: AI INTAKE EXTRACTED CASE (Shows how extraction works) */
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-  mkC('CC-100','Springfield Manufacturing Co.','Property Damage','Active','High','Chase Meidroth','2025-01-15','2026-12-31',275000,0,'CLM-2025-1000','Chubb',137500,'Tom Reynolds'),
+  mkC('CC-100','Springfield Manufacturing Co.','Property Damage','Active','High','Hannah Lindgren','2025-01-15','2026-12-31',275000,0,'CLM-2025-1000','Chubb',137500,'Tom Reynolds'),
   
   /* FRESH UNASSIGNED TEST CASES FOR DEMO */
   mkC('NEW-001','VentureTech Corp','Patent Dispute','Pleadings','High','','2025-02-01','2026-12-01',5500000,2,'CLM-2025-8001','Zurich',2200000,'Sarah King'),
@@ -1028,13 +1028,13 @@ let CASES = [
     ['WC-002','Bayline Foods','Travelers','Tom Reiner','State - Florida','Medical only','Hand laceration','Slicer blade',-20,-20,'None','Full duty','','','',0,0,2100,4000,0,0,'',0,'None','No'],
     ['WC-003','Summit Assembly','Zurich','Alicia Moore','State - California','Lost time','Right shoulder','Repetitive overhead work',-210,-205,'Permanent partial (PPD)','Modified duty','',-15,9,1120,747,31800,36000,41500,58000,'ADJ-2026-9120',-4,'None','Unknown'],
     ['WC-004','Redwood Logistics','Hartford','Dwayne Pike','State - Texas','Denied / contested','Left knee','Fall from loading dock',-75,-70,'None','Not yet determined','','','',0,0,1800,6000,0,15000,'',0,'None','No'],
-    ['WC-005','Harbor Steel','CNA','Maria Santos','State - Missouri','Lost time','Wrist fracture','Struck by falling tool',-45,-45,'Temporary total (TTD)','Off work',iso(21),'','',1240,827,8900,14000,9800,30000,'MO-2026-1188',5,'None','No'],
+    ['WC-005','Harbor Steel','CNA','Elena Marchetti','State - Missouri','Lost time','Wrist fracture','Struck by falling tool',-45,-45,'Temporary total (TTD)','Off work',iso(21),'','',1240,827,8900,14000,9800,30000,'MO-2026-1188',5,'None','No'],
     ['WC-006','Peachtree Hospitality','Travelers','Grace Lin','State - Georgia','Lost time','Right wrist','Repetitive motion, kitchen',-300,-296,'Permanent partial (PPD)','Full duty','',-90,6,760,507,22400,22000,5000,12000,'GA-2026-02201',-30,'Compromise and release','Yes'],
     ['WC-007','Sunrise Senior Living','Zurich','Paul Okoye','State - Florida','Lost time','Lumbar spine','Patient transfer injury',-160,-118,'Temporary total (TTD)','Off work','','','',890,593,27300,24000,19000,40000,'FL-2026-3350',40,'None','Unknown'],
     ['WC-008','Delta Packaging','Hartford','Jill Navarro','State - California','Medical only','Eye irritation','Chemical splash',-9,-9,'None','Full duty','','','',0,0,600,2500,0,0,'',0,'None','No']
   ];
   W.forEach(w => {
-    const c = mkC(w[0], w[1], 'Workers Comp', 'Discovery', 'Medium', ['Sarah Chen','David Park','James Ortega'][+w[0].slice(3) % 3], iso(w[8]), iso(365), Math.round((w[17]+w[18]+w[19]+w[20])||10000), 20, 'WC-CLM-' + w[0].slice(3) + '26', w[2], (w[18]+w[20])||5000, w[3]);
+    const c = mkC(w[0], w[1], 'Workers Comp', 'Discovery', 'Medium', ['Natalie Brooks','Terrence Walsh','Daniel Whitaker'][+w[0].slice(3) % 3], iso(w[8]), iso(365), Math.round((w[17]+w[18]+w[19]+w[20])||10000), 20, 'WC-CLM-' + w[0].slice(3) + '26', w[2], (w[18]+w[20])||5000, w[3]);
     c.insurance.coverageType = 'Workers Compensation'; c.court = Object.assign({}, c.court, {jurisdiction:w[4]});
     c.litigationStage = w[5] === 'Denied / contested' ? 'Discovery' : 'Pre-Suit';
     c.comp = {on:true, claimant:w[3], employer:w[1], claimClass:w[5], bodyPart:w[6], injuryNature:w[7], injuryDate:iso(w[8]), reportedDate:iso(w[9]), disability:w[10], rtwStatus:w[11], rtwDate:w[12], mmiDate: w[13] === '' ? '' : iso(w[13]), impairment:w[14], aww:w[15], compRate:w[16], medicalPaid:w[17], medicalReserve:w[18], indemnityPaid:w[19], indemnityReserve:w[20], boardCaseNo:w[21], hearingDate: w[22] ? iso(w[22]) : '', settlementType:w[23], medicare:w[24], subro:'Unknown'};
@@ -1052,18 +1052,18 @@ CASES.forEach(c => {
   const set = (id, jur, list) => { const c = CASES.find(x => x.id === id); if (!c) return; c.court = c.court || {}; c.court.jurisdiction = jur; c.timeLimitDemands = list; };
   const team = {'CC-012':['James Wong','Priya Nair'], 'CC-004':['Rebecca Thornton','Marcus Bell'], 'CC-014':['Frank Toomey','']};
   Object.keys(team).forEach(id => { const c = CASES.find(x => x.id === id); if (c) { c.adjusterPrimary = team[id][0]; c.adjusterBackup = team[id][1]; } });
-  const dcDemo = CASES.find(x => x.id === 'CC-012'); if (dcDemo) dcDemo.defenseCounsel = {panelId:'demo-ac-1', name:'Dana Whitfield', firm:'Whitfield & Burke LLP', email:'dwhitfield@whitfieldburke.com', phone:''};
+  const dcDemo = CASES.find(x => x.id === 'CC-012'); if (dcDemo) dcDemo.defenseCounsel = {panelId:'demo-ac-1', name:'Colleen Prescott', firm:'Prescott Lyle LLP', email:'cprescott@prescottlyle.com', phone:''};
   set('CC-012','State - Georgia',[
     {id:'TLD-demo1', receivedDate:iso(-26), deadline:iso(2), deadlineHM:'17:00', tz:'America/New_York', acks:[{by:'James Wong', role:'primary', at:new Date(Date.now()-5*36e5).toISOString()}], demandAmount:1000000, policyLimits:1000000, claimantFirm:'Harlan & Pike, LLP', method:'Certified mail', state:'Georgia', notes:'Policy-limits demand, pre-suit. Offer letter requires written acceptance and a release of the insured.', status:'open',
-     log:[{date:iso(-26), by:'Maria Santos', text:'Demand recorded. Received '+iso(-26)+', deadline '+iso(2)+' 5:00 PM.'}]}]);
+     log:[{date:iso(-26), by:'Elena Marchetti', text:'Demand recorded. Received '+iso(-26)+', deadline '+iso(2)+' 5:00 PM.'}]}]);
   set('CC-014','State - California',[
     {id:'TLD-demo2', receivedDate:iso(-21), deadline:iso(9), deadlineTime:'', demandAmount:2000000, policyLimits:2000000, claimantFirm:'Brandt Injury Law', method:'Email', state:'California', notes:'Time-limited demand under CCP 999.', status:'open',
-     log:[{date:iso(-21), by:'Sarah Chen', text:'Demand recorded. Received '+iso(-21)+', deadline '+iso(9)+'.'}]}]);
+     log:[{date:iso(-21), by:'Natalie Brooks', text:'Demand recorded. Received '+iso(-21)+', deadline '+iso(9)+'.'}]}]);
   set('CC-004','State - Florida',[
     {id:'TLD-demo3', receivedDate:iso(-14), deadline:iso(31), deadlineTime:'', demandAmount:450000, policyLimits:450000, claimantFirm:'Ocean Coast Trial Group', method:'Certified mail', state:'Florida', notes:'', status:'open',
-     log:[{date:iso(-14), by:'Sarah Chen', text:'Demand recorded.'}]},
+     log:[{date:iso(-14), by:'Natalie Brooks', text:'Demand recorded.'}]},
     {id:'TLD-demo4', receivedDate:iso(-60), deadline:iso(-30), deadlineTime:'', demandAmount:300000, policyLimits:450000, claimantFirm:'Ocean Coast Trial Group', method:'Certified mail', state:'Florida', notes:'Earlier demand.', status:'accepted', respondedDate:iso(-34), responseNote:'Accepted in writing before the deadline; paid within limits.',
-     log:[{date:iso(-60), by:'Sarah Chen', text:'Demand recorded.'},{date:iso(-34), by:'Sarah Chen', text:'Response recorded on '+iso(-34)+': accepted.'}]}]);
+     log:[{date:iso(-60), by:'Natalie Brooks', text:'Demand recorded.'},{date:iso(-34), by:'Natalie Brooks', text:'Response recorded on '+iso(-34)+': accepted.'}]}]);
 })();
 
 
@@ -1117,9 +1117,9 @@ CASES[0].settlements = [
   {id:'s2',date:'2025-06-15',from:'Defense',amount:800000,notes:'Countered via mediator (ADR Services); mediation scheduled September 2025.'}
 ];
 CASES[0].billing.timeEntries = [
-  {id:'te1',date:'2025-04-01',atty:'Sarah Chen',hours:3.5,rate:450,code:'L310 - Written Discovery',desc:'Drafted interrogatories re contract performance',amount:1575,billed:true,invoiceId:'INV-001'},
-  {id:'te2',date:'2025-04-03',atty:'Sarah Chen',hours:2.0,rate:450,code:'L120 - Analysis/Strategy',desc:'Strategy call with client re expert witnesses',amount:900,billed:true,invoiceId:'INV-001'},
-  {id:'te3',date:'2025-04-08',atty:'Sarah Chen',hours:4.5,rate:450,code:'L330 - Depositions',desc:'Deposition prep — Harmon witnesses',amount:2025,billed:false,invoiceId:''}
+  {id:'te1',date:'2025-04-01',atty:'Natalie Brooks',hours:3.5,rate:450,code:'L310 - Written Discovery',desc:'Drafted interrogatories re contract performance',amount:1575,billed:true,invoiceId:'INV-001'},
+  {id:'te2',date:'2025-04-03',atty:'Natalie Brooks',hours:2.0,rate:450,code:'L120 - Analysis/Strategy',desc:'Strategy call with client re expert witnesses',amount:900,billed:true,invoiceId:'INV-001'},
+  {id:'te3',date:'2025-04-08',atty:'Natalie Brooks',hours:4.5,rate:450,code:'L330 - Depositions',desc:'Deposition prep — Harmon witnesses',amount:2025,billed:false,invoiceId:''}
 ];
 CASES[0].billing.invoices = [{number:'INV-001',date:'2025-04-15',amount:14400,entryCount:2,status:'Paid',billTo:{type:'carrier',name:CASES[0].insurance.adjuster||CASES[0].insurance.carrier||'Claims Department',org:CASES[0].insurance.carrier||'',email:CASES[0].insurance.adjusterEmail||''}}];
 CASES[0].billing.totalBilled = 14400;
@@ -1130,13 +1130,13 @@ CASES[0].evidence = [
   {id:'ev2',name:'Email Chain Oct 2023',type:'Email',custodian:'IT Dept',dateObtained:'2024-03-15',location:'Digital - Box',batesStart:'HAR0026',batesEnd:'HAR0198',privileged:false,notes:'Communications re alleged breach.'}
 ];
 CASES[0].tasks = [
-  {id:'t1',title:'Draft motion to compel',done:false,due:'2026-04-29',assignee:'Sarah Chen',priority:'High'},
-  {id:'t2',title:'Retain damages expert',done:false,due:'2026-04-30',assignee:'Sarah Chen',priority:'High'},
-  {id:'t3',title:'Review expert report',done:true,due:'2025-03-01',assignee:'Sarah Chen',priority:'Medium'}
+  {id:'t1',title:'Draft motion to compel',done:false,due:'2026-04-29',assignee:'Natalie Brooks',priority:'High'},
+  {id:'t2',title:'Retain damages expert',done:false,due:'2026-04-30',assignee:'Natalie Brooks',priority:'High'},
+  {id:'t3',title:'Review expert report',done:true,due:'2025-03-01',assignee:'Natalie Brooks',priority:'Medium'}
 ];
 CASES[0].updates.unshift(
-  {date:'2026-04-22',author:'Sarah Chen',type:'Discovery',text:'Opposing counsel requested 30-day extension on expert disclosures. Motion to compel being drafted.'},
-  {date:'2026-04-18',author:'Sarah Chen',type:'Filing',text:'Deposition transcripts received; reviewing for inconsistencies with contract language.'}
+  {date:'2026-04-22',author:'Natalie Brooks',type:'Discovery',text:'Opposing counsel requested 30-day extension on expert disclosures. Motion to compel being drafted.'},
+  {date:'2026-04-18',author:'Natalie Brooks',type:'Filing',text:'Deposition transcripts received; reviewing for inconsistencies with contract language.'}
 );
 CASES[0].tpaNotes = 'Claim under active monitoring. Reserve reviewed quarterly. Last adequacy review March 2025 — reserve held at $850K.';
 CASES[0].nextStep = 'Finalize motion to compel and serve on opposing counsel';
@@ -1378,7 +1378,7 @@ let S = {
   search: '', fSt: 'All', fAt: 'All', fTy: 'All', fCarrier: 'All',
   caseId: null, tab: 'overview',
   showAdd: false, showRpt: false, showReportPreview: null,
-  scoreSel: 'Sarah Chen',
+  scoreSel: 'Natalie Brooks',
   aiLoad: false, aiText: '',
   bTab: 'time', auditFilter: 'All',
   reportCat: 'All',
@@ -1388,7 +1388,7 @@ let S = {
   globalSearchQuery: '', showNotifPanel: false,
   rptFields: ['id','client','type','status','attorney','value','claimNo','carrier','reserve','billed','progress','sol'],
   rptAt: 'All', rptSt: 'All',
-  addForm: {client:'',type:'Insurance Defense',status:'Active',priority:'Medium',attorney:'Sarah Chen',filed:'',deadline:'',value:'',claimNo:'',carrier:'',reserve:'',adjuster:'',notes:'',aob:'No',catastrophe:'No',coverageType:'General Liability',claimCategory:'Bodily Injury'},
+  addForm: {client:'',type:'Insurance Defense',status:'Active',priority:'Medium',attorney:'Natalie Brooks',filed:'',deadline:'',value:'',claimNo:'',carrier:'',reserve:'',adjuster:'',notes:'',aob:'No',catastrophe:'No',coverageType:'General Liability',claimCategory:'Bodily Injury'},
   /* AI Intake for Claims */
   showAiIntake: false, aiIntakeStep: 1, aiClaimText: '', aiProcessing: false, aiExtracted: null, aiError: '', aiAssignLoading: false, aiAssignReason: '', showAttorneySelector: false, attorneyRecommendations: null
 };
@@ -2299,9 +2299,9 @@ function attorneyLogin() {
 // Task queue (stored in state)
 function initTasks() {
   if (!S.tasks) st({tasks: [
-    {id:'t1', caseId:'CC-001', matter:'CC-001', attorney:'Sarah Chen', type:'Settlement Offer', status:'pending', createdAt:'2026-08-29', message:'Need updated settlement offer from opposing counsel. Please review and respond ASAP.'},
-    {id:'t2', caseId:'CC-005', matter:'CC-005', attorney:'James Ortega', type:'Costs Update', status:'pending', createdAt:'2026-08-29', message:'Can you log the expert witness fees ($15,000)? Need for budget report.'},
-    {id:'t3', caseId:'CC-014', matter:'CC-014', attorney:'Sarah Chen', type:'Status Update', status:'completed', completedAt:'2026-08-28', response:'Case moving to trial prep. Expert witness deposed yesterday.'}
+    {id:'t1', caseId:'CC-001', matter:'CC-001', attorney:'Natalie Brooks', type:'Settlement Offer', status:'pending', createdAt:'2026-08-29', message:'Need updated settlement offer from opposing counsel. Please review and respond ASAP.'},
+    {id:'t2', caseId:'CC-005', matter:'CC-005', attorney:'Daniel Whitaker', type:'Costs Update', status:'pending', createdAt:'2026-08-29', message:'Can you log the expert witness fees ($15,000)? Need for budget report.'},
+    {id:'t3', caseId:'CC-014', matter:'CC-014', attorney:'Natalie Brooks', type:'Status Update', status:'completed', completedAt:'2026-08-28', response:'Case moving to trial prep. Expert witness deposed yesterday.'}
   ]});
   autoGenerateStaleReminders();
 }
@@ -4081,12 +4081,12 @@ const COUNSEL_HEADERS = {
 const COUNSEL_TEMPLATE_COLS = ['Name','Firm','Email','Phone','City','States','Practice Areas','Hourly Rate','Status','Your ID','Notes'];
 function counselDemoSeed(){
   const mk = (i,name,firm,email,states,areas,rate,status) => ({id:'demo-ac-'+i,name,firm,email,phone:'(404) 555-01'+String(i).padStart(2,'0'),city:'',states,practiceAreas:areas,hourlyRate:rate,status,externalId:'AC-'+(1000+i)});
-  return [mk(1,'Dana Whitfield','Whitfield & Burke LLP','dwhitfield@whitfieldburke.com',['GA','NY','NJ'],'Auto liability; trucking; patent and intellectual property',215,'Preferred'),
-    mk(2,'Marcus Hale','Hale Defense Group','mhale@haledefense.com',['GA','AL'],'Auto liability; premises',195,'Approved'),
-    mk(3,'Priscilla Okafor','Okafor Rivera PA','pokafor@okaforrivera.com',['FL','NY'],'Premises; general liability; employment',205,'Approved'),
-    mk(4,'Gregory Lang','Lang Sutter LLP','glang@langsutter.com',['CA','NY'],'Auto liability; employment',265,'Approved'),
-    mk(5,'Helen Brandt','Brandt & Moss','hbrandt@brandtmoss.com',['TX','OK','NY'],'Trucking; product liability; patent litigation',230,'Preferred'),
-    mk(6,'Samuel Reyes','Reyes Cole LLP','sreyes@reyescole.com',['MO','KS'],'General liability',185,'Pending')];
+  return [mk(1,'Colleen Prescott','Prescott Lyle LLP','cprescott@prescottlyle.com',['GA','NY','NJ'],'Auto liability; trucking; patent and intellectual property',215,'Preferred'),
+    mk(2,'Andre Kessler','Kessler Dunn Defense Group','akessler@kesslerdunn.com',['GA','AL'],'Auto liability; premises',195,'Approved'),
+    mk(3,'Nadia Rosales','Rosales & Quinn PA','nrosales@rosalesquinn.com',['FL','NY'],'Premises; general liability; employment',205,'Approved'),
+    mk(4,'Owen Pritchard','Pritchard Hollis LLP','opritchard@pritchardhollis.com',['CA','NY'],'Auto liability; employment',265,'Approved'),
+    mk(5,'Vivian Ashby','Ashby & Crowe','vashby@ashbycrowe.com',['TX','OK','NY'],'Trucking; product liability; patent litigation',230,'Preferred'),
+    mk(6,'Julian Marsh','Marsh Teague LLP','jmarsh@marshteague.com',['MO','KS'],'General liability',185,'Pending')];
 }
 function counselAll(){ if (DEMO_MODE || !authToken) { if (!S.demoCounsel) S.demoCounsel = counselDemoSeed(); return S.demoCounsel; } return S.counselList || []; }
 function counselLoaded(){ return DEMO_MODE || !authToken || Array.isArray(S.counselList); }
@@ -4148,8 +4148,8 @@ function counselSimImport(recs, commit, markMissing){
 }
 function counselTemplateDownload(){
   downloadCSV('approved-counsel-template.csv', COUNSEL_TEMPLATE_COLS, [
-    ['Dana Whitfield','Whitfield & Burke LLP','dwhitfield@whitfieldburke.com','(404) 555-0101','Atlanta','GA, AL','Auto liability; trucking','215','Preferred','AC-1001',''],
-    ['Priscilla Okafor','Okafor Rivera PA','pokafor@okaforrivera.com','(305) 555-0102','Miami','FL','Premises; general liability','205','Approved','AC-1002','']]);
+    ['Colleen Prescott','Prescott Lyle LLP','cprescott@prescottlyle.com','(404) 555-0101','Atlanta','GA, AL','Auto liability; trucking','215','Preferred','AC-1001',''],
+    ['Nadia Rosales','Rosales & Quinn PA','nrosales@rosalesquinn.com','(305) 555-0102','Miami','FL','Premises; general liability','205','Approved','AC-1002','']]);
 }
 function counselFile(input){
   const f = input.files && input.files[0]; if (!f) return;
@@ -5428,10 +5428,10 @@ function revDelSet(){ const k = S.revGK || ''; if (!k) return; if (!confirm('Rem
 function firmDemoSeed(){
   if (S.firmDemo) return S.firmDemo;
   const a = CASES[0], b = CASES[1] || CASES[0], m = c => (c.matterNo || c.id);
-  const csv = (c, inv) => 'Invoice,InvoiceDate,Firm,Matter,Date,Timekeeper,Class,Code,Hours,Rate,Amount,Description,Type\n'+inv+',2026-10-02,Okafor Rivera PA,'+m(c)+',2026-09-14,Dana Whitfield,Partner,L330,6.5,420,,Prepare for and defend deposition of insured; research on spoliation law,F\n'+inv+',2026-10-02,Okafor Rivera PA,'+m(c)+',2026-09-15,Jordan Pike,Associate,L310,2.0,210,,Review file,F\n'+inv+',2026-10-02,Okafor Rivera PA,'+m(c)+',2026-09-16,Marcy Lowe,Paralegal,L210,1.2,120,,E-filing and calendaring,F\n';
-  S.firmDemo = {links:[{id:'demo-l1', firm:'Okafor Rivera PA', email:'billing@okaforrivera.example', active:true, created_at:td(), last_used_at:td()}], subs:[
-    {id:'demo-s1', firm:'Okafor Rivera PA', matter_ref:m(a), invoice_no:'OR-2026-0931', invoice_date:'2026-10-02', submitter_name:'Pat Okafor', submitter_email:'pat@okaforrivera.example', format:'csv', status:'New', created_at:new Date(Date.now()-3*36e5).toISOString(), content:csv(a, 'OR-2026-0931')},
-    {id:'demo-s2', firm:'Okafor Rivera PA', matter_ref:m(b), invoice_no:'OR-2026-0877', invoice_date:'2026-09-20', submitter_name:'Pat Okafor', submitter_email:'pat@okaforrivera.example', format:'csv', status:'Loaded', created_at:new Date(Date.now()-6*864e5).toISOString(), content:csv(b, 'OR-2026-0877')}]};
+  const csv = (c, inv) => 'Invoice,InvoiceDate,Firm,Matter,Date,Timekeeper,Class,Code,Hours,Rate,Amount,Description,Type\n'+inv+',2026-10-02,Rosales & Quinn PA,'+m(c)+',2026-09-14,Colleen Prescott,Partner,L330,6.5,420,,Prepare for and defend deposition of insured; research on spoliation law,F\n'+inv+',2026-10-02,Rosales & Quinn PA,'+m(c)+',2026-09-15,Jordan Pike,Associate,L310,2.0,210,,Review file,F\n'+inv+',2026-10-02,Rosales & Quinn PA,'+m(c)+',2026-09-16,Marcy Lowe,Paralegal,L210,1.2,120,,E-filing and calendaring,F\n';
+  S.firmDemo = {links:[{id:'demo-l1', firm:'Rosales & Quinn PA', email:'billing@okaforrivera.example', active:true, created_at:td(), last_used_at:td()}], subs:[
+    {id:'demo-s1', firm:'Rosales & Quinn PA', matter_ref:m(a), invoice_no:'OR-2026-0931', invoice_date:'2026-10-02', submitter_name:'Pat Okafor', submitter_email:'pat@okaforrivera.example', format:'csv', status:'New', created_at:new Date(Date.now()-3*36e5).toISOString(), content:csv(a, 'OR-2026-0931')},
+    {id:'demo-s2', firm:'Rosales & Quinn PA', matter_ref:m(b), invoice_no:'OR-2026-0877', invoice_date:'2026-09-20', submitter_name:'Pat Okafor', submitter_email:'pat@okaforrivera.example', format:'csv', status:'Loaded', created_at:new Date(Date.now()-6*864e5).toISOString(), content:csv(b, 'OR-2026-0877')}]};
   return S.firmDemo;
 }
 function firmIsDemo(){ return DEMO_MODE || !authToken; }
@@ -5522,51 +5522,51 @@ function revDemoSeed(){
   const pool = CASES.filter(c => c.defenseCounsel && c.defenseCounsel.firm && !(c.billing && (c.billing.reviews || []).length)).concat(CASES).filter((c, i, a) => a.indexOf(c) === i).slice(0, 4); if (pool.length < 2) return;
   const B = [
     ['WB-2026-0412', '2026-09-15', [
-      ['2026-08-03', 'Dana Whitfield', 'Partner', 'L110', 2.0, 285, 'Review claim file and police report; confer with adjuster re coverage and liability; draft summary memo to file'],
+      ['2026-08-03', 'Colleen Prescott', 'Partner', 'L110', 2.0, 285, 'Review claim file and police report; confer with adjuster re coverage and liability; draft summary memo to file'],
       ['2026-08-03', 'Jordan Pike', 'Associate', 'L110', 3.5, 210, 'Review file'],
-      ['2026-08-04', 'Dana Whitfield', 'Partner', 'L120', 0.5, 285, 'Conference with associate J. Pike regarding case strategy'],
+      ['2026-08-04', 'Colleen Prescott', 'Partner', 'L120', 0.5, 285, 'Conference with associate J. Pike regarding case strategy'],
       ['2026-08-05', 'Jordan Pike', 'Associate', 'L210', 2.4, 210, 'Draft answer and affirmative defenses to complaint'],
       ['2026-08-05', 'Marcy Lowe', 'Paralegal', 'L210', 0.8, 120, 'E-filing answer with court and calendaring response deadlines'],
       ['2026-08-05', 'Marcy Lowe', 'Paralegal', 'L210', 0.8, 120, 'E-filing answer with court and calendaring response deadlines'],
       ['2026-08-10', 'Jordan Pike', 'Associate', 'L310', 6.1, 210, 'Draft interrogatories and requests for production to plaintiff'],
-      ['2026-08-12', 'Dana Whitfield', 'Partner', 'L330', 9.0, 285, 'Prepare for and take deposition of plaintiff; research on spoliation law'],
+      ['2026-08-12', 'Colleen Prescott', 'Partner', 'L330', 9.0, 285, 'Prepare for and take deposition of plaintiff; research on spoliation law'],
       ['2026-08-13', 'Jordan Pike', 'Associate', 'L330', 3.0, 210, 'Draft notice of deposition and subpoena for plaintiff\'s treating physician'],
-      ['2026-08-14', 'Dana Whitfield', 'Partner', 'L120', 2.0, 215, 'Negotiate protective order for medical records with plaintiff counsel'],
+      ['2026-08-14', 'Colleen Prescott', 'Partner', 'L120', 2.0, 215, 'Negotiate protective order for medical records with plaintiff counsel'],
       ['2026-08-12', 'Jordan Pike', 'Associate', 'L330', 2.5, 210, 'Travel to and from plaintiff counsel\'s office for deposition'],
       ['2026-08-18', 'Jordan Pike', 'Associate', 'L120', 4.25, 210, 'Research premises liability standard of care'],
       ['2026-08-12', '', '', 'E111', 0, 0, 'Lunch for deposition attendees', 'E', 64.5],
       ['2026-08-12', '', '', 'E112', 0, 0, 'Court reporter transcript, plaintiff deposition', 'E', 842],
       ['2026-08-31', '', '', 'E107', 0, 0, 'Postage and in-house copying', 'E', 18.75]], 'Needs review'],
     ['HD-7781', '2026-09-20', [
-      ['2026-08-19', 'Marcus Hale', 'Partner', 'L120', 1.5, 240, 'Analysis of liability facts and comparative fault exposure for settlement authority request'],
-      ['2026-08-19', 'Marcus Hale', 'Partner', 'L160', 1.0, 240, 'Attention to matter'],
+      ['2026-08-19', 'Andre Kessler', 'Partner', 'L120', 1.5, 240, 'Analysis of liability facts and comparative fault exposure for settlement authority request'],
+      ['2026-08-19', 'Andre Kessler', 'Partner', 'L160', 1.0, 240, 'Attention to matter'],
       ['2026-08-20', 'Tess Ward', 'Associate', 'L310', 3.2, 175, 'Respond to plaintiff\'s first interrogatories and requests for production'],
       ['2026-08-21', 'Tess Ward', 'Associate', 'L330', 2.0, 175, 'Draft deposition outline for treating physician'],
-      ['2026-08-24', 'Marcus Hale', 'Partner', 'L120', 0.6, 240, 'Internal conference regarding trial staffing'],
+      ['2026-08-24', 'Andre Kessler', 'Partner', 'L120', 0.6, 240, 'Internal conference regarding trial staffing'],
       ['2026-08-25', 'Ben Ortiz', 'Paralegal', 'L140', 1.2, 95, 'Organize file and index medical records'],
       ['2026-09-02', 'Tess Ward', 'Associate', 'L240', 5.5, 175, 'Draft motion for partial summary judgment on punitive damages']], 'Needs review'],
     ['OR-20260901', '2026-09-30', [
-      ['2026-08-26', 'Priscilla Okafor', 'Partner', 'L210', 1.2, 205, 'Review complaint and prepare answer'],
-      ['2026-08-27', 'Priscilla Okafor', 'Partner', 'L120', 1.0, 205, 'Telephone call with adjuster regarding reserve and initial evaluation'],
+      ['2026-08-26', 'Nadia Rosales', 'Partner', 'L210', 1.2, 205, 'Review complaint and prepare answer'],
+      ['2026-08-27', 'Nadia Rosales', 'Partner', 'L120', 1.0, 205, 'Telephone call with adjuster regarding reserve and initial evaluation'],
       ['2026-08-28', 'Dev Rao', 'Associate', 'L310', 2.3, 160, 'Prepare initial disclosures and document request responses'],
       ['2026-08-28', 'Dev Rao', 'Associate', 'L310', 2.3, 160, 'Prepare initial disclosures and document request responses'],
       ['2026-09-03', 'Dev Rao', 'Associate', 'L410', 3.0, 160, 'Interview insured and site manager re incident; review surveillance video'],
       ['2026-09-08', '', '', 'E119', 0, 0, 'Liability expert retainer', 'E', 2500]], 'Reviewed'],
     ['LS-55102', '2026-08-31', [
-      ['2026-07-14', 'Gregory Lang', 'Partner', 'L120', 3.0, 340, 'Evaluate exposure and prepare case plan and budget for carrier'],
-      ['2026-07-15', 'Gregory Lang', 'Partner', 'L210', 1.8, 340, 'Review and revise answer; conference with associate regarding affirmative defenses'],
+      ['2026-07-14', 'Owen Pritchard', 'Partner', 'L120', 3.0, 340, 'Evaluate exposure and prepare case plan and budget for carrier'],
+      ['2026-07-15', 'Owen Pritchard', 'Partner', 'L210', 1.8, 340, 'Review and revise answer; conference with associate regarding affirmative defenses'],
       ['2026-07-16', 'Nora Katz', 'Associate', 'L310', 7.4, 255, 'Draft responses to special interrogatories; review client documents; prepare privilege log'],
       ['2026-07-17', 'Nora Katz', 'Associate', 'L410', 4.0, 255, 'Prepare insured for deposition and review prior testimony'],
       ['2026-07-21', 'Nora Katz', 'Associate', 'L350', 2.0, 255, 'Meet and confer with plaintiff counsel regarding discovery dispute'],
-      ['2026-07-29', 'Gregory Lang', 'Partner', 'L330', 6.5, 340, 'Defend deposition of insured'],
+      ['2026-07-29', 'Owen Pritchard', 'Partner', 'L330', 6.5, 340, 'Defend deposition of insured'],
       ['2026-07-30', 'Nora Katz', 'Associate', 'L240', 6.0, 255, 'Draft motion in limine regarding prior claims history'],
       ['2026-08-03', 'Nora Katz', 'Associate', 'L310', 5.0, 255, 'Review and organize plaintiff\'s document production and prepare discovery deficiency letter'],
       ['2026-07-29', '', '', 'E112', 0, 0, 'Court reporter and transcript, insured deposition', 'E', 1180]], 'Appealed']
   ];
   pool.forEach((c, i) => {
-    const b = B[i]; if (!b) return; const firm = (c.defenseCounsel && c.defenseCounsel.firm) || ['Whitfield & Burke LLP', 'Hale Defense Group', 'Okafor Rivera PA', 'Lang Sutter LLP'][i];
+    const b = B[i]; if (!b) return; const firm = (c.defenseCounsel && c.defenseCounsel.firm) || ['Prescott Lyle LLP', 'Kessler Dunn Defense Group', 'Rosales & Quinn PA', 'Pritchard Hollis LLP'][i];
     c.billing = c.billing || {}; c.billing.reviews = c.billing.reviews || [];
-    const rv = {id:'RV-demo-' + (i + 1), invoiceNo:b[0], invDate:b[1], firm: i === 0 ? 'Whitfield & Burke LLP' : i === 1 ? 'Hale Defense Group' : i === 2 ? 'Okafor Rivera PA' : 'Lang Sutter LLP', source:'file', created:b[1], status:'Needs review', lines:b[2].map((r, j) => revMakeLine({date:r[0], tk:r[1], cls:r[2], code:r[3], hours:r[4], rate:r[5], desc:r[6], type:r[7], amount:r[8]}, j)), appeal:null};
+    const rv = {id:'RV-demo-' + (i + 1), invoiceNo:b[0], invDate:b[1], firm: i === 0 ? 'Prescott Lyle LLP' : i === 1 ? 'Kessler Dunn Defense Group' : i === 2 ? 'Rosales & Quinn PA' : 'Pritchard Hollis LLP', source:'file', created:b[1], status:'Needs review', lines:b[2].map((r, j) => revMakeLine({date:r[0], tk:r[1], cls:r[2], code:r[3], hours:r[4], rate:r[5], desc:r[6], type:r[7], amount:r[8]}, j)), appeal:null};
     revCheck(rv, c);
     if (b[3] === 'Reviewed' || b[3] === 'Appealed') { rv.lines.forEach(l => { if (l.flags.length) l.decision = l.cut > 0 ? 'accept' : 'reject'; }); rv.status = b[3]; rv.statusDate = b[1]; }
     if (b[3] === 'Appealed') rv.appeal = {date:'2026-09-12', restored: Math.round(revTotals(rv).acc * 0.18), note:'Firm supplied detail for the discovery responses; part of the block-billing reduction restored.'};
@@ -10013,7 +10013,7 @@ function apiHubV(forceTab){
   h += '<button class="btn btn-out" onclick="downloadClosedCasesJSON()">Export Existing Closed Cases (JSON)</button>';
   h += '</div>';
 
-  h += ta('Closed case records (JSON array)', S._importJSON||'', 'window._importJSON=this.value;S._importJSON=this.value', '[\n  {\n    "client": "Meridian Freight Co",\n    "type": "Auto Liability",\n    "carrier": "Progressive",\n    "claimNo": "CLM-2022-4471",\n    "filed": "2022-03-04",\n    "deadline": "2023-11-18",\n    "value": 275000,\n    "settlementAmount": 210000,\n    "attorney": "Maria Santos"\n  }\n]');
+  h += ta('Closed case records (JSON array)', S._importJSON||'', 'window._importJSON=this.value;S._importJSON=this.value', '[\n  {\n    "client": "Meridian Freight Co",\n    "type": "Auto Liability",\n    "carrier": "Progressive",\n    "claimNo": "CLM-2022-4471",\n    "filed": "2022-03-04",\n    "deadline": "2023-11-18",\n    "value": 275000,\n    "settlementAmount": 210000,\n    "attorney": "Elena Marchetti"\n  }\n]');
 
   h += '<div style="display:flex;gap:8px;align-items:center;">';
   h += '<button class="btn btn-pri" onclick="runImport()" '+(S.importLoading?'disabled':'')+'>'+(S.importLoading?'Importing…':'Import Closed Cases')+'</button>';
@@ -11003,7 +11003,7 @@ const HEALTH_CHECK_CSV_HEADERS = ['Client','Type','Status','Attorney','Carrier',
 // sending the CSV back. Column notes live in the modal's own copy
 // instead, not in the file.
 const HEALTH_CHECK_CSV_TEMPLATE = HEALTH_CHECK_CSV_HEADERS.join(',') + '\n' +
-  'Acme Manufacturing Co,Auto Liability,Active,,Zurich,CLM-2025-1234,2025-03-01,2027-03-01,1200000,450000,1500000,300000,2025-09-15,18500,Georgia,Southeast Auto Book,Jordan Lee,Casey Morgan,Dana Whitfield,Whitfield & Burke LLP,Pat Harlan,"Harlan & Pike, LLP",2025-02-10,2025-03-15,,,,,,,,,,,,,,,\n';
+  'Acme Manufacturing Co,Auto Liability,Active,,Zurich,CLM-2025-1234,2025-03-01,2027-03-01,1200000,450000,1500000,300000,2025-09-15,18500,Georgia,Southeast Auto Book,Jordan Lee,Casey Morgan,Colleen Prescott,Prescott Lyle LLP,Pat Harlan,"Harlan & Pike, LLP",2025-02-10,2025-03-15,,,,,,,,,,,,,,,\n';
 
 /* Upload a .csv instead of pasting it. Reads the file in the browser (nothing is sent anywhere until
    you run the check or import) and drops its text into the box so it can still be reviewed and edited. */
@@ -11850,9 +11850,9 @@ function handleImportFile(input){
 
 function loadSampleImport(){
   const sample = [
-    {client:'Meridian Freight Co', type:'Auto Liability', carrier:'Progressive', claimNo:'CLM-2022-4471', filed:'2022-03-04', deadline:'2023-11-18', value:275000, settlementAmount:210000, attorney:'Maria Santos'},
-    {client:'Brightview Senior Living', type:'Premises Liability', carrier:'Liberty Mutual', claimNo:'CLM-2021-9902', filed:'2021-07-19', deadline:'2023-02-01', value:610000, settlementAmount:390000, attorney:'Sarah Chen'},
-    {client:'Alden Manufacturing', type:'Product Liability', carrier:'Zurich', claimNo:'CLM-2020-1187', filed:'2020-11-02', deadline:'2022-09-14', value:1450000, settlementAmount:875000, attorney:'David Park'}
+    {client:'Meridian Freight Co', type:'Auto Liability', carrier:'Progressive', claimNo:'CLM-2022-4471', filed:'2022-03-04', deadline:'2023-11-18', value:275000, settlementAmount:210000, attorney:'Elena Marchetti'},
+    {client:'Brightview Senior Living', type:'Premises Liability', carrier:'Liberty Mutual', claimNo:'CLM-2021-9902', filed:'2021-07-19', deadline:'2023-02-01', value:610000, settlementAmount:390000, attorney:'Natalie Brooks'},
+    {client:'Alden Manufacturing', type:'Product Liability', carrier:'Zurich', claimNo:'CLM-2020-1187', filed:'2020-11-02', deadline:'2022-09-14', value:1450000, settlementAmount:875000, attorney:'Terrence Walsh'}
   ];
   const json = JSON.stringify(sample, null, 2);
   window._importJSON = json;
@@ -14356,21 +14356,23 @@ function randoShiftDateStr(dstr, shiftDays){
   return d.toISOString().slice(0,10);
 }
 function randomizeDemoData(){
-  // Attorneys — new unique names, same 5 brand colors just remapped.
-  const oldNames = ATTY.slice();
-  const oldColors = oldNames.map(a => ATTY_COLOR[a]);
-  const newNames = randoUniqueNames(oldNames.length, RANDO_FIRST, RANDO_LAST);
+  // Attorneys — new unique names, same brand colors just remapped. Three names are fixed on purpose.
+  const KEEP_ATTY = ['Rickey Henderson', 'Michael Tomassi', 'Sean Green'];
+  const oldNames = ATTY.filter(a => KEEP_ATTY.indexOf(a) < 0);
+  const oldColors = ATTY.map(a => ATTY_COLOR[a]);
+  const newNames = randoUniqueNames(oldNames.length, RANDO_FIRST, RANDO_LAST).filter(n => KEEP_ATTY.indexOf(n) < 0);
   const nameMap = {};
-  oldNames.forEach((old,i) => { nameMap[old] = newNames[i]; });
-
-  ATTY.length = 0; ATTY.push(...newNames);
+  oldNames.forEach((old,i) => { nameMap[old] = newNames[i] || old; });
+  const oldAll = ATTY.slice();
+  const allNew = oldAll.map(a => nameMap[a] || a);
+  ATTY.length = 0; ATTY.push(...allNew);
   Object.keys(ATTY_COLOR).forEach(k => delete ATTY_COLOR[k]);
-  newNames.forEach((name,i) => { ATTY_COLOR[name] = oldColors[i]; });
+  allNew.forEach((name,i) => { ATTY_COLOR[name] = oldColors[i]; });
 
   const usedClients = new Set();
   CASES.forEach(c => {
     // Attorney reassignment (preserves the original workload distribution)
-    c.attorney = nameMap[c.attorney] || randoPick(newNames);
+    c.attorney = nameMap[c.attorney] || (KEEP_ATTY.indexOf(c.attorney) >= 0 ? c.attorney : randoPick(allNew));
     if (c.backupAttorney) c.backupAttorney = nameMap[c.backupAttorney] || c.backupAttorney;
 
     // Client name — mostly company-style (matches this dataset's
