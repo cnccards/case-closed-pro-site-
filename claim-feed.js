@@ -18,7 +18,7 @@ const norm = s => String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]/g,
 // field -> accepted header spellings (all compared after norm())
 export const FEED_FIELDS = [
   // key, label, kind, example, where it shows, aliases
-  { key: 'claimNo', kind: 'text', req: 'Always', ex: 'BSP-2026-004417', where: 'Claim number on the matter. Used to match the same claim next time.', alias: ['claimnumber', 'claimno', 'claim', 'claimid', 'claimref'] },
+  { key: 'claimNo', kind: 'text', req: 'Always', ex: 'CLM-2026-004417', where: 'Claim number on the matter. Used to match the same claim next time.', alias: ['claimnumber', 'claimno', 'claim', 'claimid', 'claimref'] },
   { key: 'client', kind: 'text', req: 'New claims only', ex: 'Acme Logistics LLC', where: 'Insured / client name.', alias: ['insured', 'insuredname', 'clientname', 'policyholder', 'defendant'] },
   { key: 'type', kind: 'text', req: 'No', ex: 'Auto Liability', where: 'Matter type.', alias: ['mattertype', 'claimtype', 'linetype', 'coverageline', 'lob'] },
   { key: 'status', kind: 'text', req: 'No', ex: 'Active', where: 'Matter status.', alias: ['claimstatus', 'matterstatus'] },
