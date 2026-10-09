@@ -994,6 +994,41 @@ async function feedOpen(req, res) {
     return null;
   }
 }
+async function runFeed(db, orgId, keyName, rows, dryRun) {
+    const out = { ok: true, dryRun, received: rows.length, created: 0, updated: 0, unchanged: 0, failed: 0, errors: [], unknownColumns: [] };
+    const unknown = new Set();
+    for (let i = 0; i < rows.length; i++) {
+      try {
+        const { fields, unknown: unk } = normalizeRow(rows[i]);
+        unk.forEach(u => unknown.add(String(u).slice(0, 60)));
+        await withRowSavepoint(db, async () => {
+          const cur = (await db.query('SELECT client, type, status, litigation_stage, carrier, reserve_amount, value, filed_date, data FROM cases WHERE org_id = $1 AND lower(claim_no) = lower($2) ORDER BY created_at LIMIT 1 FOR UPDATE', [orgId, fields.claimNo])).rows[0];
+          if (!cur && !fields.client) throw new Error('client is required for a new claim');
+          const base = defaultCaseData();
+          base.updates = [{ date: new Date().toISOString().slice(0, 10), author: 'Claim feed', type: 'Case Opened', text: `Matter created from the claim feed (${keyName}).` }];
+          const r = applyFields(cur || null, fields, base);
+          if (r.isNew) {
+            const c = r.cols;
+            await db.query(
+              `INSERT INTO cases (org_id, matter_no, client, type, status, litigation_stage, carrier, claim_no, reserve_amount, filed_date, value, data)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+              [orgId, 'FD-' + crypto.randomBytes(4).toString('hex').toUpperCase(), c.client, c.type || 'Other', c.status || 'Active', c.litigation_stage || 'Pre-Suit', c.carrier || null, fields.claimNo, c.reserve_amount || 0, c.filed_date || null, c.value || 0, JSON.stringify(r.data)]);
+            out.created++;
+          } else if (r.changed.length) {
+            const sets = ['data = $3', 'updated_at = now()'], vals = [orgId, fields.claimNo, JSON.stringify(r.data)];
+            for (const [col, v] of Object.entries(r.cols)) { vals.push(v); sets.push(`${col} = $${vals.length}`); }
+            await db.query(`UPDATE cases SET ${sets.join(', ')} WHERE org_id = $1 AND lower(claim_no) = lower($2)`, vals);
+            out.updated++;
+          } else out.unchanged++;
+        });
+      } catch (e) {
+        out.failed++;
+        if (out.errors.length < 50) out.errors.push({ row: i + 1, claimNo: String((rows[i] && (rows[i].claimNo || rows[i].claim_no || rows[i]['Claim Number'])) || '').slice(0, 80), error: e.message });
+      }
+    }
+    out.unknownColumns = Array.from(unknown).slice(0, 40);
+  return out;
+}
 app.get('/api/feed/ping', async (req, res) => {
   const f = await feedOpen(req, res); if (!f) return;
   try {
@@ -1010,38 +1045,7 @@ app.post('/api/feed/claims', express.text({ type: ['text/csv', 'text/plain', 'ap
     try { rows = rowsFromBody(req.body, req.headers['content-type']); } catch (e) { rows = null; }
     if (!rows || !rows.length) { await f.client.query('ROLLBACK'); return res.status(400).json({ error: 'Send {"claims":[...]} as JSON, or a CSV file (Content-Type: text/csv) with a header row.' }); }
     if (rows.length > FEED_MAX_ROWS) { await f.client.query('ROLLBACK'); return res.status(413).json({ error: `Too many claims in one request (${rows.length}). Send ${FEED_MAX_ROWS} or fewer per request.` }); }
-    const out = { ok: true, dryRun, received: rows.length, created: 0, updated: 0, unchanged: 0, failed: 0, errors: [], unknownColumns: [] };
-    const unknown = new Set();
-    for (let i = 0; i < rows.length; i++) {
-      try {
-        const { fields, unknown: unk } = normalizeRow(rows[i]);
-        unk.forEach(u => unknown.add(String(u).slice(0, 60)));
-        await withRowSavepoint(f.client, async () => {
-          const cur = (await f.client.query('SELECT client, type, status, litigation_stage, carrier, reserve_amount, value, filed_date, data FROM cases WHERE org_id = $1 AND lower(claim_no) = lower($2) ORDER BY created_at LIMIT 1 FOR UPDATE', [f.orgId, fields.claimNo])).rows[0];
-          if (!cur && !fields.client) throw new Error('client is required for a new claim');
-          const base = defaultCaseData();
-          base.updates = [{ date: new Date().toISOString().slice(0, 10), author: 'Claim feed', type: 'Case Opened', text: `Matter created from the claim feed (${f.key.name}).` }];
-          const r = applyFields(cur || null, fields, base);
-          if (r.isNew) {
-            const c = r.cols;
-            await f.client.query(
-              `INSERT INTO cases (org_id, matter_no, client, type, status, litigation_stage, carrier, claim_no, reserve_amount, filed_date, value, data)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-              [f.orgId, 'FD-' + crypto.randomBytes(4).toString('hex').toUpperCase(), c.client, c.type || 'Other', c.status || 'Active', c.litigation_stage || 'Pre-Suit', c.carrier || null, fields.claimNo, c.reserve_amount || 0, c.filed_date || null, c.value || 0, JSON.stringify(r.data)]);
-            out.created++;
-          } else if (r.changed.length) {
-            const sets = ['data = $3', 'updated_at = now()'], vals = [f.orgId, fields.claimNo, JSON.stringify(r.data)];
-            for (const [col, v] of Object.entries(r.cols)) { vals.push(v); sets.push(`${col} = $${vals.length}`); }
-            await f.client.query(`UPDATE cases SET ${sets.join(', ')} WHERE org_id = $1 AND lower(claim_no) = lower($2)`, vals);
-            out.updated++;
-          } else out.unchanged++;
-        });
-      } catch (e) {
-        out.failed++;
-        if (out.errors.length < 50) out.errors.push({ row: i + 1, claimNo: String((rows[i] && (rows[i].claimNo || rows[i].claim_no || rows[i]['Claim Number'])) || '').slice(0, 80), error: e.message });
-      }
-    }
-    out.unknownColumns = Array.from(unknown).slice(0, 40);
+    const out = await runFeed(f.client, f.orgId, f.key.name, rows, dryRun);
     if (dryRun) { await f.client.query('ROLLBACK'); return res.json(out); }
     await f.client.query('UPDATE integration_keys SET last_used_at = now(), last_summary = $2 WHERE id = $1', [f.key.id, JSON.stringify({ at: new Date().toISOString(), received: out.received, created: out.created, updated: out.updated, unchanged: out.unchanged, failed: out.failed })]);
     await f.client.query('COMMIT');
@@ -3139,6 +3143,27 @@ app.put('/api/org-settings/:key', requireOrgRole('admin'), orgSettingsGuard, asy
   res.json({ ok: true });
 });
 
+
+
+// Same feed, but for a signed-in admin uploading a file from the app (no key needed).
+app.post('/api/feed/upload', requireOrgRole('admin'), express.text({ type: ['text/csv', 'text/plain', 'application/csv'], limit: '15mb' }), async (req, res) => {
+  const dryRun = req.query.dryRun === '1' || req.query.dryRun === 'true';
+  let rows;
+  try { rows = rowsFromBody(req.body, req.headers['content-type']); } catch (e) { rows = null; }
+  if (!rows || !rows.length) return res.status(400).json({ error: 'That file has no claims in it. It needs a header row and at least one claim.' });
+  if (rows.length > FEED_MAX_ROWS) return res.status(413).json({ error: `Too many claims in one file (${rows.length}). Split it into files of ${FEED_MAX_ROWS} or fewer.` });
+  await req.db.query('SAVEPOINT feed_upload');
+  try {
+    const out = await runFeed(req.db, req.orgId, 'File upload (' + (req.user?.email || 'admin') + ')', rows, dryRun);
+    if (dryRun) await req.db.query('ROLLBACK TO SAVEPOINT feed_upload');
+    else audit(req.orgId, req.user?.sub, 'claim_feed.upload', 'case', null, { received: out.received, created: out.created, updated: out.updated, failed: out.failed }, req.ip).catch(() => {});
+    res.json(out);
+  } catch (e) {
+    await req.db.query('ROLLBACK TO SAVEPOINT feed_upload').catch(() => {});
+    console.error('claim upload failed:', e.message);
+    res.status(500).json({ error: 'The file could not be processed. Nothing was saved.' });
+  }
+});
 
 // Claim feed keys (signed-in customer admins).
 app.get('/api/integration-keys', requireOrgRole('admin'), async (req, res) => {
