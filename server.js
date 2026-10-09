@@ -934,7 +934,7 @@ app.post('/api/firm-submit/check', async (req, res) => {
 
 
 // ---------------------------------------------------------------
-// CLAIM FEED. A customer's claims system (Broadspire, a TPA, an MGA) sends open claims to a
+// CLAIM FEED. A customer's claims system (a carrier, a TPA, an MGA) sends open claims to a
 // private address on a schedule, as JSON or CSV. Each claim is matched on its claim number:
 // new claims are created, known claims are updated, blanks never erase anything, and sending
 // the same file twice changes nothing. This is a batch feed (every few minutes to nightly),
@@ -3174,7 +3174,7 @@ app.get('/api/integration-keys', requireOrgRole('admin'), async (req, res) => {
 app.post('/api/integration-keys', requireOrgRole('admin'), async (req, res) => {
   if (!feedTablesReady) await ensureFeedTables();
   const name = String((req.body && req.body.name) || '').trim().slice(0, 120);
-  if (!name) return res.status(400).json({ error: 'Name the system that will send claims (for example: Broadspire claims system).' });
+  if (!name) return res.status(400).json({ error: 'Name the system that will send claims (for example: Claims system).' });
   const token = req.orgId.toLowerCase() + '.' + crypto.randomBytes(32).toString('hex');
   const r = await req.db.query(`INSERT INTO integration_keys (org_id, token_hash, name, created_by) VALUES ($1,$2,$3,$4) RETURNING id`, [req.orgId, sha256hex(token), name, req.user?.sub || null]);
   await audit(req.orgId, req.user?.sub, 'integration_key.create', 'integration_key', r.rows[0].id, { name }, req.ip);
