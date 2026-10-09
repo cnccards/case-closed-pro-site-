@@ -5920,17 +5920,22 @@ function matchOptionsFor(c){
   }
   return getTop3Recommendations(c);
 }
-async function assignFromMatch(caseId, idx){
-  const c = CASES.find(x => x.id === caseId); if (!c) return;
-  const o = matchOptionsFor(c)[idx]; if (!o) return;
-  if (o.conflict) { alert('Not assigned. ' + o.conflict + ' Pick another attorney.'); return; }
+async function doMatchAssign(c, idx, opts){
+  const o = (opts || matchOptionsFor(c))[idx]; if (!o) return null;
+  if (o.conflict) { alert('Not assigned. ' + o.conflict + ' Pick another attorney.'); return null; }
   const medal = ['Gold', 'Silver', 'Bronze'][idx], reason = medal + ' Sentinel Match recommendation. ' + (o.why || []).join('; ') + ((o.warn || []).length ? '. To check: ' + o.warn.join('; ') : '') + '.';
   const row = o.panelId ? counselAll().find(x => x.id === o.panelId) : null;
   if (row) c.defenseCounsel = {panelId:row.id, name:row.name, firm:row.firm || '', email:row.email || '', phone:row.phone || ''};
   const msg = await assignCaseToAttorney(c, o.name, {reason:reason.slice(0, 480), source:'sentinel_match'});
   c.updates = c.updates || [];
   c.updates.push({date:demandToday(), author:(S.currentUser && S.currentUser.name) || 'User', type:'Assignment', text:'Assigned to ' + o.name + ' by Sentinel Match. ' + reason});
-  sc(c); alert('✓ ' + (c.matterNo || c.id) + ': ' + msg); st({showAssignCases:true});
+  sc(c);
+  return {msg, name:o.name, reason};
+}
+async function assignFromMatch(caseId, idx){
+  const c = CASES.find(x => x.id === caseId); if (!c) return;
+  const r = await doMatchAssign(c, idx); if (!r) return;
+  alert('✓ ' + (c.matterNo || c.id) + ': ' + r.msg); st({showAssignCases:true});
 }
 async function assignAttorney(caseId, attorneyName, ranking) {
   const caseObj = CASES.find(c => c.id === caseId);
@@ -13419,140 +13424,56 @@ function aiIntakeStep3V() {
 function attorneySelectorModalV() {
   const recs = S.attorneyRecommendations;
   if (!recs) return '';
-  const _ex = S.aiExtracted || {};
-  const _facts = {};
-  try { getTop3Recommendations({ type:_ex.type, value:_ex.value||0, client:_ex.client }, true).forEach(a => { _facts[a.name] = a; }); } catch(e){}
-  const factsV = name => {
-    const f = _facts[name]; if (!f) return '';
-    return '<div style="font-size:12px;color:#166534;margin-top:10px;line-height:1.5;"><div style="font-weight:700;margin-bottom:2px;">Why</div>'+(f.why||[]).map(w => '<div>• '+esc(w)+'</div>').join('')+'</div>';
+  const tiers = [['gold','🥇','TOP CHOICE (GOLD)','#F59E0B'],['silver','🥈','STRONG ALTERNATIVE (SILVER)','#6B7280'],['bronze','🥉','SOLID OPTION (BRONZE)','#B45309']];
+  const card = ([k, ico, label, col]) => {
+    const r = recs[k]; if (!r) return '';
+    return '<div style="border:2px solid '+col+';border-radius:12px;padding:16px;margin-bottom:14px;'+(r.conflict?'opacity:.7;':'cursor:pointer;')+'" '+(r.conflict?'':'onclick="selectAttorney(\''+k+'\')"')+'>'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:20px;">'+ico+'</span><span style="font-size:13px;font-weight:700;color:'+col+';">'+label+'</span></div>'+
+      (r.score != null ? '<div style="font-weight:800;font-size:16px;color:'+col+';" title="'+escAttr('Score out of 100. '+(r.parts||[]).join(', '))+'">'+r.score+'<span style="font-size:11px;font-weight:600;"> /100</span></div>' : '')+'</div>'+
+      '<div style="font-size:14px;font-weight:700;color:var(--ink);">'+esc(r.attorney)+'</div>'+(r.firm?'<div style="font-size:12px;color:var(--muted);">'+esc(r.firm)+'</div>':'')+
+      '<div style="font-size:12px;color:var(--muted);line-height:1.5;margin-top:6px;">'+esc(r.reasoning || '')+'</div>'+
+      '<div style="font-size:12px;color:#166534;margin-top:10px;line-height:1.5;"><div style="font-weight:700;margin-bottom:2px;">Why</div>'+(r.why||[]).map(w => '<div>• '+esc(w)+'</div>').join('')+'</div>'+
+      ((r.warn||[]).length ? '<div style="font-size:12px;color:#B45309;margin-top:6px;line-height:1.5;"><div style="font-weight:700;margin-bottom:2px;">Check</div>'+r.warn.map(w => '<div'+(/^Conflict:/.test(w)?' style="color:#B91C1C;font-weight:700;"':'')+'>• '+esc(w)+'</div>').join('')+'</div>' : '')+
+    '</div>';
   };
-  
   return '<div class="modal-bg" onclick="if(event.target===this)st({showAttorneySelector:false})">' +
-    '<div class="modal" style="max-width:650px;">' +
-      '<div class="modal-h">' +
-        '<div class="serif" style="font-size:18px;font-weight:700;">🎯 Sentinel Match Recommendations</div>' +
-        '<button class="x" onclick="st({showAttorneySelector:false})">×</button>' +
-      '</div>' +
+    '<div class="modal" style="max-width:680px;">' +
+      '<div class="modal-h"><div class="serif" style="font-size:18px;font-weight:700;">🎯 Sentinel Match Recommendations</div><button class="x" onclick="st({showAttorneySelector:false})">×</button></div>' +
       '<div class="modal-b" style="padding:20px;">' +
-        '<div style="font-size:13px;color:var(--muted);margin-bottom:24px;">Select which attorney you\'d like to assign to this case:</div>' +
-        
-        /* GOLD */
-        '<div style="background:linear-gradient(135deg, #FFD700 0%, #FFA500 100%);border-radius:12px;padding:2px;margin-bottom:16px;" onclick="selectAttorney(\'gold\')" style="cursor:pointer;">' +
-          '<div style="background:white;border-radius:10px;padding:16px;cursor:pointer;transition:all 0.2s;">' +
-            '<div style="display:flex;align-items:center;margin-bottom:8px;">' +
-              '<div style="font-size:20px;margin-right:8px;">🥇</div>' +
-              '<div style="font-size:13px;font-weight:700;color:#FFD700;">TOP CHOICE (GOLD)</div>' +
-            '</div>' +
-            '<div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:4px;">' + esc(recs.gold.attorney) + '</div>' +
-            '<div style="font-size:12px;color:var(--muted);line-height:1.5;">' + esc(recs.gold.reasoning) + '</div>' + factsV(recs.gold.attorney) +
-          '</div>' +
-        '</div>' +
-        
-        /* SILVER */
-        '<div style="background:linear-gradient(135deg, #C0C0C0 0%, #A9A9A9 100%);border-radius:12px;padding:2px;margin-bottom:16px;" onclick="selectAttorney(\'silver\')" style="cursor:pointer;">' +
-          '<div style="background:white;border-radius:10px;padding:16px;cursor:pointer;transition:all 0.2s;">' +
-            '<div style="display:flex;align-items:center;margin-bottom:8px;">' +
-              '<div style="font-size:20px;margin-right:8px;">🥈</div>' +
-              '<div style="font-size:13px;font-weight:700;color:#C0C0C0;">STRONG ALTERNATIVE (SILVER)</div>' +
-            '</div>' +
-            '<div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:4px;">' + esc(recs.silver.attorney) + '</div>' +
-            '<div style="font-size:12px;color:var(--muted);line-height:1.5;">' + esc(recs.silver.reasoning) + '</div>' + factsV(recs.silver.attorney) +
-          '</div>' +
-        '</div>' +
-        
-        /* BRONZE */
-        '<div style="background:linear-gradient(135deg, #CD7F32 0%, #8B4513 100%);border-radius:12px;padding:2px;margin-bottom:24px;" onclick="selectAttorney(\'bronze\')" style="cursor:pointer;">' +
-          '<div style="background:white;border-radius:10px;padding:16px;cursor:pointer;transition:all 0.2s;">' +
-            '<div style="display:flex;align-items:center;margin-bottom:8px;">' +
-              '<div style="font-size:20px;margin-right:8px;">🥉</div>' +
-              '<div style="font-size:13px;font-weight:700;color:#CD7F32;">SOLID OPTION (BRONZE)</div>' +
-            '</div>' +
-            '<div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:4px;">' + esc(recs.bronze.attorney) + '</div>' +
-            '<div style="font-size:12px;color:var(--muted);line-height:1.5;">' + esc(recs.bronze.reasoning) + '</div>' + factsV(recs.bronze.attorney) +
-          '</div>' +
-        '</div>' +
-        
-        '<div style="background:var(--surf1);border-left:4px solid var(--pri2);border-radius:4px;padding:12px;font-size:12px;color:var(--ink);">' +
-          '<strong>💡 Tip:</strong> Click any option to assign that attorney to the case.' +
-        '</div>' +
+        '<div style="font-size:13px;color:var(--muted);margin-bottom:18px;">Same ranking as the Assign Cases screen. Click an option to assign that attorney.</div>' +
+        tiers.map(card).join('') +
       '</div>' +
     '</div>' +
   '</div>';
 }
 
-/* AI Smart Attorney Assignment - Shows 3 tiered options */
+/* Sentinel Match for a just-created matter. Uses the same ranking, score and reasons as the Assign Cases screen
+   (matchOptionsFor), so both places always agree. When the AI service is available it supplies the written
+   explanation for those same attorneys; otherwise the plain-English summary built from the facts is used. */
+function intakeCaseObj(){ return CASES.find(x => x.id === S.aiNewCaseId) || CASES[CASES.length - 1]; }
 async function aiAssignBestAttorney() {
   if (!S.aiExtracted) return;
-  
   st({ aiAssignLoading: true, showAttorneySelector: true });
-  
   try {
-    const d = S.aiExtracted;
-    const attorneyList = ATTY;
-
-    // Real, authenticated call to the actual backend — apiFetch adds
-    // the Bearer token and the API_BASE prefix, unlike the old plain
-    // fetch("/api/recommend-attorney") this replaced, which was a
-    // leftover from a Vercel-Edge-Function-era build that had no
-    // separate auth step. Against the real server.js, that old call
-    // would 401 every time. This route is also plan-gated server-side
-    // (requireFeature('sentinel_match')) — a 403 here means it's not
-    // included on this org's plan, not a real failure, so it gets a
-    // clearer message below instead of the generic one.
-    let recommendations;
+    const d = S.aiExtracted, c = intakeCaseObj();
+    if (!c) throw new Error('The new matter could not be found. Assign from the Assign Cases screen instead.');
+    const opts = matchOptionsFor(c);
+    if (!opts.length) throw new Error('No attorneys are available to recommend. Upload your approved panel first.');
+    const tiers = ['gold', 'silver', 'bronze'];
+    const recs = {};
+    opts.forEach((o, i) => { recs[tiers[i]] = Object.assign({}, o, { attorney:o.name, reasoning:matchWriteup(c, o, i) }); });
     if (authToken) {
-      recommendations = await apiFetch('/api/recommend-attorney', {
-        method: 'POST',
-        body: JSON.stringify({
-          caseDetails: {
-            client: d.client,
-            type: d.type,
-            priority: d.priority,
-            value: d.value,
-            summary: d.summary
-          },
-          attorneys: attorneyList
-        })
-      });
-    } else {
-      // Public demo (nobody signed in): the original same-origin call to
-      // this site's own /api/recommend-attorney, as it worked before.
-      // If that's unavailable, rank with the built-in workload/experience
-      // scoring (same as the Assign Cases screen) so the demo still works.
       try {
-        const response = await fetch('/api/recommend-attorney', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ caseDetails: { client: d.client, type: d.type, priority: d.priority, value: d.value, summary: d.summary }, attorneys: attorneyList })
-        });
-        if (!response.ok) throw new Error('same-origin recommend failed: ' + response.status);
-        recommendations = await response.json();
-      } catch (err) {
-        console.warn('Same-origin recommend-attorney unavailable, using built-in scoring:', err.message);
-        const top = getTop3Recommendations({ type: d.type, value: d.value || 0 });
-        const tiers = ['gold', 'silver', 'bronze'];
-        recommendations = {};
-        top.forEach((a, i) => {
-          recommendations[tiers[i]] = { attorney: a.name, reasoning: a.name + ' scores ' + a.score + '/100 for this matter. ' + ((a.why || []).join('; ') || a.experience) + '.' };
-        });
-      }
+        const ai = await apiFetch('/api/recommend-attorney', { method:'POST', body: JSON.stringify({
+          caseDetails:{ client:d.client, type:d.type, priority:d.priority, value:d.value, summary:d.summary },
+          attorneys: opts.map(o => o.name) }) });
+        tiers.forEach(t => { const x = ai && ai[t]; if (x && recs[t] === undefined) return; if (x && typeof x.reasoning === 'string' && x.reasoning.trim()) { const hit = tiers.find(k => recs[k] && recs[k].attorney === x.attorney); if (hit) recs[hit].reasoning = x.reasoning.trim(); } });
+      } catch (e) { console.warn('AI explanation unavailable, using the built-in summary:', e.message); }
     }
-
-    // Validate attorneys exist
-    const validateAtty = (name) => ATTY.includes(name) ? name : (ATTY[0] || 'Unassigned');
-
-    S.attorneyRecommendations = {
-      gold: { attorney: validateAtty(recommendations.gold.attorney), reasoning: recommendations.gold.reasoning },
-      silver: { attorney: validateAtty(recommendations.silver.attorney), reasoning: recommendations.silver.reasoning },
-      bronze: { attorney: validateAtty(recommendations.bronze.attorney), reasoning: recommendations.bronze.reasoning }
-    };
-
-    console.log('✅ Attorney recommendations:', S.attorneyRecommendations);
-
-    // Refresh UI to show selector
+    S.attorneyOptions = opts;
+    S.attorneyRecommendations = recs;
     st({ aiAssignLoading: false });
     render();
-
   } catch (error) {
     console.error('Attorney recommendation failed:', error);
     st({ aiAssignLoading: false, showAttorneySelector: false });
@@ -13590,26 +13511,15 @@ async function assignCaseToAttorney(caseObj, attorneyName, opts) {
 /* Select attorney from recommendations */
 async function selectAttorney(tier) {
   if (!S.attorneyRecommendations || !S.attorneyRecommendations[tier]) return;
-
-  const recommended = S.attorneyRecommendations[tier];
+  const idx = ['gold', 'silver', 'bronze'].indexOf(tier), recommended = S.attorneyRecommendations[tier];
+  const c = intakeCaseObj(); if (!c) return;
+  const r = await doMatchAssign(c, idx, S.attorneyOptions);
+  if (!r) return;
   S.aiExtracted.attorney = recommended.attorney;
   S.aiAssignReason = recommended.reasoning;
-
-  // Update the created case
-  const createdCase = CASES[CASES.length - 1];
-  let msg = '';
-  if (createdCase) {
-    logAuditTrail('case_attorney_assigned_ai', createdCase.id, null, {
-      attorney: recommended.attorney,
-      tier: tier.toUpperCase(),
-      reason: recommended.reasoning
-    });
-    msg = await assignCaseToAttorney(createdCase, recommended.attorney, { reason: recommended.reasoning, source: 'sentinel_match' });
-  }
-
-  // Close selector and refresh
+  logAuditTrail('case_attorney_assigned_ai', c.id, null, { attorney: recommended.attorney, tier: tier.toUpperCase(), reason: r.reason });
   st({ showAttorneySelector: false });
-  if (msg) alert('✓ ' + msg);
+  if (r.msg) alert('✓ ' + r.msg);
 }
 
 /* SAMPLE-MODE claim extraction — used only when nobody is signed in (the
@@ -13800,6 +13710,7 @@ function submitAiExtractedCase() {
     // Log audit trail
     logAuditTrail('case_created_ai_intake', newCaseId, null, newCase);
     
+    S.aiNewCaseId = newCaseId;
     // Show success and close
     st({ 
       aiIntakeStep: 3
