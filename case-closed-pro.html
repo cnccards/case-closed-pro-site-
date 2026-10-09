@@ -2673,12 +2673,12 @@ function render(){
   else if (S.role === 'today') html += todayV();
   else if (S.role === 'roi') html += roiV();
   else if (S.role === 'execvs') html += execVsV();
-  else if (S.role === 'plaintiffs') html += plaintiffV();
-  else if (S.role === 'dcscore') html += dcScoreV();
+  else if (S.role === 'plaintiffs') html += cdeskV('plaintiff');
+  else if (S.role === 'dcscore') html += cdeskV('defense');
   else if (S.role === 'review') html += revV();
   else if (S.role === 'cdesk') html += cdeskV();
-  else if (S.role === 'comp') html += compV();
-  else if (S.role === 'counsel') html += counselV();
+  else if (S.role === 'comp') html += litigationRedirect();
+  else if (S.role === 'counsel') html += apiHubV('counsel');
   else if (S.role === 'partner') html += partV();
   else if (S.role === 'executive') html += execV();
   else if (S.role === 'scorecard') html += (S.scorecardDetail ? attorneyDetailV(S.scorecardDetail) : scorecardV());
@@ -2807,19 +2807,16 @@ function hdr(){
       ['litigation','Litigation'],
       ['attorney','My Cases'],
       ['demands','🛡 Verdict Shield'],
-      ['comp',"Workers' Comp"],
       ['claims','Claims Desk'],
       ['activity','Activity Hub'],
       ['billing','Invoice Hub'],
       ['review','🔍 Sentinel Review'],
-      ['cdesk','Counsel Desk'],
+      ['cdesk','Counsel'],
       ['payables','Payables']
     ]},
     { label:'Insights', items:[
       ['executive','Executive'],
       ['execvs','🛡 Executive Shield'],
-      ['plaintiffs','Plaintiff Counsel'],
-      ['dcscore','Defense Counsel'],
       ['scorecard','Scorecards'],
       ['reports','Reports Hub']
     ]},
@@ -2827,7 +2824,6 @@ function hdr(){
       ['premium','★ Premium Features']
     ]},
     { label:'Admin', items:[
-      ['counsel','Approved Counsel'],
       ['tpa','Account Executive'],
       ['carrier','Carrier Portal'],
       ['partner','TPA Leadership'],
@@ -6208,6 +6204,7 @@ function litigationDashV(){
 
   /* Row 2b: Pending Closures — Readiness (what's blocking claims handoff) */
   const pendingCloseCandidates = CASES.filter(c => c.status !== 'Closed' && (c.status === 'Closing' || (c.closing && c.closing.dispositionType)));
+  h += cdRiskCardV();
   h += '<div class="card" style="margin-bottom:14px;order:4;">';
   h += '<div class="sh"><span>Pending Closures — Readiness for Claims Handoff</span><span style="color:var(--dim);font-weight:500;">'+pendingCloseCandidates.length+' in the pipeline</span></div>';
   if (pendingCloseCandidates.length === 0) {
@@ -7299,6 +7296,7 @@ function kpiDonutBarRow(opt){
 }
 
 /* ── 1. FIRM AT A GLANCE ──────────────────────────────────── */
+function litigationRedirect(){ setTimeout(() => st({role:'litigation'}), 0); return ''; }
 function execCompCardV(){
   const rows = compRows(); if (!rows.length) return '';
   const inc = rows.reduce((a, x) => a + x.incurred, 0), flagged = rows.filter(x => x.fl.some(y => y.sev !== 'info')).length, hear = rows.filter(x => x.hearingSoon).length, off = rows.filter(x => x.fl.some(y => y.key === 'offwork')).length, lost = rows.filter(x => x.k.claimClass === 'Lost time').length;
@@ -7314,7 +7312,7 @@ function execGlanceV(){
   const wins = closed.filter(c => (c.exposure.settlementAmount || 0) < (c.exposure.demandAmount || c.value));
   const winRate = closed.length ? Math.round(wins.length/closed.length*100) : 0;
 
-  let h = execCompCardV();
+  let h = '';
 
   /* ── 1. NEEDS YOUR ATTENTION — every open action item across the
      portfolio, ranked, in one list, instead of scattered across tabs. */
@@ -9786,8 +9784,11 @@ ${[...CASES].sort((a,b)=>(b.billing.totalBilled||0)-(a.billing.totalBilled||0)).
    store — most importantly bulk-importing closed case history.
    Exposed on window.CaseAPI. Also mirrors the REST API shape
    described in openapi.yaml / server.js (see the API tab). */
-function apiHubV(){
-  let h = '<div class="wrap">';
+function apiHubV(forceTab){
+  const tab = forceTab || S.apiTab || 'api';
+  const bar = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px;">' + [['api','Imports and API'],['counsel','Approved counsel']].map(([k, l]) => '<span class="pill' + (tab === k ? ' on' : '') + '" onclick="st({role:\'api\',apiTab:\'' + k + '\',caseId:null,showWelcome:false})">' + l + '</span>').join('') + '</div>';
+  if (tab === 'counsel') return '<div class="wrap" style="padding-top:0;padding-bottom:0;max-width:1100px;">' + bar + '</div>' + counselV();
+  let h = '<div class="wrap">' + bar;
   h += '<div class="hero"><div class="hero-l"><div class="hero-eyebrow">Developer Access</div>';
   h += '<h1 class="hero-title">API &amp; Closed Case Import</h1>';
   h += '<p class="hero-sub">Bulk-load historical closed case data, or connect an external system via the documented REST API.</p></div></div>';
@@ -12166,7 +12167,7 @@ function cdRiskSectionV(c){
   h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;"><div><label class="lbl">Status</label><select id="sbStat" class="inp"><option value="">Not reviewed</option>'+['Possible','Pursuing','Recovered','Not applicable'].map(o => '<option'+(sb.status === o ? ' selected' : '')+'>'+o+'</option>').join('')+'</select></div><div><label class="lbl">Responsible party</label><input id="sbTarget" class="inp" value="'+escAttr(sb.target)+'"></div><div><label class="lbl">Amount at stake ($)</label><input id="sbAmt" class="inp" type="number" value="'+escAttr(sb.amount || '')+'"></div><div><label class="lbl">Note</label><input id="sbNote" class="inp" value="'+escAttr(sb.note)+'"></div></div><div style="margin-top:8px;"><button class="btn btn-out" onclick="cdSetSubro(\''+esc(c.id)+'\')">Save recovery status</button></div>';
   return h;
 }
-CD_EXTRA.risk = Object.assign(function(open){
+const cdRiskTab = (function(open){
   const rows = open.map(c => ({c, r:cdRisk(c), d:cdExtDisagree(c)})).sort((a, b) => b.r.score - a.r.score);
   const hi = rows.filter(x => x.r.level === 'High').length, mid = rows.filter(x => x.r.level === 'Moderate').length, sub = open.filter(c => { const s2 = cdSubro(c); return s2.status === 'Possible' || s2.status === 'Pursuing' || s2.suggest; }).length;
   const kpi = (l, v, sub2, col) => '<div class="kpi"><div class="kpi-bar" style="background:'+col+';"></div><div class="kpi-l">'+l+'</div><div class="kpi-v">'+v+'</div><div class="kpi-sub">'+sub2+'</div></div>';
@@ -12174,7 +12175,7 @@ CD_EXTRA.risk = Object.assign(function(open){
   h += '<div style="font-size:12px;color:var(--muted);margin:10px 0;max-width:780px;line-height:1.6;">Open matters ranked by the rule-based escalation score. Open one to see every factor behind it.</div>';
   h += '<table><thead><tr><th>Matter</th><th>Client</th><th style="text-align:right;">Score</th><th>Main factors</th><th>Outside score</th></tr></thead><tbody>'+rows.slice(0, 60).map(x => '<tr style="cursor:pointer;" onclick="stCase(\''+esc(x.c.id)+'\',\'counsel\')"><td>'+esc(x.c.matterNo || x.c.id)+'</td><td>'+esc(x.c.client)+'</td><td style="text-align:right;font-weight:800;color:'+cdRiskColor(x.r.level)+';">'+x.r.score+' '+x.r.level+'</td><td style="font-size:12px;">'+esc(x.r.factors.slice(0, 3).map(f => f.text).join('; '))+'</td><td style="font-size:12px;">'+(x.c.externalRisk ? esc(x.c.externalRisk.score+' ('+x.c.externalRisk.source+')') : '—')+(x.d ? ' <span style="color:#92400E;">⚠ differs</span>' : '')+'</td></tr>').join('')+'</tbody></table>';
   return h;
-}, {label:'Risk and recovery'});
+});
 function tabCounsel(c){
   cdLoadSplit();
   let h = cdReportsSectionV(c);
@@ -12189,17 +12190,39 @@ function cdeskRows(){
   const rank = r => r.f.some(x => x.sev === 'red') ? 0 : r.f.some(x => x.sev === 'warn') ? 1 : 2;
   return rows.sort((a, b) => rank(a) - rank(b) || b.f.length - a.f.length);
 }
-function cdeskV(){
+function cdTabsList(open){
+  const pend = (open || []).reduce((n, c) => n + cdSpend(c).filter(r => r.status === 'Pending').length, 0);
+  const flagged = (open || []).filter(c => cdFlags(c).some(f => f.sev !== 'info')).length;
+  return [['defense','Defense firms'],['plaintiff','Plaintiff firms'],['stale','Reports' + (flagged ? ' (' + flagged + ')' : '')],['spend','Approvals' + (pend ? ' (' + pend + ')' : '')],['budgets','Budgets'],['panel','Approved panel']];
+}
+function cdeskV(forceTab){
   cdLoadSplit();
-  const tab = S.cdTab || 'stale', open = acctScope().filter(cdOpenCase);
-  let h = '<div class="wrap" style="padding-top:18px;">';
-  h += '<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;"><div><div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">Counsel Desk</div><div style="font-size:13px;color:var(--muted);margin-top:4px;max-width:780px;line-height:1.6;">Where defense counsel reporting, spending and approvals stand across your open files.</div></div><div>'+acctPickerV()+'</div></div>';
-  h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">'+CD_TABS().map(([k, l]) => '<span class="pill'+(tab === k ? ' on' : '')+'" onclick="st({cdTab:\''+k+'\'})">'+l+'</span>').join('')+'</div>';
+  const tab = forceTab || S.cdTab2 || 'defense', open = acctScope().filter(cdOpenCase);
+  let h = '<div class="wrap" style="padding-top:18px;padding-bottom:0;">';
+  h += '<div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">Counsel</div><div style="font-size:13px;color:var(--muted);margin:4px 0 12px;max-width:780px;line-height:1.6;">Defense firms, plaintiff firms, counsel reports, approvals and budgets, in one place.</div>';
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;">'+cdTabsList(open).map(([k, l]) => '<span class="pill'+(tab === k ? ' on' : '')+'" onclick="st({role:\'cdesk\',cdTab2:\''+k+'\',caseId:null,showWelcome:false})">'+l+'</span>').join('')+'</div></div>';
+  if (tab === 'defense') return h + dcScoreV() + '<div class="wrap" style="padding-top:0;"><div class="serif" style="font-size:20px;font-weight:700;margin:6px 0;">Scores from bills, budgets and reports</div>' + cdScoresV(open) + '</div>';
+  if (tab === 'plaintiff') return h + plaintiffV();
+  h += '<div class="wrap" style="padding-top:8px;">';
   if (tab === 'stale') h += cdStaleV(open);
-  else if (CD_EXTRA[tab]) h += CD_EXTRA[tab](open);
+  else if (tab === 'spend') h += CD_EXTRA.spend(open);
+  else if (tab === 'budgets') h += CD_EXTRA.budgets(open);
+  else if (tab === 'panel') h += cdPanelV();
   return h + '</div>';
 }
-function CD_TABS(){ return [['stale','Stale files']].concat(Object.keys(CD_EXTRA).map(k => [k, CD_EXTRA[k].label])); }
+function cdPanelV(){
+  loadCounsel();
+  const list = counselAll().slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  let h = '<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;max-width:780px;line-height:1.6;">Your approved defense attorneys. To upload or change the panel, go to <span class="muted-link" style="cursor:pointer;" onclick="st({role:\'api\',apiTab:\'counsel\',caseId:null})">API &amp; Import, Approved counsel</span>.</div>';
+  if (!list.length) return h + '<div class="card" style="padding:16px;font-size:13px;color:var(--muted);">No approved counsel loaded yet.</div>';
+  return h + '<div class="card" style="padding:0;overflow-x:auto;"><table><thead><tr><th>Attorney</th><th>Firm</th><th>States</th><th style="text-align:right;">Rate</th><th>Status</th></tr></thead><tbody>'+list.slice(0, 300).map(a => '<tr><td style="font-weight:700;">'+esc(a.name)+'</td><td>'+esc(a.firm || '')+'</td><td style="font-size:12px;">'+esc((a.states || []).join(', '))+'</td><td style="text-align:right;">'+(a.hourlyRate ? fM(a.hourlyRate) : '—')+'</td><td>'+esc(a.status || '')+'</td></tr>').join('')+'</tbody></table></div>'+(list.length > 300 ? '<div style="font-size:12px;color:var(--dim);margin-top:6px;">Showing the first 300 of '+list.length+'.</div>' : '');
+}
+function cdRiskCardV(){
+  const open = acctScope().filter(cdOpenCase), rows = open.map(c => ({c, r:cdRisk(c), d:cdExtDisagree(c)})).sort((a, b) => b.r.score - a.r.score).slice(0, 8);
+  if (!rows.length) return '';
+  const sub = open.filter(c => { const s2 = cdSubro(c); return s2.status === 'Possible' || s2.status === 'Pursuing' || s2.suggest; }).length;
+  return '<div class="card" style="margin-bottom:14px;order:4;"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;"><div style="font-weight:800;font-size:14px;">Highest-risk matters</div><div style="font-size:11.5px;color:var(--dim);">Rule-based score out of 100'+(sub ? ' · '+sub+' with possible recovery' : '')+'</div></div><table style="margin-top:6px;"><tbody>'+rows.map(x => '<tr style="cursor:pointer;" onclick="stCase(\''+esc(x.c.id)+'\',\'counsel\')"><td>'+esc(x.c.matterNo || x.c.id)+' '+esc(x.c.client)+'</td><td style="font-size:12px;color:var(--muted);">'+esc(x.r.factors.slice(0, 2).map(f => f.text).join('; '))+'</td><td style="text-align:right;font-weight:800;color:'+cdRiskColor(x.r.level)+';white-space:nowrap;">'+x.r.score+' '+x.r.level+(x.d ? ' ⚠' : '')+'</td></tr>').join('')+'</tbody></table></div>';
+}
 function cdStaleV(open){
   const rows = cdeskRows(), withRep = open.filter(c => cdReports(c).length).length;
   const kpi = (l, v, sub, col) => '<div class="kpi"><div class="kpi-bar" style="background:'+col+';"></div><div class="kpi-l">'+l+'</div><div class="kpi-v">'+v+'</div><div class="kpi-sub">'+sub+'</div></div>';
@@ -12219,7 +12242,6 @@ function ws(){
     { label:'Premium', tabs:[['sentinel','Sentinel Suite']] },
     { label:'Records', tabs:[['tasks','Tasks'],['documents','Documents'],['audit','Audit Trail'],['ai','AI Assistant']] }
   ];
-  if (isComp(c)) tabGroups[0].tabs.splice(2, 0, ['comp', "Workers' Comp"]);
   const idx = cci(c);
   let h = '<div class="modal-bg" onclick="if(event.target===this)st({caseId:null})">';
   h += '<div class="modal" style="max-width:1240px;max-height:94vh;">';
@@ -12266,7 +12288,7 @@ function ws(){
   else if (S.tab === 'counsel') h += tabCounsel(c);
   else if (S.tab === 'sentinel') h += tabSentinel(c);
   else if (S.tab === 'ai') h += tabAI(c);
-  else if (S.tab === 'comp') h += tabComp(c);
+  else if (S.tab === 'comp') h += tabClaimFacts(c);
   h += '</div></div></div>';
   return h;
 }
@@ -12378,6 +12400,8 @@ function tabClaimFacts(c){
   h += '<div>'+inp('Loss Report Delay (days)', c.lossReportDelay||'', 'uf(\'lossReportDelay\',this.value)','number')+'</div>';
   h += '<div>'+inp('Claim Closed Date', c.claimClosedDate||'', 'uf(\'claimClosedDate\',this.value)','date')+'</div>';
   h += '</div>';
+  if (isComp(c)) { h += '<div class="section-band">Workers\' compensation details</div>'+tabComp(c); }
+  else h += '<div style="margin-top:14px;"><label style="font-size:12.5px;display:flex;gap:8px;align-items:center;text-transform:none;letter-spacing:0;font-weight:600;color:var(--ink);"><input type="checkbox" onchange="compSet(\''+escAttr(c.id)+'\',\'on\',this.checked?\'1\':\'\')"> This claim is a workers\' compensation claim (show the comp fields)</label></div>';
   return h;
 }
 
