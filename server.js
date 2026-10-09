@@ -28,6 +28,7 @@ import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
 import crypto from 'crypto';
 import zlib from 'zlib';
+import { FEED_MAX_ROWS, rowsFromBody, normalizeRow, applyFields } from './claim-feed.js';
 
 const { Pool } = pkg;
 
@@ -929,6 +930,128 @@ app.post('/api/firm-submit/check', async (req, res) => {
     if (!link) return res.status(404).json({ error: 'This submission link is not valid or has been turned off.' });
     res.json({ ok: true, firm: link.firm, company: org ? org.name : '' });
   } catch (e) { try { await client.query('ROLLBACK'); } catch (x) {} res.status(500).json({ error: 'Could not check this link.' }); } finally { client.release(); }
+});
+
+
+// ---------------------------------------------------------------
+// CLAIM FEED. A customer's claims system (Broadspire, a TPA, an MGA) sends open claims to a
+// private address on a schedule, as JSON or CSV. Each claim is matched on its claim number:
+// new claims are created, known claims are updated, blanks never erase anything, and sending
+// the same file twice changes nothing. This is a batch feed (every few minutes to nightly),
+// not a live connection. The key belongs to one customer, is shown once, only its SHA-256
+// hash is stored, and it can be revoked at any time. Field rules live in claim-feed.js.
+// ---------------------------------------------------------------
+let feedTablesReady = false;
+async function ensureFeedTables() {
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS integration_keys (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE, name TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'claim_feed',
+      active BOOLEAN NOT NULL DEFAULT true, created_by UUID, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      last_used_at TIMESTAMPTZ, last_summary JSONB)`);
+    await pool.query('ALTER TABLE integration_keys ENABLE ROW LEVEL SECURITY');
+    await pool.query('ALTER TABLE integration_keys FORCE ROW LEVEL SECURITY');
+    await pool.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'integration_keys' AND policyname = 'integration_keys_tenant_isolation') THEN
+        CREATE POLICY integration_keys_tenant_isolation ON integration_keys USING (org_id = current_setting('app.current_org_id', true)::uuid);
+      END IF; END $$`);
+    feedTablesReady = true;
+  } catch (e) {
+    console.error('Claim feed table could not be created automatically (run the integration_keys block in schema.sql):', e.message);
+  }
+}
+setTimeout(ensureFeedTables, 4500);
+const feedLimits = new Map();
+function feedRate(key, max) {
+  const now = Date.now(), hour = 60 * 60 * 1000;
+  const rl = feedLimits.get(key) || { count: 0, resetAt: now + hour };
+  if (now > rl.resetAt) { rl.count = 0; rl.resetAt = now + hour; }
+  rl.count += 1; feedLimits.set(key, rl);
+  return rl.count <= max;
+}
+// Opens a transaction scoped to the key's customer. Returns { client, key } or sends the error and returns null.
+async function feedOpen(req, res) {
+  const hdr = String(req.headers.authorization || '');
+  const token = (/^Bearer\s+(\S+)$/i.exec(hdr) || [])[1] || String(req.headers['x-api-key'] || '').trim();
+  const m = FIRM_TOKEN_RE.exec(token || '');
+  if (!feedRate('ip:' + req.ip, 600)) { res.status(429).json({ error: 'Too many requests from this address. Try again later.' }); return null; }
+  if (!m) { res.status(401).json({ error: 'Missing or invalid key. Send it as "Authorization: Bearer <key>".' }); return null; }
+  if (!feedTablesReady) { await ensureFeedTables(); if (!feedTablesReady) { res.status(503).json({ error: 'The claim feed is not available right now. Contact support.' }); return null; } }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`SET LOCAL app.current_org_id = '${m[1].toLowerCase()}'`);
+    const key = (await client.query(`SELECT id, name FROM integration_keys WHERE token_hash = $1 AND active = true AND kind = 'claim_feed'`, [sha256hex(token)])).rows[0];
+    if (!key) { await client.query('ROLLBACK'); client.release(); res.status(401).json({ error: 'This key is not valid or has been turned off.' }); return null; }
+    if (!feedRate('key:' + key.id, 120)) { await client.query('ROLLBACK'); client.release(); res.status(429).json({ error: 'This key has reached its hourly limit (120 requests). Send larger batches less often.' }); return null; }
+    return { client, key, orgId: m[1].toLowerCase() };
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch (x) {}
+    client.release();
+    console.error('claim feed open failed:', e.message);
+    res.status(500).json({ error: 'The claim feed could not be reached. Try again.' });
+    return null;
+  }
+}
+app.get('/api/feed/ping', async (req, res) => {
+  const f = await feedOpen(req, res); if (!f) return;
+  try {
+    const org = (await f.client.query('SELECT name FROM organizations WHERE id = $1', [f.orgId]).catch(() => ({ rows: [] }))).rows[0];
+    await f.client.query('COMMIT');
+    res.json({ ok: true, company: org ? org.name : '', key: f.key.name, maxRowsPerRequest: FEED_MAX_ROWS });
+  } catch (e) { try { await f.client.query('ROLLBACK'); } catch (x) {} res.status(500).json({ error: 'Could not check the key.' }); } finally { f.client.release(); }
+});
+app.post('/api/feed/claims', express.text({ type: ['text/csv', 'text/plain', 'application/csv'], limit: '15mb' }), async (req, res) => {
+  const f = await feedOpen(req, res); if (!f) return;
+  const dryRun = req.query.dryRun === '1' || req.query.dryRun === 'true';
+  try {
+    let rows;
+    try { rows = rowsFromBody(req.body, req.headers['content-type']); } catch (e) { rows = null; }
+    if (!rows || !rows.length) { await f.client.query('ROLLBACK'); return res.status(400).json({ error: 'Send {"claims":[...]} as JSON, or a CSV file (Content-Type: text/csv) with a header row.' }); }
+    if (rows.length > FEED_MAX_ROWS) { await f.client.query('ROLLBACK'); return res.status(413).json({ error: `Too many claims in one request (${rows.length}). Send ${FEED_MAX_ROWS} or fewer per request.` }); }
+    const out = { ok: true, dryRun, received: rows.length, created: 0, updated: 0, unchanged: 0, failed: 0, errors: [], unknownColumns: [] };
+    const unknown = new Set();
+    for (let i = 0; i < rows.length; i++) {
+      try {
+        const { fields, unknown: unk } = normalizeRow(rows[i]);
+        unk.forEach(u => unknown.add(String(u).slice(0, 60)));
+        await withRowSavepoint(f.client, async () => {
+          const cur = (await f.client.query('SELECT client, type, status, litigation_stage, carrier, reserve_amount, value, filed_date, data FROM cases WHERE org_id = $1 AND lower(claim_no) = lower($2) ORDER BY created_at LIMIT 1 FOR UPDATE', [f.orgId, fields.claimNo])).rows[0];
+          if (!cur && !fields.client) throw new Error('client is required for a new claim');
+          const base = defaultCaseData();
+          base.updates = [{ date: new Date().toISOString().slice(0, 10), author: 'Claim feed', type: 'Case Opened', text: `Matter created from the claim feed (${f.key.name}).` }];
+          const r = applyFields(cur || null, fields, base);
+          if (r.isNew) {
+            const c = r.cols;
+            await f.client.query(
+              `INSERT INTO cases (org_id, matter_no, client, type, status, litigation_stage, carrier, claim_no, reserve_amount, filed_date, value, data)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+              [f.orgId, 'FD-' + crypto.randomBytes(4).toString('hex').toUpperCase(), c.client, c.type || 'Other', c.status || 'Active', c.litigation_stage || 'Pre-Suit', c.carrier || null, fields.claimNo, c.reserve_amount || 0, c.filed_date || null, c.value || 0, JSON.stringify(r.data)]);
+            out.created++;
+          } else if (r.changed.length) {
+            const sets = ['data = $3', 'updated_at = now()'], vals = [f.orgId, fields.claimNo, JSON.stringify(r.data)];
+            for (const [col, v] of Object.entries(r.cols)) { vals.push(v); sets.push(`${col} = $${vals.length}`); }
+            await f.client.query(`UPDATE cases SET ${sets.join(', ')} WHERE org_id = $1 AND lower(claim_no) = lower($2)`, vals);
+            out.updated++;
+          } else out.unchanged++;
+        });
+      } catch (e) {
+        out.failed++;
+        if (out.errors.length < 50) out.errors.push({ row: i + 1, claimNo: String((rows[i] && (rows[i].claimNo || rows[i].claim_no || rows[i]['Claim Number'])) || '').slice(0, 80), error: e.message });
+      }
+    }
+    out.unknownColumns = Array.from(unknown).slice(0, 40);
+    if (dryRun) { await f.client.query('ROLLBACK'); return res.json(out); }
+    await f.client.query('UPDATE integration_keys SET last_used_at = now(), last_summary = $2 WHERE id = $1', [f.key.id, JSON.stringify({ at: new Date().toISOString(), received: out.received, created: out.created, updated: out.updated, unchanged: out.unchanged, failed: out.failed })]);
+    await f.client.query('COMMIT');
+    audit(f.orgId, null, 'claim_feed.import', 'case', null, { key: f.key.name, received: out.received, created: out.created, updated: out.updated, failed: out.failed }, req.ip).catch(() => {});
+    res.json(out);
+  } catch (e) {
+    try { await f.client.query('ROLLBACK'); } catch (x) {}
+    console.error('claim feed failed:', e.message);
+    res.status(500).json({ error: 'The claims could not be processed. Nothing was saved. Try again or contact support.' });
+  } finally { f.client.release(); }
 });
 
 // ---------------------------------------------------------------
@@ -3014,6 +3137,29 @@ app.put('/api/org-settings/:key', requireOrgRole('admin'), orgSettingsGuard, asy
     ON CONFLICT (org_id, key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`, [req.orgId, req.params.key, json, req.user?.sub || null]);
   await audit(req.orgId, req.user?.sub, 'org_settings.save', 'organization', req.orgId, { key: req.params.key, bytes: json.length }, req.ip);
   res.json({ ok: true });
+});
+
+
+// Claim feed keys (signed-in customer admins).
+app.get('/api/integration-keys', requireOrgRole('admin'), async (req, res) => {
+  if (!feedTablesReady) await ensureFeedTables();
+  const r = await req.db.query(`SELECT id, name, active, created_at, last_used_at, last_summary FROM integration_keys WHERE org_id = $1 AND kind = 'claim_feed' ORDER BY created_at DESC`, [req.orgId]);
+  res.json({ keys: r.rows });
+});
+app.post('/api/integration-keys', requireOrgRole('admin'), async (req, res) => {
+  if (!feedTablesReady) await ensureFeedTables();
+  const name = String((req.body && req.body.name) || '').trim().slice(0, 120);
+  if (!name) return res.status(400).json({ error: 'Name the system that will send claims (for example: Broadspire claims system).' });
+  const token = req.orgId.toLowerCase() + '.' + crypto.randomBytes(32).toString('hex');
+  const r = await req.db.query(`INSERT INTO integration_keys (org_id, token_hash, name, created_by) VALUES ($1,$2,$3,$4) RETURNING id`, [req.orgId, sha256hex(token), name, req.user?.sub || null]);
+  await audit(req.orgId, req.user?.sub, 'integration_key.create', 'integration_key', r.rows[0].id, { name }, req.ip);
+  res.json({ ok: true, id: r.rows[0].id, token });
+});
+app.delete('/api/integration-keys/:id', requireOrgRole('admin'), async (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ error: 'Bad id' });
+  const r = await req.db.query('UPDATE integration_keys SET active = false WHERE id = $1 AND org_id = $2', [req.params.id, req.orgId]);
+  await audit(req.orgId, req.user?.sub, 'integration_key.revoke', 'integration_key', req.params.id, {}, req.ip);
+  res.json({ revoked: r.rowCount });
 });
 
 // Firm submission links and inbox (signed-in customers).
