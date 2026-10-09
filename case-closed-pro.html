@@ -3310,7 +3310,7 @@ function welcomeV(){
    Gold/Silver/Bronze recommendations for case assignments
    ══════════════════════════════════════════════════════════════════════ */
 
-function getTop3Recommendations(caseObj) {
+function getTop3Recommendations(caseObj, all) {
   // ATTY is a plain list of attorney NAMES (strings). An earlier version of
   // this function read a.name / a.experience off each entry, which are
   // undefined on a string — so every recommendation showed "undefined".
@@ -3357,7 +3357,8 @@ function getTop3Recommendations(caseObj) {
       score: Math.min(100, Math.round(score))
     };
   });
-  return scores.sort((x, y) => y.score - x.score).slice(0, 3);
+  const ranked = scores.sort((x, y) => y.score - x.score);
+  return all ? ranked : ranked.slice(0, 3);
 }
 
 /* ── NEEDS ATTENTION ─────────────────────────────────────────
@@ -13326,6 +13327,14 @@ function aiIntakeStep3V() {
 function attorneySelectorModalV() {
   const recs = S.attorneyRecommendations;
   if (!recs) return '';
+  const _ex = S.aiExtracted || {};
+  const _facts = {};
+  try { getTop3Recommendations({ type:_ex.type, value:_ex.value||0 }, true).forEach(a => { _facts[a.name] = a; }); } catch(e){}
+  const factsV = name => {
+    const f = _facts[name]; if (!f) return '';
+    return '<div style="font-size:12px;color:#166534;margin-top:10px;line-height:1.5;"><div style="font-weight:700;margin-bottom:2px;">Why</div>'+(f.why||[]).map(w => '<div>• '+esc(w)+'</div>').join('')+'</div>'+
+      ((f.warn||[]).length ? '<div style="font-size:12px;color:#B45309;margin-top:6px;line-height:1.5;"><div style="font-weight:700;margin-bottom:2px;">Check</div>'+f.warn.map(w => '<div>• '+esc(w)+'</div>').join('')+'</div>' : '');
+  };
   
   return '<div class="modal-bg" onclick="if(event.target===this)st({showAttorneySelector:false})">' +
     '<div class="modal" style="max-width:650px;">' +
@@ -13344,7 +13353,7 @@ function attorneySelectorModalV() {
               '<div style="font-size:13px;font-weight:700;color:#FFD700;">TOP CHOICE (GOLD)</div>' +
             '</div>' +
             '<div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:4px;">' + esc(recs.gold.attorney) + '</div>' +
-            '<div style="font-size:12px;color:var(--muted);line-height:1.5;">' + esc(recs.gold.reasoning) + '</div>' +
+            '<div style="font-size:12px;color:var(--muted);line-height:1.5;">' + esc(recs.gold.reasoning) + '</div>' + factsV(recs.gold.attorney) +
           '</div>' +
         '</div>' +
         
@@ -13356,7 +13365,7 @@ function attorneySelectorModalV() {
               '<div style="font-size:13px;font-weight:700;color:#C0C0C0;">STRONG ALTERNATIVE (SILVER)</div>' +
             '</div>' +
             '<div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:4px;">' + esc(recs.silver.attorney) + '</div>' +
-            '<div style="font-size:12px;color:var(--muted);line-height:1.5;">' + esc(recs.silver.reasoning) + '</div>' +
+            '<div style="font-size:12px;color:var(--muted);line-height:1.5;">' + esc(recs.silver.reasoning) + '</div>' + factsV(recs.silver.attorney) +
           '</div>' +
         '</div>' +
         
@@ -13368,7 +13377,7 @@ function attorneySelectorModalV() {
               '<div style="font-size:13px;font-weight:700;color:#CD7F32;">SOLID OPTION (BRONZE)</div>' +
             '</div>' +
             '<div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:4px;">' + esc(recs.bronze.attorney) + '</div>' +
-            '<div style="font-size:12px;color:var(--muted);line-height:1.5;">' + esc(recs.bronze.reasoning) + '</div>' +
+            '<div style="font-size:12px;color:var(--muted);line-height:1.5;">' + esc(recs.bronze.reasoning) + '</div>' + factsV(recs.bronze.attorney) +
           '</div>' +
         '</div>' +
         
