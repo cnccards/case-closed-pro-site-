@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Send an invoice</title>
+<style>
+:root{--ink:#0F172A;--muted:#475569;--line:#CBD5E1;--bg:#F1F5F9;--navy:#0B2545;--red:#B91C1C;--green:#166534}
+@media (prefers-color-scheme:dark){:root{--ink:#E2E8F0;--muted:#94A3B8;--line:#334155;--bg:#0B1220;--navy:#93C5FD}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+main{max-width:640px;margin:0 auto;padding:28px 16px 60px}
+h1{font-size:24px;margin:0 0 4px;letter-spacing:-.3px}
+p{margin:0 0 12px;color:var(--muted)}
+.card{background:Canvas;color:CanvasText;border:1px solid var(--line);border-radius:10px;padding:18px}
+label{display:block;font-size:12.5px;font-weight:700;margin:12px 0 4px}
+input,textarea,select{width:100%;font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:7px;background:Field;color:FieldText}
+textarea{min-height:200px;font:13px/1.4 ui-monospace,Menlo,Consolas,monospace}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:520px){.row{grid-template-columns:1fr}}
+button{margin-top:16px;font:inherit;font-weight:700;padding:11px 20px;border:0;border-radius:8px;background:#0B2545;color:#fff;cursor:pointer}
+button:disabled{opacity:.55;cursor:default}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #2563EB;outline-offset:2px}
+.msg{margin-top:14px;padding:10px 12px;border-radius:8px;font-size:14px}
+.err{background:#FEF2F2;color:#991B1B}
+.ok{background:#F0FDF4;color:#166534}
+.small{font-size:12.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Send an invoice</h1>
+  <p id="sub">Checking your link…</p>
+  <div class="card" id="formCard" hidden>
+    <form id="f" novalidate>
+      <div class="row">
+        <div><label for="name">Your name</label><input id="name" autocomplete="name" required maxlength="120"></div>
+        <div><label for="email">Your email (so they can reach you)</label><input id="email" type="email" autocomplete="email" maxlength="160"></div>
+      </div>
+      <div class="row">
+        <div><label for="inv">Invoice number</label><input id="inv" maxlength="60"></div>
+        <div><label for="date">Invoice date</label><input id="date" type="date"></div>
+      </div>
+      <label for="matter">Claim or matter number</label>
+      <input id="matter" maxlength="80" placeholder="As it appears on the assignment">
+      <label for="file">Invoice file (LEDES 1998B or CSV)</label>
+      <input id="file" type="file" accept=".txt,.csv,.led,.ledes">
+      <label for="text">Or paste the invoice text</label>
+      <textarea id="text" spellcheck="false" placeholder="Paste LEDES or CSV text here"></textarea>
+      <button id="go" type="submit">Send invoice</button>
+      <div id="msg" role="status" aria-live="polite"></div>
+    </form>
+  </div>
+  <p class="small" style="margin-top:14px">Sending an invoice here does not approve or pay it. It is placed in a review queue. This page can only send; it does not show you anything about the account. Use plain text files only (no PDF).</p>
+</main>
+<script>
+(function(){
+  var API = 'https://case-closed-pro-site.onrender.com';
+  var token = (location.hash || '').replace(/^#/, '').trim();
+  var $ = function(id){ return document.getElementById(id); };
+  function say(cls, t){ var m = $('msg'); m.className = 'msg ' + cls; m.textContent = t; }
+  function post(path, body){
+    return fetch(API + path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})
+      .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(d){ if(!r.ok) throw new Error(d.error || 'Something went wrong. Try again.'); return d; }); });
+  }
+  if(!/^[0-9a-f-]{36}\.[0-9a-f]{64}$/i.test(token)){ $('sub').textContent = 'This link is not valid. Ask the company you bill for a new one.'; return; }
+  post('/api/firm-submit/check', {token:token}).then(function(d){
+    $('title').textContent = 'Send an invoice' + (d.company ? ' to ' + d.company : '');
+    $('sub').textContent = 'Sending as ' + d.firm + '. Paste the invoice or choose a file, then send.';
+    $('formCard').hidden = false;
+  }).catch(function(e){ $('sub').textContent = e.message; });
+  $('file').addEventListener('change', function(){
+    var f = this.files && this.files[0]; if(!f) return;
+    if(f.size > 1400000){ say('err','That file is too large. Send one invoice at a time (limit about 1.4 MB).'); this.value=''; return; }
+    var rd = new FileReader(); rd.onload = function(){ $('text').value = String(rd.result || ''); say('ok','File read. Check the text, then send.'); }; rd.readAsText(f);
+  });
+  $('f').addEventListener('submit', function(ev){
+    ev.preventDefault();
+    var name = $('name').value.trim(), text = $('text').value;
+    if(!name){ say('err','Enter your name.'); return; }
+    if(text.trim().length < 20){ say('err','Choose a file or paste the invoice text.'); return; }
+    var fmt = (/^LEDES1998B/i.test(text.trim()) || (text.indexOf('|') > -1 && text.split(/\r?\n/)[0].indexOf('|') > -1)) ? 'ledes' : (text.indexOf(',') > -1 ? 'csv' : 'text');
+    $('go').disabled = true; say('', 'Sending…');
+    post('/api/firm-submit', {token:token, submitterName:name, submitterEmail:$('email').value.trim(), invoiceNo:$('inv').value.trim(), invoiceDate:$('date').value, matterRef:$('matter').value.trim(), format:fmt, content:text})
+      .then(function(d){ $('f').reset(); say('ok','Received. Your reference is ' + d.reference + '. Keep it if you need to ask about this invoice.'); $('go').disabled = false; })
+      .catch(function(e){ say('err', e.message); $('go').disabled = false; });
+  });
+})();
+</script>
+</body>
+</html>
