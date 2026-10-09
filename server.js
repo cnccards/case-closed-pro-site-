@@ -1,5 +1,5 @@
 /**
- * Case Closed Pro — Production API Server
+ * Case Closed Sentinel — Production API Server
  * ---------------------------------------------------------------
  * Rewired from the lowdb prototype to real Postgres with real
  * multi-tenancy: every case belongs to an organization (org_id),
@@ -327,7 +327,7 @@ function verifyTotp(secretBase32, token, windowSteps = 1) {
   }
   return false;
 }
-function otpauthUrl(secretBase32, email, issuer = 'Case Closed Pro') {
+function otpauthUrl(secretBase32, email, issuer = 'Case Closed Sentinel') {
   const label = encodeURIComponent(`${issuer}:${email}`);
   return `otpauth://totp/${label}?secret=${secretBase32}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
 }
@@ -512,7 +512,7 @@ app.post('/api/contact-sales', async (req, res) => {
       to: SALES_EMAILS.join(','),
       replyTo: email,
       subject: `New sales inquiry: ${name.trim()}${company ? ' (' + String(company).trim() + ')' : ''}`,
-      text: `Name: ${name.trim()}\nEmail: ${email}\nCompany: ${company ? String(company).trim() : '—'}\n\nMessage:\n${message ? String(message).trim() : '(no message provided)'}\n\n—\nSubmitted from the Case Closed Pro marketing site. Reply-to is set to the submitter's email.`
+      text: `Name: ${name.trim()}\nEmail: ${email}\nCompany: ${company ? String(company).trim() : '—'}\n\nMessage:\n${message ? String(message).trim() : '(no message provided)'}\n\n—\nSubmitted from the Case Closed Sentinel marketing site. Reply-to is set to the submitter's email.`
     });
     res.json({ success: true, message: `Thanks — we'll be in touch shortly.` });
   } catch (e) {
@@ -715,7 +715,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       await mailer.sendMail({
         from: process.env.FROM_EMAIL || process.env.SMTP_USER,
         to: user.email,
-        subject: 'Reset your Case Closed Pro password',
+        subject: 'Reset your Case Closed Sentinel password',
         text: `Hi ${user.name},\n\nSomeone requested a password reset for your account. This link expires in 1 hour:\n\n${resetUrl}\n\nIf you didn't request this, you can safely ignore this email — your password will not change.`
       });
     } catch (e) {
@@ -1216,7 +1216,7 @@ app.post('/api/admin/self-test-isolation', requirePlatformAdmin, async (req, res
 // never carries into the next one. Returns a fresh login every time
 // (existing sandbox sessions elsewhere will need to log in again).
 // ---------------------------------------------------------------
-const SANDBOX_ORG_NAME = process.env.SANDBOX_ORG_NAME || 'Case Closed Pro — Sandbox';
+const SANDBOX_ORG_NAME = process.env.SANDBOX_ORG_NAME || 'Case Closed Sentinel — Sandbox';
 const SANDBOX_OWNER_EMAIL = (process.env.SANDBOX_OWNER_EMAIL || 'sandbox@cclosed.com').toLowerCase();
 const SANDBOX_OWNER_NAME = process.env.SANDBOX_OWNER_NAME || 'Sandbox Demo';
 
@@ -2030,7 +2030,7 @@ app.post('/api/admin/organizations/:id/welcome-email', requirePlatformAdmin, asy
   const url = `${process.env.APP_URL || 'http://localhost:3000'}/case-closed-pro.html`;
   const text = welcomeEmailText(row.ownerName, row.name, url);
   try {
-    await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: row.ownerEmail, subject: `Welcome to Case Closed Pro — ${row.name}`, text });
+    await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: row.ownerEmail, subject: `Welcome to Case Closed Sentinel — ${row.name}`, text });
     await audit(req.params.id, req.user.sub, 'admin.welcome_email_sent', 'organization', req.params.id, { to: row.ownerEmail, by: req.user.email }, req.ip);
     res.json({ sent: true, to: row.ownerEmail });
   } catch (e) { res.status(502).json({ error: 'Could not send: ' + e.message }); }
@@ -2038,7 +2038,7 @@ app.post('/api/admin/organizations/:id/welcome-email', requirePlatformAdmin, asy
 function welcomeEmailText(ownerName, orgName, url) {
   return `Hi ${ownerName || 'there'},
 
-Welcome to Case Closed Pro. Your account for ${orgName} is ready.
+Welcome to Case Closed Sentinel. Your account for ${orgName} is ready.
 
 Sign in here: ${url}
 Your login is this email address. We will give you your temporary password separately (by phone or text) — please change it after you sign in.
@@ -2050,7 +2050,7 @@ Three things to do first:
 
 Once your cases are in, we will walk through the dashboards and Sentinel with you. Reply to this email any time if you get stuck.
 
-— The Case Closed Pro team`;
+— The Case Closed Sentinel team`;
 }
 
 app.post('/api/admin/organizations/:id/suspend', requirePlatformAdmin, async (req, res) => {
@@ -2303,8 +2303,8 @@ app.post('/api/team/invite', requireOrgRole('admin'), async (req, res) => {
       await mailer.sendMail({
         from: process.env.FROM_EMAIL || process.env.SMTP_USER,
         to: normalizedEmail,
-        subject: `You're invited to join ${req.user.email.split('@')[1]} on Case Closed Pro`,
-        text: `${req.user.email} has invited you to join their organization on Case Closed Pro.\n\nAccept your invite (expires in 7 days):\n${inviteUrl}\n\nIf you weren't expecting this, you can ignore this email.`
+        subject: `You're invited to join ${req.user.email.split('@')[1]} on Case Closed Sentinel`,
+        text: `${req.user.email} has invited you to join their organization on Case Closed Sentinel.\n\nAccept your invite (expires in 7 days):\n${inviteUrl}\n\nIf you weren't expecting this, you can ignore this email.`
       });
     } catch (e) {
       console.error('Invite email failed to send:', e.message);
@@ -2342,8 +2342,8 @@ app.post('/api/team/invites/:id/resend', requireOrgRole('admin'), async (req, re
       await mailer.sendMail({
         from: process.env.FROM_EMAIL || process.env.SMTP_USER,
         to: targetEmail,
-        subject: `Reminder: you're invited to join ${req.user.email.split('@')[1]} on Case Closed Pro`,
-        text: `${req.user.email} has invited you to join their organization on Case Closed Pro.\n\nAccept your invite (expires in 7 days):\n${inviteUrl}\n\nIf you weren't expecting this, you can ignore this email.`
+        subject: `Reminder: you're invited to join ${req.user.email.split('@')[1]} on Case Closed Sentinel`,
+        text: `${req.user.email} has invited you to join their organization on Case Closed Sentinel.\n\nAccept your invite (expires in 7 days):\n${inviteUrl}\n\nIf you weren't expecting this, you can ignore this email.`
       });
     } catch (e) {
       console.error('Resend invite email failed to send:', e.message);
@@ -2759,7 +2759,7 @@ app.post('/api/cases/:id/assign', async (req, res) => {
           from: process.env.FROM_EMAIL || process.env.SMTP_USER,
           to: attorneyUser.email,
           subject: `New matter assigned to you: ${updated.matter_no} — ${updated.client}`,
-          text: `Hi ${attorneyUser.name},\n\nYou've been assigned a new matter in Case Closed Pro.\n\nMatter: ${updated.matter_no}\nClient: ${updated.client}\nType: ${updated.type || '—'}\nCarrier: ${updated.carrier || '—'}\nValue: ${updated.value != null ? '$' + Number(updated.value).toLocaleString() : '—'}${sol}\nAssigned by: ${assignerName}${reason ? '\nWhy you: ' + reason : ''}\n\nSign in to open it and get started:\n${caseUrl}\n`
+          text: `Hi ${attorneyUser.name},\n\nYou've been assigned a new matter in Case Closed Sentinel.\n\nMatter: ${updated.matter_no}\nClient: ${updated.client}\nType: ${updated.type || '—'}\nCarrier: ${updated.carrier || '—'}\nValue: ${updated.value != null ? '$' + Number(updated.value).toLocaleString() : '—'}${sol}\nAssigned by: ${assignerName}${reason ? '\nWhy you: ' + reason : ''}\n\nSign in to open it and get started:\n${caseUrl}\n`
         });
         notified = true;
       } catch (e) {
@@ -3633,7 +3633,7 @@ function computeHealthReport(cases) {
     return { matterNo: r.matterNo, client: r.client, attorney: r.attorney || 'Unassigned', value: r.value, why, action, score: Math.round(score) };
   }).filter(Boolean).sort((a, b) => b.score - a.score).slice(0, 10);
 
-  // 8. Plain-English "what Case Closed Pro does about this" counts. The
+  // 8. Plain-English "what Case Closed Sentinel does about this" counts. The
   // routing simulation hands unassigned matters, one at a time, to whoever
   // currently carries the fewest open files.
   const sim = {}; Object.entries(byAtty).forEach(([k, a]) => { sim[k] = a.open; });
@@ -4113,7 +4113,7 @@ app.post('/api/reports/email', async (req, res) => {
   try {
     const info = await mailer.sendMail({
       from: process.env.FROM_EMAIL || process.env.SMTP_USER,
-      to: recipients, subject: subject || `Report: ${reportName || 'Case Closed Pro Report'}`,
+      to: recipients, subject: subject || `Report: ${reportName || 'Case Closed Sentinel Report'}`,
       text: message || `Attached: ${reportName || 'report'}`,
       attachments: [{ filename: filename || 'report.csv', content: csv, contentType: 'text/csv' }]
     });
@@ -4264,7 +4264,7 @@ async function buildSentinelDigest(orgId, db) {
   };
 
   const subject = `Sentinel Digest — ${orgName} — week of ${today}`;
-  const footer = `\n\n---\nPrepared by Sentinel from your Case Closed Pro data as of ${today}. AI-written summaries can contain errors; please verify before acting. This is not legal advice.\n`;
+  const footer = `\n\n---\nPrepared by Sentinel from your Case Closed Sentinel data as of ${today}. AI-written summaries can contain errors; please verify before acting. This is not legal advice.\n`;
   let body, usedAI = false;
   try {
     const system = 'You are Sentinel, the analyst inside a litigation-management platform for insurance carriers and TPAs. Write a weekly executive briefing for a busy claims or legal executive who will read it on their phone in two minutes. Use ONLY the data provided; never invent facts, names, dates or numbers, and quote figures exactly as given. Plain text only: no markdown symbols, no asterisks or pound signs. Use these ALL-CAPS section headings, skipping any section that has nothing to say: HEADLINE (2 sentences: the single most important thing this week), WHAT CHANGED THIS WEEK, NEEDS A DECISION, DEADLINES AND RISK, MONEY, WORKLOAD, RECOMMENDED ACTIONS (3 to 5 specific, numbered actions that name the matters and people involved). Use short hyphen bullets. Aim for 300 to 450 words. Be direct and calm; flag what is urgent without alarm. Do not give legal advice and do not predict case outcomes.';
@@ -4538,9 +4538,9 @@ function buildAlertEmail(orgName, recipientName, items, personal) {
     if (i.more) t += `   - ...and ${i.more} more\n`;
     t += '\n';
   });
-  t += `Open Case Closed Pro to see the full list:\n${url}\n\n`;
+  t += `Open Case Closed Sentinel to see the full list:\n${url}\n\n`;
   t += personal ? '' : 'You get this email because you are an owner or admin of this account. Any admin can turn these emails off from the dashboard.\n';
-  return { subject: items.length ? `Case Closed Pro: ${total} item${total !== 1 ? 's' : ''} need attention — ${orgName}` : `Case Closed Pro: all clear — ${orgName}`, text: t };
+  return { subject: items.length ? `Case Closed Sentinel: ${total} item${total !== 1 ? 's' : ''} need attention — ${orgName}` : `Case Closed Sentinel: all clear — ${orgName}`, text: t };
 }
 function easternNow() {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hour12: false, weekday: 'short' }).formatToParts(new Date()).map(p => [p.type, p.value]));
@@ -4613,9 +4613,9 @@ function buildDemandEmail(orgName, recipientName, rows, backupFor, missingBackup
     t += `  ${tag} ${demandLine(r)}${bk}\n`;
   });
   if (missingBackup && missingBackup.length) {
-    t += `\nNo backup claims person is assigned on: ${missingBackup.map(c => c.matterNo || c.id).join(', ')}. Assign one in Case Closed Pro so these dates are double-tracked.\n`;
+    t += `\nNo backup claims person is assigned on: ${missingBackup.map(c => c.matterNo || c.id).join(', ')}. Assign one in Case Closed Sentinel so these dates are double-tracked.\n`;
   }
-  t += `\nRecord the response (accepted, rejected, counter-offered, or extension granted) in Case Closed Pro so demand reminders stop:\n${url}\n\n`;
+  t += `\nRecord the response (accepted, rejected, counter-offered, or extension granted) in Case Closed Sentinel so demand reminders stop:\n${url}\n\n`;
   t += 'An unanswered time-limit demand can expose the insurer to a judgment above policy limits, and a missed statute of limitations can end a defense or create a claim against the firm. This is an automated reminder, not legal advice; confirm deadlines against the source documents and with counsel.\n';
   const kind = demands.length && demands.length === rows.length ? 'time-limit demand' : 'time-critical date';
   return { subject: `${late ? 'URGENT PAST DEADLINE' : 'URGENT'}: ${rows.length} ${kind}${rows.length !== 1 ? 's' : ''} — ${orgName}`, text: t };
@@ -4753,7 +4753,7 @@ function buildEscalationEmail(orgName, kind, c, d, hrs, acked) {
   t += `Matter: ${c.matterNo || c.id} ${c.client}\nState: ${d.state || 'not set'}\nDeadline: ${demandDeadlineText(d)}\nTime: ${hoursText(hrs)}\n`;
   if (Number(d.demandAmount)) t += `Demand: $${Math.round(Number(d.demandAmount)).toLocaleString('en-US')}${Number(d.policyLimits) ? ` (limits $${Math.round(Number(d.policyLimits)).toLocaleString('en-US')})` : ''}\n`;
   t += `${caseTeamText(c).replace(/^ — /, '')}\nAcknowledged: ${acked ? 'yes, by everyone assigned' : 'NO'}\n`;
-  t += `\nOpen it, acknowledge it, and record the response:\n${url}\n\nResponding to the demand in Case Closed Pro ends these notices. This is an automated reminder, not legal advice; confirm the deadline against the demand letter and with counsel.\n`;
+  t += `\nOpen it, acknowledge it, and record the response:\n${url}\n\nResponding to the demand in Case Closed Sentinel ends these notices. This is an automated reminder, not legal advice; confirm the deadline against the demand letter and with counsel.\n`;
   const sub = kind.late ? `URGENT PAST DEADLINE: ${c.client} time-limit demand` : kind.isNew ? `New time-limit demand: ${c.client}` : `[Escalation: ${kind.label}] ${hoursText(hrs)}: ${c.client} time-limit demand`;
   return { subject: sub, text: t };
 }
@@ -4991,7 +4991,7 @@ async function runDailyBackupCheck(){
     await mailer.sendMail({
       from: process.env.FROM_EMAIL || process.env.SMTP_USER,
       to: recipient,
-      subject: `Case Closed Pro — daily backup — ${dateStr}`,
+      subject: `Case Closed Sentinel — daily backup — ${dateStr}`,
       text: `Attached: a full export of every application table as of ${new Date().toISOString()}.\n\n` +
         Object.entries(tableCounts).map(([t, n]) => `  ${t}: ${n} row(s)`).join('\n') +
         `\n\nThis file contains real customer data — store and delete it accordingly. It is gzip-compressed JSON; ` +
@@ -5031,7 +5031,7 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Case Closed Pro API (production) listening on :${PORT}`);
+  console.log(`Case Closed Sentinel API (production) listening on :${PORT}`);
   console.log(SMTP_CONFIGURED ? `Email sending ENABLED via ${process.env.SMTP_HOST}` : 'Email sending DISABLED — set SMTP_HOST/USER/PASS to enable');
   console.log(API_KEY ? 'Static API_KEY auth path ENABLED (requires X-Org-Id header)' : 'Static API_KEY auth path DISABLED — user JWTs only');
 });
