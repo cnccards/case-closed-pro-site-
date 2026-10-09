@@ -10181,6 +10181,43 @@ async function feedRevokeKey(id){
   try { await apiFetch('/api/integration-keys/'+id, {method:'DELETE'}); await loadFeedKeys(true); render(); } catch (e) { alert(e.message); }
 }
 function feedCopy(id){ const el = document.getElementById(id); if (!el) return; const t = el.textContent; try { navigator.clipboard.writeText(t); } catch (e) { const r = document.createRange(); r.selectNode(el); const g = window.getSelection(); g.removeAllRanges(); g.addRange(r); } }
+function feedSampleCsv(){
+  const csv = 'claimNo,client,state,adjuster,fnolDate,claimantAttorneyDate,defenseAssignedDate,filedDate,reserveAmount\nBSP-2026-004417,Acme Logistics LLC,TX,Dana Whitfield,2026-02-16,2026-03-10,2026-04-02,2026-04-20,125000\nBSP-2026-004502,Beta Foods Inc,FL,Luis Ortega,03/01/2026,,,,60000\n';
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'})); a.download = 'claims-sample.csv'; a.click();
+}
+function feedPick(inp){
+  const f = inp.files && inp.files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => { S.feedFile = {name:f.name, text:String(rd.result || '')}; S.feedRes = null; render(); };
+  rd.readAsText(f);
+}
+async function feedUpload(dry){
+  const f = S.feedFile; if (!f) { alert('Choose a CSV file first.'); return; }
+  if (feedIsDemo()) { const n = Math.max(0, f.text.split(/\r?\n/).filter(x => x.trim()).length - 1); S.feedRes = {demo:true, dryRun:dry, received:n}; render(); return; }
+  if (!dry && !confirm('Send these claims into your account now? New claims are created and known claims are updated.')) return;
+  S.feedBusy = true; render();
+  try { const r = await apiFetch('/api/feed/upload' + (dry ? '?dryRun=1' : ''), {method:'POST', headers:{'Content-Type':'text/csv'}, body:f.text}); S.feedRes = r; if (!dry) { S.feedFile = null; try { if (typeof loadCasesFromApi === 'function') await loadCasesFromApi(); } catch (e) {} } }
+  catch (e) { S.feedRes = {error:e.message}; }
+  S.feedBusy = false; render();
+}
+function feedUploadV(){
+  const f = S.feedFile, r = S.feedRes, canMake = feedIsDemo() || S.currentUser?.platformAdmin || ['owner','admin'].includes(S.currentUser?.role);
+  let h = '<div class="card" style="padding:14px 16px;margin-bottom:14px;"><div style="font-weight:800;font-size:13px;margin-bottom:4px;">Upload a claims file</div><div style="font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:10px;max-width:820px;">Choose a CSV exported from your claims system. Click <b>Check file</b> first: it reads every row and shows what would happen without saving anything. Then click <b>Send claims</b>. Only <b>claimNo</b> is required on each row, and <b>client</b> is also needed the first time a claim is sent.</div>';
+  if (!canMake) return h + '<div style="font-size:12px;color:var(--dim);">An owner or admin uploads claim files.</div></div>';
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><label class="btn btn-out" style="cursor:pointer;">Choose CSV file<input type="file" accept=".csv,text/csv,text/plain" style="display:none;" onchange="feedPick(this)"></label><button class="btn btn-out" onclick="feedSampleCsv()">Download sample file</button>'+(f ? '<span style="font-size:12.5px;font-weight:600;">'+esc(f.name)+'</span>' : '')+'</div>';
+  if (f) h += '<div style="display:flex;gap:8px;margin-top:10px;"><button class="btn btn-out" onclick="feedUpload(true)" '+(S.feedBusy?'disabled':'')+'>Check file</button><button class="btn btn-pri" onclick="feedUpload(false)" '+(S.feedBusy?'disabled':'')+'>'+(S.feedBusy?'Working…':'Send claims')+'</button></div>';
+  if (r) {
+    if (r.error) h += '<div class="alert-bad" style="margin-top:10px;">'+esc(r.error)+'</div>';
+    else if (r.demo) h += '<div style="margin-top:10px;font-size:12.5px;color:var(--muted);">Sample screen: the file has '+r.received+' claim'+(r.received===1?'':'s')+'. Sign in to a real account to send them.</div>';
+    else {
+      h += '<div class="card" style="padding:10px 12px;margin-top:10px;border-left:4px solid '+(r.failed ? '#B45309' : '#15803D')+';"><div style="font-weight:800;margin-bottom:3px;">'+(r.dryRun ? 'Check only. Nothing was saved.' : 'Done.')+'</div><div style="font-size:12.5px;">'+r.received+' claims read. '+(r.dryRun ? 'Would create ' : 'Created ')+r.created+', '+(r.dryRun ? 'would update ' : 'updated ')+r.updated+', unchanged '+r.unchanged+', failed '+r.failed+'.</div>';
+      if (r.unknownColumns && r.unknownColumns.length) h += '<div style="font-size:12px;color:var(--muted);margin-top:4px;">Columns not recognized and ignored: '+r.unknownColumns.map(esc).join(', ')+'</div>';
+      if (r.errors && r.errors.length) h += '<div style="font-size:12px;margin-top:6px;">'+r.errors.map(e => 'Row '+e.row+(e.claimNo ? ' ('+esc(e.claimNo)+')' : '')+': '+esc(e.error)).join('<br>')+'</div>';
+      h += '</div>';
+    }
+  }
+  return h + '</div>';
+}
 function feedTabV(){
   loadFeedKeys();
   const demo = feedIsDemo(), keys = demo ? feedDemoKeys() : (S.feedKeys || []);
@@ -10189,8 +10226,9 @@ function feedTabV(){
   const mono = 'font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;background:var(--surf3);padding:10px 12px;border-radius:6px;overflow-x:auto;white-space:pre;line-height:1.6;';
   let h = '<div style="font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:12px;max-width:820px;">Let your claims system send open claims here on a schedule. Each claim is matched on its claim number: new claims are created, known claims are updated, and a blank never erases anything. Sending the same file twice changes nothing. Dates from first notice of loss to the claimant attorney to the defense attorney feed the lifecycle reports. This is a batch feed (every few minutes to nightly), not a live connection.</div>';
   if (S.feedErr) h += '<div class="alert-bad" style="margin-bottom:10px;">'+esc(S.feedErr)+'</div>';
+  h += feedUploadV();
   if (S.feedNewKey) h += '<div class="card" style="padding:12px 14px;margin-bottom:12px;border-left:4px solid #15803D;"><div style="font-weight:800;margin-bottom:4px;">Key for '+esc(S.feedNewName || '')+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Copy it now and give it to the person who sets up the feed. For safety it cannot be shown again. If it is lost, turn it off and make a new one.'+(demo ? ' (This is a sample screen, so the key below is not real.)' : '')+'</div><div id="fkNew" style="'+mono+'">'+esc(S.feedNewKey)+'</div><div style="margin-top:8px;display:flex;gap:8px;"><button class="btn btn-out" onclick="feedCopy(\'fkNew\')">Copy key</button><button class="btn btn-out" onclick="S.feedNewKey=\'\';render()">Done</button></div></div>';
-  if (canMake) h += '<div class="card" style="padding:12px 14px;margin-bottom:12px;"><div style="font-weight:800;font-size:13px;margin-bottom:6px;">Make a key</div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;"><div><label class="lbl">System that will send claims</label><input id="fkName" class="inp" style="width:300px;" placeholder="Broadspire claims system"></div><button class="btn btn-pri" onclick="feedCreateKey()">Make key</button></div></div>';
+  if (canMake) h += '<div class="card" style="padding:12px 14px;margin-bottom:12px;"><div style="font-weight:800;font-size:13px;margin-bottom:2px;">Automatic feed: make a key</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px;">For your IT team. A key lets your claims system send files on its own, without anyone uploading them.</div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;"><div><label class="lbl">System that will send claims</label><input id="fkName" class="inp" style="width:300px;" placeholder="Broadspire claims system"></div><button class="btn btn-pri" onclick="feedCreateKey()">Make key</button></div></div>';
   else h += '<div style="font-size:12px;color:var(--dim);margin-bottom:10px;">An owner or admin makes the keys.</div>';
   h += '<div class="serif" style="font-size:20px;font-weight:700;margin-bottom:6px;">Keys</div>';
   if (S.feedLoading && !keys.length) h += '<div style="font-size:12.5px;color:var(--muted);">Loading…</div>';
