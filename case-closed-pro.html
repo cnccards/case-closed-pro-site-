@@ -3347,8 +3347,9 @@ function getTop3Recommendations(caseObj, all) {
 
     const why = [], warn = [];
     if (similarCases.length) why.push('Has handled ' + similarCases.length + ' ' + (caseObj.type || 'similar') + ' matter' + (similarCases.length === 1 ? '' : 's'));
-    else warn.push('No ' + (caseObj.type || 'similar') + ' matters on record');
-    if (closedCases.length) why.push('Track record on ' + closedCases.length + ' closed matter' + (closedCases.length === 1 ? '' : 's')); else warn.push('No closed matters yet, so no track record');
+    /* no history is not a warning: a missing record says nothing about fit */
+    if (closedCases.length) why.push('Track record on ' + closedCases.length + ' closed matter' + (closedCases.length === 1 ? '' : 's'));
+    if (openCases.length >= 8) warn.push('Heavy caseload (' + openCases.length + ' open matters), so response time may suffer');
     why.push(openCases.length + ' open matter' + (openCases.length === 1 ? '' : 's') + ' now' + (openCases.length < 4 ? ' (room for more)' : openCases.length >= 8 ? ' (heavy load)' : ''));
     if (attorneysCases.length > 0 && valueDiff < 500000) why.push('Usually handles matters of this size');
     return {
