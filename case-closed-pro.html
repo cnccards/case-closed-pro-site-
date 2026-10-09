@@ -760,6 +760,8 @@ const REPORT_TEMPLATES = [
   {id:'r37',cat:'Litigation',name:'Closed in Previous Month',icon:'✅',color:'#047857',desc:'Matters closed during the last calendar month, with outcome and amount paid'},
   {id:'r38',cat:'Compliance',name:'Last Updated Yesterday',icon:'🕘',color:'#3B82F6',desc:'Every matter with a note, filing or update logged yesterday'},
   {id:'r39',cat:'Financial',name:'Outstanding A/R by Carrier',icon:'💵',color:'#B45309',desc:'Billed, paid and still outstanding on defense fees, grouped by carrier'},
+  {id:'r40',cat:'Compliance',name:'Claim Lifecycle Timeline',icon:'🧭',color:'#1D4ED8',desc:'Every matter from loss to filing: days from first notice to claimant attorney, to defense counsel and to suit, with long gaps flagged'},
+  {id:'r41',cat:'Strategic',name:'Lifecycle Speed by Area',icon:'🗺️',color:'#B45309',desc:'Average days from first notice to claimant attorney and to suit, by state, venue, carrier, account, adjuster and firm, compared with the whole book'},
   {id:'w1',cat:'Workers Comp',name:"Workers' Comp Open Claims",icon:'🩺',color:'#0F766E',desc:'Open comp claims with injury date, disability, paid, reserve, hearing and flags'},
   {id:'w2',cat:'Workers Comp',name:'Medicare Reporting Open Items',icon:'🏥',color:'#B45309',desc:'Comp claims with a Medicare beneficiary and unfinished reporting steps'},
   /* ── Alert reports: each mirrors a "Needs your attention" alert, with early-warning lead times ── */
@@ -4411,6 +4413,96 @@ function claimFactsCardV(c){
     (line ? '<div style="font-size:12px;margin-top:8px;color:var(--ink);">'+esc(line)+'</div>' : '')+'</div>';
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════
+   CLAIM LIFECYCLE: every step from loss to close, with the days between steps.
+   Existing fields are reused (first notice, claimant representation, filed, answer due, disposition). The rest
+   live in c.lifecycle, which saves with the matter. The reports built on it show how long each step takes and
+   where, by state, venue, carrier, account, adjuster, plaintiff firm and defense firm.
+   ══════════════════════════════════════════════════════════════════════ */
+const LC_STEPS = [
+  ['lossDate','Date of loss'],
+  ['fnolDate','First notice of loss (FNOL)'],
+  ['coverageDate','Coverage position sent'],
+  ['holdDate','Litigation hold sent'],
+  ['repDate','Claimant attorney retained'],
+  ['counselAssignedDate','Defense counsel assigned'],
+  ['filed','Suit filed'],
+  ['servedDate','Suit served'],
+  ['answerDue','Answer due'],
+  ['firstReportDate','First counsel report received'],
+  ['reserveSetDate','Initial reserve set'],
+  ['assessmentDate','Early case assessment done'],
+  ['authorityDate','Settlement authority approved'],
+  ['resolutionDate','Resolved (release or dismissal)'],
+  ['paymentDate','Payment issued'],
+  ['closedDate','File closed'],
+  ['subroDate','Recovery or subrogation referral']
+];
+const LC_COVERAGE = ['', 'Pending', 'Accepted', 'Accepted with reservation of rights', 'Denied'];
+function lcIsoOk(v){ return /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')); }
+function lcGet(c, k){
+  const L = c.lifecycle || {};
+  let v = '';
+  if (k === 'fnolDate') v = c.fnolDate; else if (k === 'repDate') v = c.repDate; else if (k === 'filed') v = c.filed;
+  else if (k === 'answerDue') v = c.keyDates && c.keyDates.answerDue;
+  else if (k === 'resolutionDate') v = (c.closing && c.closing.dispositionDate) || L.resolutionDate;
+  else if (k === 'counselAssignedDate') v = L.counselAssignedDate || (c.assignment && c.assignment.at ? String(c.assignment.at).slice(0, 10) : '') || (((c.updates || []).filter(u => u.type === 'Assignment').map(u => u.date).sort()[0]) || '');
+  else if (k === 'firstReportDate') { const R = (typeof cdReports === 'function' ? cdReports(c) : []).map(r => r.reportDate || r.saved).filter(Boolean).sort(); v = L.firstReportDate || (R[0] || ''); }
+  else v = L[k];
+  v = String(v || '').slice(0, 10);
+  return lcIsoOk(v) ? v : '';
+}
+function lcDays(c, a, b){ const x = lcGet(c, a), y = lcGet(c, b); if (!x || !y) return null; return demandDaysBetween(x, y); }
+function lcSet(caseId, k, val){
+  const c = CASES.find(x => x.id === caseId); if (!c) return;
+  val = String(val || '').trim();
+  if (k !== 'coverageStatus' && val && !lcIsoOk(val)) return;
+  if (k === 'fnolDate') c.fnolDate = val; else if (k === 'repDate') c.repDate = val; else if (k === 'filed') c.filed = val || c.filed;
+  else if (k === 'answerDue') { c.keyDates = c.keyDates || {}; c.keyDates.answerDue = val; }
+  else if (k === 'resolutionDate') { c.closing = c.closing || {}; c.closing.dispositionDate = val; }
+  else { c.lifecycle = c.lifecycle || {}; c.lifecycle[k] = val; }
+  c.updates = c.updates || [];
+  sc(c); render();
+}
+function lcSetAmt(caseId, val){ const c = CASES.find(x => x.id === caseId); if (!c) return; c.lifecycle = c.lifecycle || {}; c.lifecycle.reserveSetAmount = parseFloat(String(val || '').replace(/[^0-9.]/g, '')) || 0; sc(c); render(); }
+function lifecycleCardV(c){
+  const id = esc(c.id), L = c.lifecycle || {};
+  const key = (a, b) => { const n = lcDays(c, a, b); return n == null ? '—' : n + ' day' + (Math.abs(n) === 1 ? '' : 's'); };
+  let h = '<div class="card" style="padding:12px 14px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;">Claim lifecycle, loss to close</div>';
+  h += '<div style="font-size:12px;color:var(--muted);margin:3px 0 10px;max-width:780px;line-height:1.55;">Fill in each date you have. The days between steps feed the lifecycle reports, which show where claims are slow and which areas, adjusters and firms are behind.</div>';
+  h += '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:10px;font-size:12.5px;">'+
+    '<div><span style="color:var(--muted);">FNOL to claimant attorney</span><br><strong>'+key('fnolDate','repDate')+'</strong></div>'+
+    '<div><span style="color:var(--muted);">Attorney to suit filed</span><br><strong>'+key('repDate','filed')+'</strong></div>'+
+    '<div><span style="color:var(--muted);">FNOL to suit filed</span><br><strong>'+key('fnolDate','filed')+'</strong></div>'+
+    '<div><span style="color:var(--muted);">FNOL to defense counsel</span><br><strong>'+key('fnolDate','counselAssignedDate')+'</strong></div>'+
+    '<div><span style="color:var(--muted);">FNOL to resolution</span><br><strong>'+key('fnolDate','resolutionDate')+'</strong></div></div>';
+  h += '<div style="overflow-x:auto;"><table><thead><tr><th>Step</th><th>Date</th><th>Days after FNOL</th><th>Days after previous step</th></tr></thead><tbody>';
+  let prev = '';
+  LC_STEPS.forEach(([k, label]) => {
+    const v = lcGet(c, k), derived = (k === 'counselAssignedDate' || k === 'firstReportDate') && !(L[k]) && v;
+    const chain = ['repDate','filed','servedDate','resolutionDate'].indexOf(k) >= 0, fn = lcGet(c, 'fnolDate'), dF = (v && fn) ? demandDaysBetween(fn, v) : null, dP = (v && prev) ? demandDaysBetween(prev, v) : null;
+    h += '<tr><td>'+esc(label)+(derived ? ' <span style="font-size:10.5px;color:var(--dim);">(from the file)</span>' : '')+'</td><td><input class="inp" type="date" style="width:150px;" value="'+esc(v)+'" onchange="lcSet(\''+id+'\',\''+k+'\',this.value)"></td>'+
+      '<td>'+(dF == null ? '—' : dF)+'</td><td'+(dP != null && dP < 0 && chain ? ' style="color:#B91C1C;font-weight:700;"' : '')+'>'+(dP == null ? '—' : (dP < 0 && chain ? dP + ' (check the dates)' : dP))+'</td></tr>';
+    if (v) prev = v;
+  });
+  h += '</tbody></table></div>';
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;"><div class="fld" style="flex:1 1 240px;margin:0;"><label class="lbl">Coverage position</label><select class="inp" onchange="lcSet(\''+id+'\',\'coverageStatus\',this.value)">'+LC_COVERAGE.map(o => '<option value="'+esc(o)+'"'+((L.coverageStatus||'')===o?' selected':'')+'>'+(o || 'Not set')+'</option>').join('')+'</select></div>'+
+    '<div class="fld" style="flex:1 1 200px;margin:0;"><label class="lbl">Initial reserve amount</label><input class="inp" type="text" value="'+(L.reserveSetAmount ? esc(String(L.reserveSetAmount)) : '')+'" placeholder="Amount when first set" onchange="lcSetAmt(\''+id+'\',this.value)"></div></div>';
+  return h + '</div>';
+}
+/* Days between steps for every matter, and averages by area */
+function lcRow(c){
+  return {c, loss:lcGet(c,'lossDate'), fnol:lcGet(c,'fnolDate'), cov:lcGet(c,'coverageDate'), rep:lcGet(c,'repDate'), asg:lcGet(c,'counselAssignedDate'), filed:lcGet(c,'filed'), served:lcGet(c,'servedDate'),
+    lossToFnol:lcDays(c,'lossDate','fnolDate'), fnolToCov:lcDays(c,'fnolDate','coverageDate'), fnolToRep:lcDays(c,'fnolDate','repDate'), repToFiled:lcDays(c,'repDate','filed'), fnolToFiled:lcDays(c,'fnolDate','filed'),
+    fnolToAsg:lcDays(c,'fnolDate','counselAssignedDate'), filedToAsg:lcDays(c,'filed','counselAssignedDate'), fnolToRes:lcDays(c,'fnolDate','resolutionDate')};
+}
+function lcAvg(list, f){ const v = list.map(f).filter(x => x != null && x >= 0); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null; }
+function lcDimensions(){
+  return [['State', c => caseStateName(c) || 'Not recorded'], ['Venue / county', c => (c.court && c.court.venueCounty) || 'Not recorded'], ['Carrier', c => (c.insurance && c.insurance.carrier) || 'Not recorded'],
+    ['Client account', c => caseAcct(c) || 'Not recorded'], ['Adjuster', c => claimsPrimary(c) || 'Not recorded'], ['Plaintiff firm', c => plaintiffFirmOf(c) || 'Not recorded'], ['Defense firm', c => (c.defenseCounsel && (c.defenseCounsel.firm || c.defenseCounsel.name)) || 'Not recorded']];
+}
+
 /* ── CSV import columns for the new fields ── */
 function dxNormDate(v){
   v = String(v||'').trim(); if (!v) return '';
@@ -4423,6 +4515,7 @@ function importExtraFields(cells, idx){
   const out = {}, stName = stateNameFrom(g('state')) || g('state');
   const fnol = dxNormDate(g('fnol')), rep = dxNormDate(g('repDate'));
   if (fnol) out.fnolDate = fnol; if (rep) out.repDate = rep;
+  { const lc = {}; const d1 = dxNormDate(g('lossDate')), d2 = dxNormDate(g('coverageDate')), d3 = dxNormDate(g('served')), d4 = dxNormDate(g('defenseAssigned')); if (d1) lc.lossDate = d1; if (d2) lc.coverageDate = d2; if (d3) lc.servedDate = d3; if (d4) lc.counselAssignedDate = d4; if (Object.keys(lc).length) out.lifecycle = lc; }
   if (g('account')) out.clientAccount = g('account');
   if (g('adjuster')) out.adjusterPrimary = g('adjuster');
   if (g('backupAdjuster')) out.adjusterBackup = g('backupAdjuster');
@@ -8890,6 +8983,28 @@ function buildReportData(rptId){
       CASES.forEach(c => { const k = (c.insurance && c.insurance.carrier) || 'No carrier recorded', o = g[k] = g[k] || {n:0, b:0, p:0}; o.n++; o.b += Number((c.billing && c.billing.totalBilled) || 0); o.p += Number((c.billing && c.billing.totalPaid) || 0); });
       rows = Object.keys(g).map(k => ({k, o:g[k]})).filter(x => x.o.b > 0).sort((a,b) => (b.o.b - b.o.p) - (a.o.b - a.o.p)).map(x => [x.k, x.o.n, fM(x.o.b), fM(x.o.p), fM(x.o.b - x.o.p), x.o.b ? Math.round((x.o.b - x.o.p) / x.o.b * 100) + '%' : '0%']);
       break; }
+    case 'r40': { /* Claim lifecycle timeline */
+      cols = ['Matter #','Client','State','Carrier','Adjuster','Loss','FNOL','Days Loss to FNOL','Claimant Atty Retained','Days FNOL to Atty','Defense Assigned','Days FNOL to Defense','Suit Filed','Days Atty to Filed','Days FNOL to Filed','Coverage Position','Flag'];
+      rows = CASES.map(lcRow).filter(r => r.fnol || r.rep || r.filed).map(r => { const fl = []; if (r.lossToFnol != null && r.lossToFnol > 30) fl.push('Late reporting'); if (r.fnolToRep != null && r.fnolToRep >= 0 && r.fnolToRep <= 30) fl.push('Attorney within 30 days'); if (r.repToFiled != null && r.repToFiled >= 0 && r.repToFiled <= 30) fl.push('Filed within 30 days of attorney'); if (r.filedToAsg != null && r.filedToAsg > 14) fl.push('Defense assigned ' + r.filedToAsg + ' days after filing'); if ((r.fnolToRep != null && r.fnolToRep < 0) || (r.repToFiled != null && r.repToFiled < 0)) fl.push('Dates out of order'); const x = r.c; return [x.matterNo||x.id, x.client, caseStateName(x) || '—', (x.insurance && x.insurance.carrier) || '—', claimsPrimary(x) || '—', r.loss || '—', r.fnol || '—', r.lossToFnol == null ? '—' : r.lossToFnol, r.rep || '—', r.fnolToRep == null ? '—' : r.fnolToRep, r.asg || '—', r.fnolToAsg == null ? '—' : r.fnolToAsg, r.filed || '—', r.repToFiled == null ? '—' : r.repToFiled, r.fnolToFiled == null ? '—' : r.fnolToFiled, (x.lifecycle && x.lifecycle.coverageStatus) || '—', fl.join('; ') || '—']; });
+      break; }
+    case 'r41': { /* Lifecycle speed by area */
+      cols = ['Group By','Value','Matters','Avg Days Loss to FNOL','Avg Days FNOL to Atty','Avg Days Atty to Filed','Avg Days FNOL to Filed','Avg Days FNOL to Defense','What stands out'];
+      const all = CASES.map(lcRow);
+      const base = {fa:lcAvg(all, r => r.fnolToRep), af:lcAvg(all, r => r.repToFiled), ff:lcAvg(all, r => r.fnolToFiled), fd:lcAvg(all, r => r.fnolToAsg), lf:lcAvg(all, r => r.lossToFnol)};
+      const show = v => v == null ? '—' : v;
+      rows = [['All matters','Whole book', all.length, show(base.lf), show(base.fa), show(base.af), show(base.ff), show(base.fd), 'Baseline for the rows below']];
+      lcDimensions().forEach(([dim, fn]) => {
+        const g = {}; all.forEach(r => { const k = fn(r.c); (g[k] = g[k] || []).push(r); });
+        Object.keys(g).filter(k => g[k].length >= 2 && k !== 'Not recorded').sort((a, b) => g[b].length - g[a].length).forEach(k => {
+          const L = g[k], fa = lcAvg(L, r => r.fnolToRep), af = lcAvg(L, r => r.repToFiled), ff = lcAvg(L, r => r.fnolToFiled), fd = lcAvg(L, r => r.fnolToAsg), lf = lcAvg(L, r => r.lossToFnol), notes = [];
+          if (fa != null && base.fa && fa <= base.fa * 0.6) notes.push('Claimants get attorneys faster (' + fa + ' vs ' + base.fa + ' days)'); else if (fa != null && base.fa && fa >= base.fa * 1.4) notes.push('Claimants get attorneys slower (' + fa + ' vs ' + base.fa + ' days)');
+          if (ff != null && base.ff && ff <= base.ff * 0.6) notes.push('Suits filed faster (' + ff + ' vs ' + base.ff + ' days)'); else if (ff != null && base.ff && ff >= base.ff * 1.4) notes.push('Suits filed slower (' + ff + ' vs ' + base.ff + ' days)');
+          if (fd != null && base.fd && fd >= base.fd * 1.4) notes.push('Defense assigned slower (' + fd + ' vs ' + base.fd + ' days)');
+          if (lf != null && lf > 30) notes.push('Late reporting (' + lf + ' days)');
+          rows.push([dim, k, L.length, show(lf), show(fa), show(af), show(ff), show(fd), notes.join('; ') || '—']);
+        });
+      });
+      break; }
     case 'w2':
       cols = ['Matter #','Injured worker','Open steps','Done','Resolution'];
       rows = compRows().filter(x => x.k.medicare === 'Yes').map(x => { const m = compMedicare(x.c); return [x.c.matterNo||x.c.id, x.k.claimant||'—', m.open.map(i => i[1]).join('; ')||'None', m.done+' of '+m.total, x.k.settlementType||'None']; });
@@ -10044,10 +10159,56 @@ ${[...CASES].sort((a,b)=>(b.billing.totalBilled||0)-(a.billing.totalBilled||0)).
    store — most importantly bulk-importing closed case history.
    Exposed on window.CaseAPI. Also mirrors the REST API shape
    described in openapi.yaml / server.js (see the API tab). */
+/* ── Claim feed: keys for the customer's claims system to send claims in ── */
+function feedIsDemo(){ return DEMO_MODE || !authToken; }
+function feedBase(){ return (API_BASE || location.origin).replace(/\/$/, ''); }
+async function loadFeedKeys(force){
+  if (feedIsDemo() || S.feedLoading || (S.feedKeys && !force)) return;
+  S.feedLoading = true;
+  try { const r = await apiFetch('/api/integration-keys'); st({feedKeys:r.keys || [], feedLoading:false, feedErr:''}); }
+  catch (e) { st({feedKeys:[], feedLoading:false, feedErr:e.message}); }
+}
+function feedDemoKeys(){ if (!S.feedDemo) S.feedDemo = [{id:'demo-1', name:'Broadspire claims system (sample)', active:true, created_at:td(), last_used_at:null, last_summary:null}]; return S.feedDemo; }
+async function feedCreateKey(){
+  const name = ((document.getElementById('fkName') || {}).value || '').trim();
+  if (!name) { alert('Name the system that will send claims, for example: Broadspire claims system.'); return; }
+  if (feedIsDemo()) { feedDemoKeys().unshift({id:'demo-'+Date.now(), name:name, active:true, created_at:td()}); S.feedNewKey = 'SAMPLE-KEY-NOT-REAL'; S.feedNewName = name; render(); return; }
+  try { const r = await apiFetch('/api/integration-keys', {method:'POST', body:JSON.stringify({name})}); S.feedNewKey = r.token; S.feedNewName = name; S.feedKeys = null; await loadFeedKeys(true); render(); } catch (e) { alert(e.message); }
+}
+async function feedRevokeKey(id){
+  if (!confirm('Turn this key off? The system using it will stop being able to send claims right away.')) return;
+  if (feedIsDemo()) { const k = feedDemoKeys().find(x => x.id === id); if (k) k.active = false; render(); return; }
+  try { await apiFetch('/api/integration-keys/'+id, {method:'DELETE'}); await loadFeedKeys(true); render(); } catch (e) { alert(e.message); }
+}
+function feedCopy(id){ const el = document.getElementById(id); if (!el) return; const t = el.textContent; try { navigator.clipboard.writeText(t); } catch (e) { const r = document.createRange(); r.selectNode(el); const g = window.getSelection(); g.removeAllRanges(); g.addRange(r); } }
+function feedTabV(){
+  loadFeedKeys();
+  const demo = feedIsDemo(), keys = demo ? feedDemoKeys() : (S.feedKeys || []);
+  const canMake = demo || S.currentUser?.platformAdmin || ['owner','admin'].includes(S.currentUser?.role);
+  const base = demo ? 'https://your-address.example.com' : feedBase();
+  const mono = 'font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;background:var(--surf3);padding:10px 12px;border-radius:6px;overflow-x:auto;white-space:pre;line-height:1.6;';
+  let h = '<div style="font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:12px;max-width:820px;">Let your claims system send open claims here on a schedule. Each claim is matched on its claim number: new claims are created, known claims are updated, and a blank never erases anything. Sending the same file twice changes nothing. Dates from first notice of loss to the claimant attorney to the defense attorney feed the lifecycle reports. This is a batch feed (every few minutes to nightly), not a live connection.</div>';
+  if (S.feedErr) h += '<div class="alert-bad" style="margin-bottom:10px;">'+esc(S.feedErr)+'</div>';
+  if (S.feedNewKey) h += '<div class="card" style="padding:12px 14px;margin-bottom:12px;border-left:4px solid #15803D;"><div style="font-weight:800;margin-bottom:4px;">Key for '+esc(S.feedNewName || '')+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Copy it now and give it to the person who sets up the feed. For safety it cannot be shown again. If it is lost, turn it off and make a new one.'+(demo ? ' (This is a sample screen, so the key below is not real.)' : '')+'</div><div id="fkNew" style="'+mono+'">'+esc(S.feedNewKey)+'</div><div style="margin-top:8px;display:flex;gap:8px;"><button class="btn btn-out" onclick="feedCopy(\'fkNew\')">Copy key</button><button class="btn btn-out" onclick="S.feedNewKey=\'\';render()">Done</button></div></div>';
+  if (canMake) h += '<div class="card" style="padding:12px 14px;margin-bottom:12px;"><div style="font-weight:800;font-size:13px;margin-bottom:6px;">Make a key</div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;"><div><label class="lbl">System that will send claims</label><input id="fkName" class="inp" style="width:300px;" placeholder="Broadspire claims system"></div><button class="btn btn-pri" onclick="feedCreateKey()">Make key</button></div></div>';
+  else h += '<div style="font-size:12px;color:var(--dim);margin-bottom:10px;">An owner or admin makes the keys.</div>';
+  h += '<div class="serif" style="font-size:20px;font-weight:700;margin-bottom:6px;">Keys</div>';
+  if (S.feedLoading && !keys.length) h += '<div style="font-size:12.5px;color:var(--muted);">Loading…</div>';
+  else if (!keys.length) h += '<div class="card" style="padding:16px;font-size:13px;color:var(--muted);margin-bottom:14px;">No keys yet. Make one to start a feed.</div>';
+  else h += '<div class="card" style="padding:0;overflow-x:auto;margin-bottom:14px;"><table><thead><tr><th>System</th><th>Made</th><th>Last sent</th><th>Last result</th><th>Status</th><th></th></tr></thead><tbody>'+keys.map(k => { const ls = k.last_summary || null; return '<tr><td style="font-weight:700;">'+esc(k.name)+'</td><td>'+esc(String(k.created_at).slice(0,10))+'</td><td>'+(k.last_used_at ? esc(String(k.last_used_at).slice(0,16).replace('T',' ')) : 'Never')+'</td><td>'+(ls ? esc(ls.created+' new, '+ls.updated+' updated, '+ls.failed+' failed') : '—')+'</td><td>'+(k.active ? '<span style="color:#15803D;font-weight:700;">On</span>' : '<span style="color:var(--dim);">Off</span>')+'</td><td>'+(k.active && canMake ? '<button class="btn btn-out" onclick="feedRevokeKey(\''+escAttr(k.id)+'\')">Turn off</button>' : '')+'</td></tr>'; }).join('')+'</tbody></table></div>';
+  h += '<div class="serif" style="font-size:20px;font-weight:700;margin-bottom:6px;">How your IT team sends claims</div>';
+  h += '<div class="card" style="padding:14px 16px;margin-bottom:12px;"><div style="font-size:12.5px;color:var(--muted);line-height:1.7;margin-bottom:8px;max-width:820px;">Send a file of claims with the key in the header. Try it with <b>dryRun=1</b> first: it checks every row and tells you what would happen without saving anything. Only <b>claimNo</b> is required on every row, and <b>client</b> is also needed the first time a claim is sent. The one-page field map lists every column, with examples (ask us for the Claim Feed Field Map PDF).</div>'
+    + '<div style="'+mono+'">curl -X POST "'+esc(base)+'/api/feed/claims?dryRun=1" \\\n  -H "Authorization: Bearer YOUR_KEY" \\\n  -H "Content-Type: text/csv" \\\n  --data-binary @claims.csv</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin:10px 0 6px;">Or as JSON (Content-Type: application/json):</div>'
+    + '<div style="'+mono+'">{ "claims": [ {\n  "claimNo": "BSP-2026-004417", "client": "Acme Logistics LLC",\n  "state": "TX", "adjuster": "Dana Whitfield",\n  "fnolDate": "2026-02-16", "claimantAttorneyDate": "2026-03-10",\n  "defenseAssignedDate": "2026-04-02", "reserveAmount": 125000\n} ] }</div>'
+    + '<div style="font-size:12px;color:var(--dim);margin-top:10px;line-height:1.6;">Up to 2,000 claims per request and 120 requests per hour per key. To check a key: GET '+esc(base)+'/api/feed/ping with the same header. Imported claims show up as new matters or updates, and the lifecycle reports read the dates automatically.</div></div>';
+  return h;
+}
 function apiHubV(forceTab){
   const tab = forceTab || S.apiTab || 'api';
-  const bar = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px;">' + [['api','Imports and API'],['counsel','Approved counsel']].map(([k, l]) => '<span class="pill' + (tab === k ? ' on' : '') + '" onclick="st({role:\'api\',apiTab:\'' + k + '\',caseId:null,showWelcome:false})">' + l + '</span>').join('') + '</div>';
+  const bar = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px;">' + [['api','Imports and API'],['feed','Claim feed'],['counsel','Approved counsel']].map(([k, l]) => '<span class="pill' + (tab === k ? ' on' : '') + '" onclick="st({role:\'api\',apiTab:\'' + k + '\',caseId:null,showWelcome:false})">' + l + '</span>').join('') + '</div>';
   if (tab === 'counsel') return '<div class="wrap" style="padding-top:0;padding-bottom:0;max-width:1100px;">' + bar + '</div>' + counselV();
+  if (tab === 'feed') return '<div class="wrap" style="max-width:1000px;">' + bar + '<div class="serif" style="font-size:26px;font-weight:700;margin:6px 0 8px;">Claim feed</div>' + feedTabV() + '</div>';
   let h = '<div class="wrap">' + bar;
   h += '<div class="hero"><div class="hero-l"><div class="hero-eyebrow">Developer Access</div>';
   h += '<h1 class="hero-title">API &amp; Closed Case Import</h1>';
@@ -11132,7 +11293,7 @@ function parseHealthCheckCSV(text){
     value: col('Value'), reserve: col('Reserve'), demand: col('Demand'), offer: col('Offer'),
     lastActivity: col('LastActivity'), totalBilled: col('TotalBilled'),
     state: col('State'), account: col('Account'), adjuster: col('Adjuster'), backupAdjuster: col('BackupAdjuster'), defenseCounsel: col('DefenseCounsel'), defenseFirm: col('DefenseFirm'),
-    plaintiffAttorney: col('PlaintiffAttorney'), plaintiffFirm: col('PlaintiffFirm'), fnol: col('FNOL'), repDate: col('RepDate'),
+    plaintiffAttorney: col('PlaintiffAttorney'), plaintiffFirm: col('PlaintiffFirm'), fnol: col('FNOL'), repDate: col('RepDate'), lossDate: col('LossDate'), coverageDate: col('CoverageDate'), served: col('Served'), defenseAssigned: col('DefenseAssigned'),
     demandReceived: col('DemandReceived'), demandDeadline: col('DemandDeadline'), demandTime: col('DemandTime'), demandAmount: col('DemandAmount'), policyLimits: col('PolicyLimits'),
     injuryDate: col('InjuryDate'), employer: col('Employer'), bodyPart: col('BodyPart'), aww: col('AWW'), claimClass: col('ClaimClass'), disability: col('Disability'), medPaid: col('MedicalPaid'), indPaid: col('IndemnityPaid'), medRes: col('MedicalReserve'), indRes: col('IndemnityReserve'), hearing: col('HearingDate')
   };
@@ -12723,6 +12884,7 @@ function tabDates(c){
   let h = '<div class="section-band">Statute of Limitations</div>';
   h += '<div style="margin-bottom:10px;"><button class="btn btn-out" onclick="exportCaseIcs(\''+esc(c.id)+'\')">Export this matter\'s deadlines to calendar (.ics)</button></div>';
   h += claimFactsCardV(c);
+  h += lifecycleCardV(c);
   h += backupPickerV(c);
   h += '<div class="grid-2">';
   h += '<div>'+inp('SOL Date', c.keyDates.sol, 'un(\'keyDates\',\'sol\',this.value)','date')+'</div>';
@@ -14507,6 +14669,23 @@ function randomizeDemoData(){
 }
 
 /* ── INITIALIZE ────────────────────────────────────────── */
+/* demo only: lifecycle dates for every matter, so the lifecycle reports show real patterns (some plaintiff firms and areas move faster) */
+{ const addD = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  const fastFirms = ['Brandt Injury Law', 'Harlan & Pike, LLP', 'Brennan & Tate'];
+  CASES.forEach((c, n) => {
+    if (!c.filed || !/^\d{4}-\d{2}-\d{2}$/.test(String(c.filed)) || c.lifecycle) return;
+    const hsh = String(c.id).split('').reduce((t, ch) => t + ch.charCodeAt(0) * 7, 0) + n * 13;
+    const fast = fastFirms.indexOf((c.opposing && c.opposing.counselFirm) || '') >= 0, ga = /georgia/i.test((c.court && c.court.jurisdiction) || '');
+    const aGap = (fast ? 8 : ga ? 14 : 40) + (hsh % 22);           /* FNOL to claimant attorney */
+    const fGap = (fast ? 18 : ga ? 30 : 75) + (hsh % 35);          /* attorney to filing */
+    const hasDemand = demandsOf(c).length > 0;
+    const fnol = hasDemand && c.fnolDate ? c.fnolDate : addD(c.filed, -(aGap + fGap));
+    const rep = hasDemand && c.repDate ? c.repDate : addD(fnol, aGap);
+    if (!hasDemand) { c.fnolDate = fnol; c.repDate = rep; }
+    const asg = (hsh % 5 === 0) ? addD(c.filed, -(5 + hsh % 12)) : addD(c.filed, 2 + (fast ? 1 : 3) + hsh % 11);
+    c.lifecycle = { lossDate:addD(fnol, -(1 + hsh % 26)), coverageDate:addD(fnol, 3 + hsh % 24), holdDate:addD(fnol, 2 + hsh % 8), counselAssignedDate:asg, servedDate:addD(c.filed, 3 + hsh % 8), reserveSetDate:addD(asg, 5 + hsh % 15),
+      coverageStatus:['Accepted','Accepted','Accepted with reservation of rights','Pending'][hsh % 4] };
+  }); }
 /* demo only: one closing matter that has gone quiet, so the Aging Pending Closures report has something to show */
 { const d = CASES.find(x => x.id === 'CC-008'); if (d) { d.litigationStage = 'Closing'; (d.updates || []).forEach((u, k) => { u.date = new Date(Date.now() - (200 + k * 9) * 864e5).toISOString().slice(0, 10); }); } }
 if (!API_BASE) randomizeDemoData(); // hard gate — never runs against a real connected backend
