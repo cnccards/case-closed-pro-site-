@@ -435,3 +435,60 @@ DO $$ BEGIN
       USING (org_id = current_setting('app.current_org_id', true)::uuid);
   END IF;
 END $$;
+
+-- ---------------------------------------------------------------
+-- Org settings (added October 2026). Per-customer named settings such as
+-- billing guidelines per client account. The server also creates this on
+-- startup if it is missing. Safe to run more than once.
+-- ---------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS org_settings (
+  org_id     UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  key        TEXT NOT NULL,
+  value      JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_by UUID,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (org_id, key)
+);
+ALTER TABLE org_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE org_settings FORCE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'org_settings' AND policyname = 'org_settings_tenant_isolation') THEN
+    CREATE POLICY org_settings_tenant_isolation ON org_settings
+      USING (org_id = current_setting('app.current_org_id', true)::uuid);
+  END IF;
+END $$;
+
+-- ---------------------------------------------------------------
+-- Firm bill submission (added October 2026). Private links for defense firms
+-- to send invoices, and the inbox they land in. The server also creates these
+-- on startup if missing. Safe to run more than once.
+-- ---------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS firm_links (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE, firm TEXT NOT NULL, email TEXT, note TEXT,
+  active BOOLEAN NOT NULL DEFAULT true, created_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(), last_used_at TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS firm_submissions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  link_id UUID REFERENCES firm_links(id) ON DELETE SET NULL, firm TEXT NOT NULL,
+  matter_ref TEXT, invoice_no TEXT, invoice_date DATE, submitter_name TEXT, submitter_email TEXT,
+  format TEXT NOT NULL DEFAULT 'text', content TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'New' CHECK (status IN ('New','Loaded','Rejected')), review_note TEXT,
+  ip TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), handled_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_firm_submissions_org ON firm_submissions(org_id, status);
+ALTER TABLE firm_links ENABLE ROW LEVEL SECURITY;
+ALTER TABLE firm_links FORCE ROW LEVEL SECURITY;
+ALTER TABLE firm_submissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE firm_submissions FORCE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'firm_links' AND policyname = 'firm_links_tenant_isolation') THEN
+    CREATE POLICY firm_links_tenant_isolation ON firm_links USING (org_id = current_setting('app.current_org_id', true)::uuid);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'firm_submissions' AND policyname = 'firm_submissions_tenant_isolation') THEN
+    CREATE POLICY firm_submissions_tenant_isolation ON firm_submissions USING (org_id = current_setting('app.current_org_id', true)::uuid);
+  END IF;
+END $$;
