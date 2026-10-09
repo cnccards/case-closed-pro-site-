@@ -1751,6 +1751,7 @@ function getDeadlineAlerts(){
       const d = daysUntil(c.nextStepDue);
       if (d <= 30) alerts.push({caseId:c.id, matterNo:label, client:c.client, kind:'Next Step', tab:'overview', date:c.nextStepDue, days:d, text:c.nextStep});
     }
+    if (isComp(c)) compFlags(c).filter(f => f.sev === 'high' || f.sev === 'med').forEach(f => alerts.push({caseId:c.id, matterNo:label, client:c.client, kind:'Comp', tab:'comp', date:'', days:f.sev === 'high' ? 0 : 30, flag:true, text:f.text}));
     (c.tasks||[]).forEach(t => {
       if (t.done || !t.due) return;
       const d = daysUntil(t.due);
@@ -1780,7 +1781,7 @@ function notifBellHtml(){
       alerts.slice(0, 25).forEach(a => {
         const isOverdue = a.days < 0;
         const dCol = isOverdue ? 'var(--red)' : a.days <= 7 ? 'var(--gold)' : 'var(--muted)';
-        const dLabel = isOverdue ? Math.abs(a.days)+'d overdue' : a.days===0 ? 'today' : 'in '+a.days+'d';
+        const dLabel = a.flag ? 'review' : isOverdue ? Math.abs(a.days)+'d overdue' : a.days===0 ? 'today' : 'in '+a.days+'d';
         h += '<div onmousedown="jumpFromAlert(\''+a.caseId+'\',\''+a.tab+'\')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--surf3);">';
         h += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;">';
         h += '<span style="font-size:11px;font-weight:700;color:var(--pri2);">'+esc(a.matterNo)+'</span>';
@@ -2441,7 +2442,7 @@ function myCasesV() {
   let h = '<div style="padding:20px;">';
   h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid var(--line);padding-bottom:15px;">';
   h += '<div>';
-  h += '<div class="sh">My Cases</div>';
+  h += '<div class="sh">My Matters</div>';
   h += '<div style="font-size:12px;color:var(--muted);margin-top:4px;">'+(attorneyName?esc(attorneyName)+' — ':'')+myCases.length+' assigned cases — Manage and update</div>';
   h += '</div>';
   h += (S.attorneyId
@@ -2682,8 +2683,11 @@ function render(){
   // "please verify" message that can never be satisfied.
   if (S.role !== 'attorney') html += hdr();
   else html += '<div style="padding:15px;text-align:right;"><button onclick="st({isAuthenticated:false, attorneyId:null, attorneyName:null})" class="btn btn-out">Sign Out</button></div>';
+  if (S.role && !roleAllowed(S.role)) S.role = 'today';
   html += '<div id="ct">';
-  if (S.role === 'litigation') html += litigationDashV();
+  if (S.role === 'calendar') html += calendarV();
+  else if (S.role === 'lifecycle') html += lifecycleV();
+  else if (S.role === 'litigation') html += litigationDashV();
   else if (S.role === 'tpa') html += tpaV();
   else if (S.role === 'premium') html += premiumHubV();
   else if (S.role === 'demands') html += demandWatchV();
@@ -2809,6 +2813,97 @@ document.addEventListener('click', function(e){
   _sortTable(t, col, dir);
 });
 
+/* ── Role-based menu ──
+   Owners and admins see everything. A member (an attorney or adjuster who only works their own matters) sees the
+   daily-work pages. This hides pages to keep the menu simple. The data itself is protected on the server: a member
+   only ever receives the matters assigned to them, whatever page they open. */
+const MEMBER_PAGES = ['today','litigation','attorney','demands','claims','calendar','activity'];
+function viewAsOn(){ return !!(DEMO_MODE || !authToken); }
+function userTier(){
+  if (viewAsOn()) return S.viewAs === 'member' ? 'member' : 'owner';
+  const u = S.currentUser || {};
+  if (u.platformAdmin) return 'owner';
+  return u.role === 'member' ? 'member' : 'owner';
+}
+function roleAllowed(r){ return userTier() !== 'member' || MEMBER_PAGES.indexOf(r) >= 0 || r === 'carrier' || r === 'comp'; }
+
+/* ── Calendar: every dated item across the caseload in one month view ── */
+const CAL_KINDS = {
+  'Demand':['#B91C1C','Time-limit demand'], 'SOL':['#B91C1C','Statute of limitations'], 'Trial':['#7C3AED','Trial'], 'Mediation':['#0F766E','Mediation'],
+  'Answer':['#B45309','Answer due'], 'Discovery':['#475569','Discovery / expert / motion dates'], 'Hearing':['#7C3AED','Comp hearing'], 'Next step':['#1D4ED8','Next step'], 'Task':['#64748B','Task']
+};
+function calEvents(){
+  const out = [], scope = acctScope().filter(c => c.status !== 'Closed' && c.status !== 'Settled');
+  const ok = v => v && /^\d{4}-\d{2}-\d{2}/.test(String(v));
+  scope.forEach(c => {
+    const k = c.keyDates || {}, lab = (c.client || '') , no = c.matterNo || c.id;
+    const add = (kind, date, text, tab) => { if (ok(date)) out.push({kind, date:String(date).slice(0,10), text, client:lab, matterNo:no, caseId:c.id, tab:tab || 'dates'}); };
+    add('SOL', k.sol, 'Statute of limitations'); add('Trial', k.trialDate, 'Trial'); add('Mediation', k.mediationDate, 'Mediation'); add('Answer', k.answerDue, 'Answer due');
+    add('Discovery', k.discoveryClose, 'Discovery closes'); add('Discovery', k.expertClose, 'Expert disclosure closes'); add('Discovery', k.msjDeadline, 'Dispositive motions due');
+    if (c.nextStep) add('Next step', c.nextStepDue, c.nextStep, 'overview');
+    (c.tasks || []).filter(t => !t.done).forEach(t => add('Task', t.due, t.title || 'Task', 'tasks'));
+    demandsOf(c).filter(d => d.status === 'open').forEach(d => add('Demand', demandEff(d), 'Time-limit demand due ' + demandTimeLabel(d), 'demands'));
+    if (isComp(c) && c.comp && c.comp.hearingDate) add('Hearing', c.comp.hearingDate, 'Comp hearing', 'comp');
+  });
+  return out;
+}
+function calShift(n){ const m = S.calMonth || td().slice(0,7); const d = new Date(Date.UTC(+m.slice(0,4), +m.slice(5,7) - 1 + n, 1)); st({calMonth:d.toISOString().slice(0,7), calDay:''}); }
+function calToggle(k){ const off = Object.assign({}, S.calOff || {}); if (off[k]) delete off[k]; else off[k] = 1; st({calOff:off}); }
+function calendarV(){
+  const month = S.calMonth || td().slice(0,7), y = +month.slice(0,4), mo = +month.slice(5,7) - 1, today = td();
+  const off = S.calOff || {}, evs = calEvents().filter(e => !off[e.kind]);
+  const by = {}; evs.forEach(e => { (by[e.date] = by[e.date] || []).push(e); });
+  const first = new Date(Date.UTC(y, mo, 1)), startDow = first.getUTCDay(), days = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
+  const names = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  let h = '<div class="wrap"><div class="hero"><div class="hero-l"><div class="hero-eyebrow">Calendar</div><h1 class="hero-title">Deadlines and court dates</h1><p class="hero-sub">Every time-limit demand, statute, trial, mediation, answer, task and next step across your matters. Click an item to open the matter.</p></div></div>';
+  h += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 10px;"><button class="btn btn-out" onclick="calShift(-1)">‹ Previous</button><div class="serif" style="font-size:20px;font-weight:700;min-width:170px;text-align:center;">'+names[mo]+' '+y+'</div><button class="btn btn-out" onclick="calShift(1)">Next ›</button><button class="btn btn-out" onclick="st({calMonth:\'\',calDay:\'\'})">Today</button><span style="flex:1"></span><button class="btn btn-out" onclick="exportAllIcs()">Export to calendar (.ics)</button></div>';
+  h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">' + Object.keys(CAL_KINDS).map(k => '<span class="pill'+(off[k]?'':' on')+'" style="cursor:pointer;" onclick="calToggle(\''+k+'\')"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+CAL_KINDS[k][0]+';margin-right:5px;"></span>'+esc(CAL_KINDS[k][1])+'</span>').join('') + '</div>';
+  h += '<div class="card" style="padding:0;overflow-x:auto;"><div style="display:grid;grid-template-columns:repeat(7,minmax(96px,1fr));min-width:700px;">';
+  ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(d => { h += '<div style="padding:7px 8px;font-size:11px;font-weight:700;color:var(--muted);background:var(--surf2);border-bottom:1px solid var(--line);">'+d+'</div>'; });
+  for (let i = 0; i < startDow; i++) h += '<div style="background:var(--surf2);border-bottom:1px solid var(--surf3);border-right:1px solid var(--surf3);min-height:92px;"></div>';
+  for (let d = 1; d <= days; d++) {
+    const iso = month + '-' + String(d).padStart(2,'0'), list = by[iso] || [], isT = iso === today, sel = S.calDay === iso;
+    h += '<div onclick="st({calDay:\''+iso+'\'})" style="cursor:pointer;padding:4px 5px;min-height:92px;border-bottom:1px solid var(--surf3);border-right:1px solid var(--surf3);'+(sel?'background:#FFFBEB;':'')+'"><div style="font-size:11.5px;font-weight:'+(isT?'800':'600')+';'+(isT?'color:#fff;background:var(--pri2);border-radius:10px;padding:0 6px;display:inline-block;':'color:var(--muted);')+'">'+d+'</div>';
+    list.slice(0,3).forEach(e => { h += '<div title="'+escAttr(e.kind+': '+e.text+' - '+e.client)+'" style="margin-top:2px;font-size:10.5px;line-height:1.25;padding:1px 4px;border-radius:3px;border-left:3px solid '+CAL_KINDS[e.kind][0]+';background:var(--surf3);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">'+esc(e.kind)+' · '+esc(e.client)+'</div>'; });
+    if (list.length > 3) h += '<div style="font-size:10.5px;color:var(--muted);margin-top:2px;">+'+(list.length-3)+' more</div>';
+    h += '</div>';
+  }
+  h += '</div></div>';
+  const listFor = S.calDay ? (by[S.calDay] || []) : evs.filter(e => e.date >= today && e.date <= new Date(Date.parse(today+'T00:00:00Z') + 30*864e5).toISOString().slice(0,10)).sort((a,b) => a.date.localeCompare(b.date));
+  h += '<div class="serif" style="font-size:19px;font-weight:700;margin:16px 0 6px;">'+(S.calDay ? 'On '+esc(S.calDay) : 'Next 30 days')+'</div>';
+  if (!listFor.length) h += '<div class="card" style="padding:14px;font-size:13px;color:var(--muted);">Nothing dated '+(S.calDay ? 'on this day' : 'in the next 30 days')+'.</div>';
+  else h += '<div class="card" style="padding:0;overflow-x:auto;"><table><thead><tr><th>Date</th><th>Type</th><th>Matter</th><th>Client</th><th>What</th></tr></thead><tbody>'+listFor.map(e => '<tr style="cursor:pointer;" onclick="jumpFromAlert(\''+escAttr(e.caseId)+'\',\''+e.tab+'\')"><td>'+esc(e.date)+(e.date<today?' <span style="color:var(--red);font-weight:700;">overdue</span>':'')+'</td><td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+CAL_KINDS[e.kind][0]+';margin-right:5px;"></span>'+esc(CAL_KINDS[e.kind][1])+'</td><td style="font-weight:700;">'+esc(e.matterNo)+'</td><td>'+esc(e.client)+'</td><td>'+esc(e.text)+'</td></tr>').join('')+'</tbody></table></div>';
+  return h + '<div style="font-size:11px;color:var(--dim);margin-top:10px;max-width:800px;line-height:1.5;">Dates come from what is entered on each matter. Confirm court and statute dates against the source documents. Closed and settled matters are not shown.</div></div>';
+}
+
+/* ── Lifecycle chart: how long each step takes, by area, against the whole book ── */
+const LC_METRICS = [['fnolToRep','First notice to claimant attorney'],['fnolToFiled','First notice to suit filed'],['repToFiled','Claimant attorney to suit filed'],['fnolToAsg','First notice to defense counsel assigned'],['lossToFnol','Date of loss to first notice']];
+function lifecycleV(){
+  const dims = lcDimensions(), di = Math.min(+S.lcDim || 0, dims.length - 1), met = S.lcMetric || 'fnolToRep', metLabel = (LC_METRICS.find(m => m[0] === met) || LC_METRICS[0])[1];
+  const all = acctScope().map(lcRow), f = r => r[met], base = lcAvg(all, f);
+  const g = {}; all.forEach(r => { const k = dims[di][1](r.c); (g[k] = g[k] || []).push(r); });
+  const bars = Object.keys(g).filter(k => k !== 'Not recorded').map(k => ({k, n:g[k].length, v:lcAvg(g[k], f), nv:g[k].filter(r => f(r) != null && f(r) >= 0).length})).filter(b => b.v != null && b.nv >= 2).sort((a,b) => b.v - a.v);
+  const max = Math.max(base || 0, ...bars.map(b => b.v), 1);
+  let h = '<div class="wrap"><div class="hero"><div class="hero-l"><div class="hero-eyebrow">Lifecycle</div><h1 class="hero-title">Where claims speed up and slow down</h1><p class="hero-sub">Average days for each step, by area, compared with your whole book. Pick a step and a way to group.</p></div></div>';
+  h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0;">' + LC_METRICS.map(m => '<span class="pill'+(met===m[0]?' on':'')+'" style="cursor:pointer;" onclick="st({lcMetric:\''+m[0]+'\'})">'+esc(m[1])+'</span>').join('') + '</div>';
+  h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 12px;align-items:center;"><span style="font-size:12px;color:var(--muted);">Group by</span>' + dims.map((d,i) => '<span class="pill'+(di===i?' on':'')+'" style="cursor:pointer;" onclick="st({lcDim:'+i+'})">'+esc(d[0])+'</span>').join('') + '</div>';
+  if (!bars.length || base == null) return h + '<div class="card" style="padding:18px;font-size:13px;color:var(--muted);">Not enough dates yet. This chart needs at least two matters in a group with both dates for this step. Add dates on a matter&#39;s Key Dates tab, or send them through the claim feed.</div></div>';
+  h += '<div class="card" style="padding:16px 18px;"><div style="font-weight:800;font-size:14px;">'+esc(metLabel)+', average days by '+esc(dims[di][0].toLowerCase())+'</div><div style="font-size:12px;color:var(--muted);margin:2px 0 12px;">Whole book: <b>'+base+' days</b> across '+all.filter(r => f(r) != null && f(r) >= 0).length+' matters. Groups with fewer than two matters are left out. Red is 40% or more slower than the book, green is 40% or more faster.</div>';
+  h += '<div style="position:relative;">';
+  const pct = v => Math.max(1, Math.round(v / max * 100));
+  bars.forEach(b => {
+    const slow = base && b.v >= base * 1.4, fast = base && b.v <= base * 0.6, col = slow ? '#B91C1C' : fast ? '#15803D' : '#1D4ED8';
+    h += '<div style="display:grid;grid-template-columns:minmax(120px,210px) 1fr 120px;gap:10px;align-items:center;margin:5px 0;"><div style="font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+escAttr(b.k)+'">'+esc(b.k)+'</div>'
+      + '<div style="position:relative;height:20px;background:var(--surf3);border-radius:3px;"><div style="width:'+pct(b.v)+'%;height:100%;background:'+col+';border-radius:3px;"></div><div style="position:absolute;top:-3px;bottom:-3px;left:'+pct(base)+'%;border-left:2px dashed #0F172A;"></div></div>'
+      + '<div style="font-size:12px;"><b>'+b.v+' days</b> <span style="color:var(--muted);">('+b.nv+' matters)'+(slow?' slower':fast?' faster':'')+'</span></div></div>';
+  });
+  h += '</div><div style="font-size:11.5px;color:var(--muted);margin-top:8px;"><span style="display:inline-block;border-left:2px dashed #0F172A;height:11px;margin-right:6px;vertical-align:middle;"></span>Whole book average ('+base+' days)</div></div>';
+  const slowest = bars.filter(b => b.v >= base * 1.4).slice(0, 3), fastest = bars.slice().reverse().filter(b => b.v <= base * 0.6).slice(0, 3);
+  if (slowest.length || fastest.length) h += '<div class="card" style="padding:14px 18px;margin-top:12px;font-size:13px;line-height:1.7;"><div style="font-weight:800;margin-bottom:4px;">What stands out</div>' + (slowest.length ? '<div>Slower than the book: '+slowest.map(b => '<b>'+esc(b.k)+'</b> ('+b.v+' days)').join(', ')+'.</div>' : '') + (fastest.length ? '<div>Faster than the book: '+fastest.map(b => '<b>'+esc(b.k)+'</b> ('+b.v+' days)').join(', ')+'.</div>' : '') + '<div style="font-size:11.5px;color:var(--dim);margin-top:4px;">This shows what happened, not why. Small groups can swing the average.</div></div>';
+  h += '<div style="margin-top:12px;"><button class="btn btn-out" onclick="st({role:\'reports\'})">Open the full lifecycle reports</button></div></div>';
+  return h;
+}
+
 /* ── HEADER ────────────────────────────────────────────────── */
 function hdr(){
   /* Grouped by how the role is actually used day to day, same clustering
@@ -2822,9 +2917,10 @@ function hdr(){
     { label:'', items:[
       ['today','Today'],
       ['litigation','Litigation'],
-      ['attorney','My Cases'],
+      ['attorney','My Matters'],
       ['demands','🛡 Verdict Shield'],
       ['claims','Claims Desk'],
+      ['calendar','Calendar'],
       ['activity','Activity Hub'],
       ['billing','Billing'],
       ['cdesk','Counsel']
@@ -2833,6 +2929,7 @@ function hdr(){
       ['executive','Executive'],
       ['execvs','🛡 Executive Shield'],
       ['scorecard','Scorecards'],
+      ['lifecycle','Lifecycle'],
       ['reports','Reports Hub']
     ]},
     { label:'', items:[
@@ -2848,10 +2945,12 @@ function hdr(){
   if (S.currentUser?.platformAdmin) groups[groups.length-1].items.push(['admin','⚙ Admin']);
   groups.push({ label:'', items:[['roi','ROI']] });
 
+  groups.forEach(g => { g.items = g.items.filter(it => userTier() !== 'member' || MEMBER_PAGES.indexOf(it[0]) >= 0); });
+  const visGroups = groups.filter(g => g.items.length);
   const btn = ([r, l]) =>
     '<button onclick="'+(r==='admin' ? 'goToAdmin()' : r==='scorecard' ? "st({role:'scorecard',caseId:null,scorecardDetail:null,showWelcome:false})" : "st({role:'"+r+"',caseId:null,showWelcome:false})")+'" class="role-tab'+((S.role===r||(r==='billing'&&(S.role==='review'||S.role==='payables')))?' on':'')+(r==='admin'?' admin-tab':'')+(r==='premium'?' premium-tab':'')+'">'+l+(r==='litigation'?attnBadgeV():'')+(r==='demands'?demandBadgeV():'')+'</button>';
 
-  const roleBtns = groups.map((g,gi) =>
+  const roleBtns = visGroups.map((g,gi) =>
     (gi>0 ? '<div class="nav-divider"></div>' : '') +
 
     g.items.map(btn).join('')
@@ -2881,6 +2980,7 @@ function hdr(){
     '<div style="padding:0 18px 10px;display:flex;gap:8px;align-items:center;">'+
       '<div class="nav-scroll" style="background:var(--surf2);border:1px solid var(--line);border-radius:8px;display:flex;padding:3px;gap:1px;align-items:center;flex-wrap:wrap;">'+roleBtns+'</div>'+
       (S.role !== 'attorney' && S.role !== 'reports' ? '<button onclick="st({showRpt:true})" class="btn btn-out nav-side-btn">Report Builder</button>' : '')+
+      (viewAsOn() ? '<label style="font-size:11px;color:var(--muted);display:inline-flex;gap:5px;align-items:center;">View as <select class="inp" style="width:auto;font-size:11.5px;padding:4px 6px;" onchange="st({viewAs:this.value,role:\'today\',caseId:null})"><option value="owner"'+(userTier()==="owner"?' selected':'')+'>Owner / admin</option><option value="member"'+(userTier()==="member"?' selected':'')+'>Attorney (member)</option></select></label>' : '')+
       '<button onclick="st({showAdd:true})" class="btn btn-pri nav-side-btn">+ New Matter</button>'+
     '</div>'+
   '</div>';
@@ -3060,7 +3160,7 @@ function loginScreenV(){
     h += '<button onclick="st({_authMode:\'signin\',loginError:\'\'})" class="btn btn-out" style="width:100%;justify-content:center;padding:11px;">Back to Sign In</button>';
   } else {
     h += '<button onclick="attemptLogin()" class="btn btn-pri" style="width:100%;justify-content:center;padding:11px;margin-bottom:10px;" '+(S.loginLoading?'disabled':'')+'>'+(S.loginLoading?'Signing in…':'Sign In')+'</button>';
-    h += '<button onclick="alert(\'SSO is configured by your organization admin. Contact your claims admin to enable single sign-on.\')" class="btn btn-out" style="width:100%;justify-content:center;padding:11px;">Sign In with Company SSO</button>';
+    h += '<button onclick="startSso()" class="btn btn-out" style="width:100%;justify-content:center;padding:11px;">Sign In with Company SSO</button><div style="font-size:11px;color:var(--dim);text-align:center;margin-top:5px;">Enter your work email above, then click.</div>';
     h += '<div style="text-align:center;margin-top:12px;"><span onclick="st({showForgotPassword:true,loginError:\'\'})" style="font-size:11.5px;color:var(--pri2);cursor:pointer;text-decoration:underline;">Forgot password?</span></div>';
   }
 
@@ -3314,7 +3414,7 @@ function welcomeV(){
   } else {
     h += '<p style="font-size:13.5px;color:var(--muted);line-height:1.7;max-width:460px;margin:0 auto 26px;">Matters your carrier clients assign you will appear in My Cases automatically. Nothing to import — no cost to your firm, ever.</p>';
     h += '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">';
-    h += '<button class="btn btn-pri" style="padding:12px 22px;" onclick="st({showWelcome:false,role:\'attorney\'})">Go to My Cases</button>';
+    h += '<button class="btn btn-pri" style="padding:12px 22px;" onclick="st({showWelcome:false,role:\'attorney\'})">Go to My Matters</button>';
     h += '</div>';
   }
   h += '</div></div>';
@@ -4073,7 +4173,7 @@ function tabDemands(c){
   return h + demandDisclaimerV();
 }
 
-/* ── Verdict Shield desk: the front-and-center panel on the main page and My Cases. Built for the
+/* ── Verdict Shield desk: the front-and-center panel on the main page and My Matters. Built for the
    adjuster who moves these forward: your demands first, days left, and the next click right there. ── */
 function demandMe(){ return S.attorneyName || (S.currentUser && S.currentUser.name) || ''; }
 function demandIsMine(c){ const me = demandMe(); return !!me && (claimsPrimary(c) === me || claimsBackup(c) === me || c.attorney === me); }
@@ -5820,6 +5920,10 @@ function attentionData(scopeCases, opts){
   const gap = under.reduce((t,c) => t + (c.exposure.likelyExposure - ((c.insurance&&c.insurance.reserveAmount)||0)), 0);
   add({key:'reserve', sev:'red', icon:'🛡️', title:'Reserves below likely exposure', cases:under, detail:'Combined shortfall about '+fM(gap)+' across '+under.length+' matter'+(under.length!==1?'s':'')});
 
+  // 2b. Workers' comp claims with flags (off work too long, MMI with no resolution, paid over reserve, hearings)
+  { const cf = open.filter(c => isComp(c) && compFlags(c).some(f => f.sev === 'high' || f.sev === 'med'));
+    add({key:'compflags', sev:'amber', icon:'🩺', title:'Workers\' comp claims with flags', cases:cf, detail: cf.length ? first(cf, c => esc(c.client)+' ('+compFlags(c).filter(f => f.sev !== 'info').length+')') : ''}); }
+
   // 3. Overdue tasks
   const today = new Date().toISOString().slice(0,10);
   let overdueTasks = 0;
@@ -6629,7 +6733,7 @@ function attyV(){
 
   let h = '<div class="wrap">';
   h += '<div class="hero">';
-  h += '<div class="hero-l"><div class="hero-eyebrow">My Cases</div>';
+  h += '<div class="hero-l"><div class="hero-eyebrow">My Matters</div>';
   h += '<h1 class="hero-title">'+(S.filterAtty==='all'?'Firm Caseload':S.filterAtty)+'</h1>';
   h += '<p class="hero-sub">'+open.length+' active matters · '+fM(totVal)+' aggregate value · '+fM(totRes)+' total reserves</p></div></div>';
 
@@ -10242,10 +10346,74 @@ function feedTabV(){
     + '<div style="font-size:12px;color:var(--dim);margin-top:10px;line-height:1.6;">Up to 2,000 claims per request and 120 requests per hour per key. To check a key: GET '+esc(base)+'/api/feed/ping with the same header. Imported claims show up as new matters or updates, and the lifecycle reports read the dates automatically.</div></div>';
   return h;
 }
+/* ── Single sign-on: start, come back, and the setup screen ── */
+function startSso(){
+  const email = (window._loginEmail || '').trim();
+  if (!API_BASE) { alert('Single sign-on is available in a real account. This sample demo signs in with any email and password.'); return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { st({loginError:'Enter your work email address in the Email box, then click Sign In with Company SSO.'}); return; }
+  window.location.href = API_BASE + '/api/sso/start?email=' + encodeURIComponent(email);
+}
+async function finishSsoFromUrl(){
+  const h = (typeof location !== 'undefined' && location.hash) ? location.hash.replace(/^#/, '') : '';
+  if (!h) return false;
+  const q = new URLSearchParams(h), clear = () => { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {} };
+  if (q.get('sso_error')) { const m = q.get('sso_error'); clear(); S.loginError = m; return true; }
+  if (q.get('sso')) {
+    const code = q.get('sso'); clear();
+    try {
+      const data = await fetch(API_BASE + '/api/sso/exchange', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({code})}).then(r => r.json().then(j => { if (!r.ok) throw new Error(j.error || 'Sign-in failed.'); return j; }));
+      completeLoginSession(data); return true;
+    } catch (e) { S.loginError = e.message; return true; }
+  }
+  return false;
+}
+async function loadSso(force){
+  if (feedIsDemo() || S.ssoLoading || (S.ssoCfg !== undefined && !force)) return;
+  S.ssoLoading = true;
+  try { const r = await apiFetch('/api/sso-config'); st({ssoCfg:r.config || null, ssoRedirect:r.redirectUri || '', ssoLoading:false, ssoErr:''}); }
+  catch (e) { st({ssoCfg:null, ssoLoading:false, ssoErr:e.message}); }
+}
+async function ssoSave(){
+  const v = id => ((document.getElementById(id) || {}).value || '').trim();
+  const body = {issuer:v('ssoIssuer'), clientId:v('ssoClientId'), clientSecret:v('ssoSecret'), domains:v('ssoDomains'), enabled:!!(document.getElementById('ssoOn') || {}).checked, autoCreate:!!(document.getElementById('ssoAuto') || {}).checked, defaultRole:v('ssoRole')};
+  if (feedIsDemo()) { S.ssoNote = 'Sample screen: nothing was saved.'; render(); return; }
+  try { await apiFetch('/api/sso-config', {method:'PUT', body:JSON.stringify(body)}); S.ssoNote = body.enabled ? 'Saved. Single sign-on is on.' : 'Saved. Single sign-on is off until you turn it on.'; S.ssoErr = ''; await loadSso(true); render(); }
+  catch (e) { S.ssoErr = e.message; S.ssoNote = ''; render(); }
+}
+async function ssoRemove(){
+  if (!confirm('Remove single sign-on? People will sign in with their passwords again.')) return;
+  if (feedIsDemo()) return;
+  try { await apiFetch('/api/sso-config', {method:'DELETE'}); S.ssoNote = 'Single sign-on removed.'; await loadSso(true); render(); } catch (e) { S.ssoErr = e.message; render(); }
+}
+function ssoTabV(){
+  loadSso();
+  const demo = feedIsDemo(), c = demo ? null : S.ssoCfg, canMake = demo || S.currentUser?.platformAdmin || ['owner','admin'].includes(S.currentUser?.role);
+  const redirect = demo ? 'https://your-address.example.com/api/sso/callback' : (S.ssoRedirect || '');
+  const mono = 'font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;background:var(--surf3);padding:8px 10px;border-radius:6px;overflow-x:auto;white-space:nowrap;';
+  let h = '<div style="font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:12px;max-width:820px;">Let your people sign in with the company login they already use (Okta, Microsoft Entra, Google Workspace, Ping and others that support OpenID Connect). Your identity provider handles the password and any multi-factor step. Passwords still work for anyone who already has one.</div>';
+  if (S.ssoErr) h += '<div class="alert-bad" style="margin-bottom:10px;">'+esc(S.ssoErr)+'</div>';
+  if (S.ssoNote) h += '<div class="alert-good" style="margin-bottom:10px;">'+esc(S.ssoNote)+'</div>';
+  h += '<div class="card" style="padding:14px 16px;margin-bottom:12px;"><div style="font-weight:800;font-size:13px;margin-bottom:4px;">Step 1. In your identity provider</div><div style="font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:8px;">Create a new web application that uses OpenID Connect. Set its sign-in redirect address to the line below. Allow the scopes openid, email and profile. Then copy its issuer address, client ID and client secret into Step 2.</div><div style="'+mono+'" id="ssoRedirect">'+esc(redirect)+'</div><div style="margin-top:8px;"><button class="btn btn-out" onclick="feedCopy(\'ssoRedirect\')">Copy redirect address</button></div></div>';
+  if (!canMake) return h + '<div style="font-size:12px;color:var(--dim);">An owner or admin sets up single sign-on.</div>';
+  const f = (id, label, val, ph, type) => '<div class="fld" style="flex:1 1 300px;margin:0;"><label class="lbl">'+label+'</label><input id="'+id+'" class="inp" type="'+(type||'text')+'" value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'" autocomplete="off"></div>';
+  h += '<div class="card" style="padding:14px 16px;margin-bottom:12px;"><div style="font-weight:800;font-size:13px;margin-bottom:8px;">Step 2. Enter the details</div><div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">'
+    + f('ssoIssuer','Issuer address', c && c.issuer, 'https://login.example.com/oauth2/default')
+    + f('ssoClientId','Client ID', c && c.client_id, '')
+    + f('ssoSecret','Client secret', '', c && c.has_secret ? 'Saved. Leave blank to keep it.' : 'Paste the secret', 'password')
+    + '</div><div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">'
+    + f('ssoDomains','Email domains allowed', c && (c.domains || []).join(', '), 'yourcompany.com, yourcompany.org')
+    + '<div class="fld" style="flex:1 1 220px;margin:0;"><label class="lbl">New people start as</label><select id="ssoRole" class="inp"><option value="member"'+(c && c.default_role==='member' || !c ? ' selected':'')+'>Attorney or adjuster (own matters only)</option><option value="admin"'+(c && c.default_role==='admin' ? ' selected':'')+'>Admin (sees everything)</option></select></div></div>'
+    + '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin-bottom:6px;text-transform:none;letter-spacing:0;font-weight:600;color:var(--ink);"><input id="ssoAuto" type="checkbox" '+(!c || c.auto_create ? 'checked' : '')+'> Create an account the first time someone signs in</label>'
+    + '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin-bottom:12px;text-transform:none;letter-spacing:0;font-weight:600;color:var(--ink);"><input id="ssoOn" type="checkbox" '+(c && c.enabled ? 'checked' : '')+'> Turn single sign-on on</label>'
+    + '<div style="display:flex;gap:8px;"><button class="btn btn-pri" onclick="ssoSave()">Save</button>'+(c ? '<button class="btn btn-out" onclick="ssoRemove()">Remove single sign-on</button>' : '')+'</div></div>';
+  h += '<div class="card" style="padding:14px 16px;font-size:12.5px;color:var(--muted);line-height:1.7;"><div style="font-weight:800;color:var(--ink);margin-bottom:4px;">Good to know</div>People type their work email on the sign-in page and click <b>Sign In with Company SSO</b>. We only sign someone in when the provider confirms the email and it is on a domain listed above. An email that already belongs to a different customer is refused. Each email domain can be used by one customer. Sign-ins through your provider skip our own two-factor step because your provider handles it. This is OpenID Connect; SAML-only providers are not supported yet.</div>';
+  return h;
+}
 function apiHubV(forceTab){
   const tab = forceTab || S.apiTab || 'api';
-  const bar = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px;">' + [['api','Imports and API'],['feed','Claim feed'],['counsel','Approved counsel']].map(([k, l]) => '<span class="pill' + (tab === k ? ' on' : '') + '" onclick="st({role:\'api\',apiTab:\'' + k + '\',caseId:null,showWelcome:false})">' + l + '</span>').join('') + '</div>';
+  const bar = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px;">' + [['api','Imports and API'],['feed','Claim feed'],['sso','Single sign-on'],['counsel','Approved counsel']].map(([k, l]) => '<span class="pill' + (tab === k ? ' on' : '') + '" onclick="st({role:\'api\',apiTab:\'' + k + '\',caseId:null,showWelcome:false})">' + l + '</span>').join('') + '</div>';
   if (tab === 'counsel') return '<div class="wrap" style="padding-top:0;padding-bottom:0;max-width:1100px;">' + bar + '</div>' + counselV();
+  if (tab === 'sso') return '<div class="wrap" style="max-width:1000px;">' + bar + '<div class="serif" style="font-size:26px;font-weight:700;margin:6px 0 8px;">Single sign-on</div>' + ssoTabV() + '</div>';
   if (tab === 'feed') return '<div class="wrap" style="max-width:1000px;">' + bar + '<div class="serif" style="font-size:26px;font-weight:700;margin:6px 0 8px;">Claim feed</div>' + feedTabV() + '</div>';
   let h = '<div class="wrap">' + bar;
   h += '<div class="hero"><div class="hero-l"><div class="hero-eyebrow">Developer Access</div>';
@@ -14744,6 +14912,7 @@ if (API_BASE && S._verifyTokenFromUrl) {
       render();
     });
 }
+finishSsoFromUrl().then(() => render());
 render();
 
 </script>
