@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>Case Closed Pro — Carrier-Grade Litigation Intelligence</title>
+<title>Case Closed Sentinel — Carrier-Grade Litigation Intelligence</title>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700;9..144,900&family=Inter+Tight:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 
 <!-- BLOCKER 7: Monitoring with Sentry (Error Tracking) -->
@@ -751,6 +751,15 @@ const REPORT_TEMPLATES = [
   {id:'r28',cat:'Enterprise',name:'Avg. Cycle Time by Claim Type',icon:'⏱️',color:'#0F766E',desc:'Average days from filing to resolution, broken out by matter type'},
   {id:'r29',cat:'Enterprise',name:'Root Cause Analysis',icon:'🔍',color:'#6D28D9',desc:'Why the company is being sued, ranked — for preventative policy decisions'},
   {id:'r30',cat:'Enterprise',name:'Regulatory / Compliance Incidents',icon:'🏛️',color:'#DC2626',desc:'Open and resolved government investigations and enforcement actions'},
+  {id:'r31',cat:'Settlement',name:'Settlement Report',icon:'🤝',color:'#065F46',desc:'Matters with a settlement, set against demand and reserve'},
+  {id:'r32',cat:'Claim Facts',name:'AOB Resolution Report (post HB 7065)',icon:'📄',color:'#D97706',desc:'Assignment of Benefits matters resolved or settled, with demand, payment and time to resolve'},
+  {id:'r33',cat:'Compliance',name:'Reporting Delay Audit',icon:'⏱️',color:'#DC2626',desc:'Days from first notice of loss to claimant representation and to filing, with long gaps flagged'},
+  {id:'r34',cat:'Aging',name:'Aging Pending Closures (6+ Months)',icon:'🔒',color:'#92400E',desc:'Matters in closing with no activity for six months or more, and what is still open'},
+  {id:'r35',cat:'Litigation',name:'Active Matters by Law Firm Matter #',icon:'🏛️',color:'#1D4ED8',desc:'Open matters listed by defense firm with the firm\'s own file number, for invoice matching'},
+  {id:'r36',cat:'Litigation',name:'Location Detail Report',icon:'📍',color:'#0F766E',desc:'Matters grouped by state, county and court, with open counts and reserves'},
+  {id:'r37',cat:'Litigation',name:'Closed in Previous Month',icon:'✅',color:'#047857',desc:'Matters closed during the last calendar month, with outcome and amount paid'},
+  {id:'r38',cat:'Compliance',name:'Last Updated Yesterday',icon:'🕘',color:'#3B82F6',desc:'Every matter with a note, filing or update logged yesterday'},
+  {id:'r39',cat:'Financial',name:'Outstanding A/R by Carrier',icon:'💵',color:'#B45309',desc:'Billed, paid and still outstanding on defense fees, grouped by carrier'},
   {id:'w1',cat:'Workers Comp',name:"Workers' Comp Open Claims",icon:'🩺',color:'#0F766E',desc:'Open comp claims with injury date, disability, paid, reserve, hearing and flags'},
   {id:'w2',cat:'Workers Comp',name:'Medicare Reporting Open Items',icon:'🏥',color:'#B45309',desc:'Comp claims with a Medicare beneficiary and unfinished reporting steps'},
   /* ── Alert reports: each mirrors a "Needs your attention" alert, with early-warning lead times ── */
@@ -1053,6 +1062,12 @@ CASES.forEach(c => {
   const team = {'CC-012':['James Wong','Priya Nair'], 'CC-004':['Rebecca Thornton','Marcus Bell'], 'CC-014':['Frank Toomey','']};
   Object.keys(team).forEach(id => { const c = CASES.find(x => x.id === id); if (c) { c.adjusterPrimary = team[id][0]; c.adjusterBackup = team[id][1]; } });
   const dcDemo = CASES.find(x => x.id === 'CC-012'); if (dcDemo) dcDemo.defenseCounsel = {panelId:'demo-ac-1', name:'Colleen Prescott', firm:'Prescott Lyle LLP', email:'cprescott@prescottlyle.com', phone:''};
+  /* Demo data for the report hub: firm file numbers, one closed last month, one AOB resolved, one stale closing */
+  { const get = id => CASES.find(x => x.id === id), prev = new Date(); prev.setDate(1); prev.setMonth(prev.getMonth() - 1); const pm = prev.getFullYear() + '-' + String(prev.getMonth() + 1).padStart(2, '0');
+    CASES.forEach((c, n) => { if (c.defenseCounsel && c.defenseCounsel.name) c.firmMatterNo = c.firmMatterNo || ('F-' + (24100 + n * 7)); });
+    const a = get('CC-007'); if (a && a.closing) { a.closing.dispositionDate = pm + '-14'; a.closing.dispositionType = a.closing.dispositionType || 'Settled'; a.closing.finalIndemnityPaid = a.closing.finalIndemnityPaid || 163500; }
+    const b = get('CC-011'); if (b) { b.aob = 'Yes'; b.coverageType = b.coverageType || 'Homeowners'; b.exposure = b.exposure || {}; b.exposure.demandAmount = b.exposure.demandAmount || 48000; b.exposure.settlementAmount = b.exposure.settlementAmount || 31500; b.closing = b.closing || {}; b.closing.dispositionDate = pm + '-03'; }
+  }
   set('CC-012','State - Georgia',[
     {id:'TLD-demo1', receivedDate:iso(-26), deadline:iso(2), deadlineHM:'17:00', tz:'America/New_York', acks:[{by:'James Wong', role:'primary', at:new Date(Date.now()-5*36e5).toISOString()}], demandAmount:1000000, policyLimits:1000000, claimantFirm:'Harlan & Pike, LLP', method:'Certified mail', state:'Georgia', notes:'Policy-limits demand, pre-suit. Offer letter requires written acceptance and a release of the insured.', status:'open',
      log:[{date:iso(-26), by:'Elena Marchetti', text:'Demand recorded. Received '+iso(-26)+', deadline '+iso(2)+' 5:00 PM.'}]}]);
@@ -1887,7 +1902,7 @@ async function demoUnlock(){
 }
 async function demoGateSend(){
   const v = id => (document.getElementById(id) || {value:''}).value.trim();
-  const name = v('dgName'), email = v('dgEmail'), company = v('dgCompany'), message = v('dgMsg') || 'I would like to see a live demo of Case Closed Pro.';
+  const name = v('dgName'), email = v('dgEmail'), company = v('dgCompany'), message = v('dgMsg') || 'I would like to see a live demo of Case Closed Sentinel.';
   if (!name || !email || !email.includes('@')) { st({dgMsgOut:'', dgErr:'Enter your name and a valid work email.'}); return; }
   st({dgBusy:true, dgErr:''});
   try {
@@ -1906,11 +1921,11 @@ function demoGateV(){
   const lbl = 'display:block;font-size:11px;font-weight:700;color:var(--muted);margin:10px 0 4px;';
   let h = '<div style="min-height:100vh;background:linear-gradient(160deg,#0b2b52 0%, var(--pri) 45%, var(--pri2) 130%);padding:36px 16px;display:flex;align-items:center;justify-content:center;">';
   h += '<div style="max-width:880px;width:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;">';
-  h += '<div style="color:#fff;padding:8px 6px;"><div style="font-family:var(--serif);font-size:30px;font-weight:700;line-height:1.2;margin-bottom:12px;">See Case Closed Pro live</div>'+
+  h += '<div style="color:#fff;padding:8px 6px;"><div style="font-family:var(--serif);font-size:30px;font-weight:700;line-height:1.2;margin-bottom:12px;">See Case Closed Sentinel live</div>'+
     '<div style="font-size:14.5px;color:#C9D8EC;line-height:1.7;margin-bottom:20px;">The best way to see it is with one of us. We walk through your own litigated-claim workflow, including how Verdict Shield keeps time-limit demands from going unanswered.</div>'+
     '<a href="'+LIVE_DEMO_VIDEO_URL+'" target="_blank" rel="noopener" style="display:inline-block;background:#fff;color:var(--pri);padding:13px 24px;border-radius:8px;font-weight:800;font-size:14px;text-decoration:none;">📹 Book a live video demo</a>'+
     '<div style="font-size:12px;color:#9FB4D3;margin-top:10px;">Pick a time that works. Usually 30 minutes.</div>'+
-    '<div style="margin-top:34px;border-top:1px solid rgba(255,255,255,.2);padding-top:16px;"><span style="font-size:12.5px;color:#C9D8EC;">Case Closed Pro team?</span> <span style="font-size:12.5px;color:#fff;font-weight:700;cursor:pointer;text-decoration:underline;" onclick="st({dgPwOpen:'+(!S.dgPwOpen)+',dgPwErr:\'\'})">Enter the demo password</span>';
+    '<div style="margin-top:34px;border-top:1px solid rgba(255,255,255,.2);padding-top:16px;"><span style="font-size:12.5px;color:#C9D8EC;">Case Closed Sentinel team?</span> <span style="font-size:12.5px;color:#fff;font-weight:700;cursor:pointer;text-decoration:underline;" onclick="st({dgPwOpen:'+(!S.dgPwOpen)+',dgPwErr:\'\'})">Enter the demo password</span>';
   if (S.dgPwOpen) h += '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;"><input id="dgPw" type="password" autocomplete="off" placeholder="Demo password" style="'+inp2+'max-width:230px;" onkeydown="if(event.key===\'Enter\')demoUnlock()"><button onclick="demoUnlock()" style="background:var(--pri3);color:#00263a;border:none;border-radius:8px;padding:10px 18px;font-weight:800;cursor:pointer;">Open the demo</button></div>'+(S.dgPwErr?'<div style="color:#FECACA;font-size:12px;margin-top:6px;">'+esc(S.dgPwErr)+'</div>':'');
   h += '</div></div>';
   h += '<div style="background:#fff;border-radius:14px;padding:22px 24px;box-shadow:0 24px 60px rgba(0,10,30,.35);">';
@@ -2134,7 +2149,7 @@ function landingPageV() {
         '<rect x="278" y="80" width="10" height="27" fill="#F5B700" stroke="none"/>'+
         '<rect x="261" y="80" width="10" height="20" fill="#F5B700" stroke="none"/>'+
         '<rect x="244" y="80" width="10" height="13" fill="#F5B700" stroke="none"/></svg></div>';
-  h += '<div style="font-weight:700;font-size:18px;color:var(--ink);font-family:var(--serif);">Case Closed Pro</div>';
+  h += '<div style="font-weight:700;font-size:18px;color:var(--ink);font-family:var(--serif);">Case Closed Sentinel</div>';
   h += '</div>';
   h += '<div style="display:flex;gap:30px;align-items:center;font-size:14px;">';
   const navLink = (id, label) => '<a href="#" onclick="st({showLandingTab:\''+id+'\'});return false;" style="color:'+(tab===id?'var(--pri2)':'var(--muted)')+';text-decoration:underline;text-underline-offset:3px;cursor:pointer;font-weight:'+(tab===id?'700':'500')+';">'+label+'</a>';
@@ -2167,7 +2182,7 @@ function landingPageV() {
   if (tab === 'roi') {
     h += '<div style="padding:100px 40px;text-align:center;max-width:700px;margin:0 auto;">';
     h += '<h1 style="font-family:var(--serif);font-size:34px;font-weight:700;color:var(--ink);margin-bottom:16px;">ROI Calculator</h1>';
-    h += '<p style="font-size:15px;color:var(--muted);line-height:1.7;margin-bottom:28px;">Most firms recoup the cost of Case Closed Pro from a single improved settlement decision. Talk to sales for a portfolio-specific ROI estimate.</p>';
+    h += '<p style="font-size:15px;color:var(--muted);line-height:1.7;margin-bottom:28px;">Most firms recoup the cost of Case Closed Sentinel from a single improved settlement decision. Talk to sales for a portfolio-specific ROI estimate.</p>';
     h += '<button onclick="window.location.href=\'mailto:sales@cclosed.com?subject=ROI%20Estimate%20Request\'" style="background:var(--pri);color:#fff;border:none;padding:12px 28px;border-radius:7px;font-weight:700;cursor:pointer;font-size:14px;">Request an ROI Estimate</button>';
     h += '</div>';
     h += '</div>';
@@ -2187,7 +2202,7 @@ function landingPageV() {
   h += '<div style="background:linear-gradient(160deg,#0b2b52 0%, var(--pri) 45%, var(--pri2) 130%);color:#fff;padding:90px 40px 70px;text-align:center;">';
   h += '<div style="display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(0,201,219,.5);color:var(--pri3);font-size:11px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;padding:7px 18px;border-radius:20px;margin-bottom:34px;">✦ Carrier-Grade Litigation Intelligence</div>';
   h += '<h1 style="font-family:var(--serif);font-size:48px;font-weight:700;line-height:1.15;max-width:900px;margin:0 auto 22px;">One shared source of truth for your claims team <span style="color:var(--pri3);">and</span> defense counsel.</h1>';
-  h += '<p style="font-size:16px;color:#C9D8EC;max-width:640px;margin:0 auto 34px;line-height:1.7;">Case Closed Pro replaces the email threads and spreadsheets between claims and outside counsel with a single litigation platform — from first assignment to a closing package your claims team can actually act on.</p>';
+  h += '<p style="font-size:16px;color:#C9D8EC;max-width:640px;margin:0 auto 34px;line-height:1.7;">Case Closed Sentinel replaces the email threads and spreadsheets between claims and outside counsel with a single litigation platform — from first assignment to a closing package your claims team can actually act on.</p>';
   h += '<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">';
   h += '<button onclick="window.open(\'https://calendly.com/cclosed\')" style="background:#fff;color:var(--pri);padding:13px 26px;border:none;border-radius:7px;font-weight:700;cursor:pointer;font-size:14px;">See a Live Demo</button>';
   h += '<button onclick="window.location.href=\'mailto:sales@cclosed.com?subject=90-Day%20Pilot\'" style="background:transparent;color:#fff;padding:13px 26px;border:1px solid rgba(255,255,255,.5);border-radius:7px;font-weight:700;cursor:pointer;font-size:14px;">Start a 90-Day Pilot</button>';
@@ -2229,7 +2244,7 @@ function landingPageV() {
 
   /* Footer */
   h += '<div style="padding:36px 40px;background:#fff;text-align:center;color:var(--dim);font-size:12.5px;border-top:1px solid var(--line);">';
-  h += '<p>© 2026 Case Closed Pro. All rights reserved. &nbsp;|&nbsp; <a href="mailto:sales@cclosed.com" style="color:var(--pri2);text-decoration:none;">sales@cclosed.com</a></p></div>';
+  h += '<p>© 2026 Case Closed Sentinel. All rights reserved. &nbsp;|&nbsp; <a href="mailto:sales@cclosed.com" style="color:var(--pri2);text-decoration:none;">sales@cclosed.com</a></p></div>';
 
   h += '</div>';
   return h;
@@ -2267,7 +2282,7 @@ function attorneyLoginV() {
   let h = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:linear-gradient(135deg, var(--pri2), var(--pri2)dd);">';
   h += '<div style="background:white;border-radius:12px;padding:40px;width:90%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,0.3);">';
   h += '<div style="text-align:center;margin-bottom:30px;">';
-  h += '<div style="font-size:32px;font-weight:700;margin-bottom:8px;">Case Closed Pro</div>';
+  h += '<div style="font-size:32px;font-weight:700;margin-bottom:8px;">Case Closed Sentinel</div>';
   h += '<div style="font-size:13px;color:var(--muted);">Attorney Portal — Case Management</div>';
   h += '</div>';
   h += '<div class="fld"><label class="lbl">Select Your Name</label>';
@@ -2544,7 +2559,7 @@ function carrierLoginV() {
   h += '<div style="background:white;border-radius:12px;padding:40px;width:90%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,0.3);">';
   h += '<div style="text-align:center;margin-bottom:30px;">';
   h += '<div style="font-size:32px;font-weight:700;margin-bottom:8px;">Carrier Portal</div>';
-  h += '<div style="font-size:13px;color:var(--muted);">Case Closed Pro</div>';
+  h += '<div style="font-size:13px;color:var(--muted);">Case Closed Sentinel</div>';
   h += '</div>';
   h += '<div class="fld"><label class="lbl">Select Your Company</label>';
   h += '<select class="inp" id="carrierSelect" style="padding:10px;border:1px solid var(--line);border-radius:6px;font-size:13px;">';
@@ -2854,7 +2869,7 @@ function hdr(){
           '<rect x="244" y="80" width="10" height="13" fill="#F5B700" stroke="none"/>'+
         '</svg></div>'+
         '<div>'+
-          '<div class="serif" style="font-weight:700;font-size:15px;color:var(--ink);letter-spacing:-.3px;line-height:1;">Case Closed Pro</div>'+
+          '<div class="serif" style="font-weight:700;font-size:15px;color:var(--ink);letter-spacing:-.3px;line-height:1;">Case Closed Sentinel</div>'+
           '<div style="font-size:9px;color:var(--dim);letter-spacing:1.8px;text-transform:uppercase;font-weight:600;margin-top:2px;">Carrier-Grade Litigation Intelligence</div>'+
         '</div>'+
       '</div>'+
@@ -3015,7 +3030,7 @@ function loginScreenV(){
         '<rect x="278" y="80" width="10" height="27" fill="#F5B700" stroke="none"/>'+
         '<rect x="261" y="80" width="10" height="20" fill="#F5B700" stroke="none"/>'+
         '<rect x="244" y="80" width="10" height="13" fill="#F5B700" stroke="none"/></svg></div>';
-  h += '<div style="color:#fff;font-family:var(--serif);font-weight:700;font-size:19px;">Case Closed Pro</div>';
+  h += '<div style="color:#fff;font-family:var(--serif);font-weight:700;font-size:19px;">Case Closed Sentinel</div>';
   h += '</div>';
 
   h += '<div class="card" style="padding:30px 28px;">';
@@ -3951,7 +3966,7 @@ function icsFold(line){ const out = []; let l = line; while (l.length > 74) { ou
 function icsStamp(ms){ return new Date(ms).toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,''); }
 function icsDay(ds){ return String(ds).slice(0,10).replace(/-/g,''); }
 function buildIcs(events){
-  const L = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Case Closed Pro//Deadlines//EN','CALSCALE:GREGORIAN','METHOD:PUBLISH'];
+  const L = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Case Closed Sentinel//Deadlines//EN','CALSCALE:GREGORIAN','METHOD:PUBLISH'];
   const now = icsStamp(Date.now());
   events.forEach(e => {
     L.push('BEGIN:VEVENT','UID:'+e.uid+'@cclosed.com','DTSTAMP:'+now);
@@ -4000,7 +4015,7 @@ function demandRecordHtml(c, d){
   const ms = demandDeadlineMs(d);
   let h = '<!doctype html><html><head><meta charset="utf-8"><title>Demand compliance record - '+e(c.matterNo || c.id)+'</title><style>body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:28px 36px;font-size:12px;line-height:1.45}h1{font-size:19px;margin:0 0 2px}h2{font-size:13px;margin:16px 0 5px;border-bottom:1px solid #999;padding-bottom:3px}table{border-collapse:collapse;width:100%}th{text-align:left;width:190px;vertical-align:top;padding:3px 8px 3px 0;color:#333;font-weight:700}td{padding:3px 0;vertical-align:top}.t td,.t th{border-bottom:1px solid #ddd;padding:4px 6px;width:auto}.sm{font-size:10.5px;color:#555}@media print{.np{display:none}}</style></head><body>';
   h += '<div class="np" style="margin-bottom:10px;"><button onclick="window.print()">Print or save as PDF</button></div>';
-  h += '<h1>Time-limit demand compliance record</h1><div class="sm">Prepared '+e(demandStamp(new Date().toISOString()))+' from Case Closed Pro records. Matter '+e(c.matterNo || c.id)+'.</div>';
+  h += '<h1>Time-limit demand compliance record</h1><div class="sm">Prepared '+e(demandStamp(new Date().toISOString()))+' from Case Closed Sentinel records. Matter '+e(c.matterNo || c.id)+'.</div>';
   h += '<h2>Matter</h2><table>'+row('Insured / client', e(c.client || ''))+row('Claim number', e((c.insurance && c.insurance.claimNo) || 'Not recorded'))+row('State', e(d.state || caseStateName(c) || 'Not recorded'))+row('Adjuster', e(prim || 'None assigned'))+row('Backup adjuster', e(bk || 'None assigned'))+row('Defense counsel', e((c.defenseCounsel && (c.defenseCounsel.name || c.defenseCounsel.firm)) || c.attorney || 'Not recorded'))+'</table>';
   h += '<h2>The demand</h2><table>'+row('Received', e(d.receivedDate || 'Not recorded')+(d.method ? ' by '+e(d.method) : ''))+row('Claimant counsel', e(d.claimantFirm || plaintiffFirmOf(c) || 'Not recorded'))+row('Demand amount', d.demandAmount ? e(fM(d.demandAmount)) : 'Not recorded')+row('Policy limits', d.policyLimits ? e(fM(d.policyLimits)) : 'Not recorded')+
     row('Deadline', e(demandEff(d))+' '+e(demandTimeLabel(d))+(d.extendedDeadline ? '<br>Extended from '+e(d.deadline)+(d.extensionNote ? ': '+e(d.extensionNote) : '') : ''))+'</table>';
@@ -4392,7 +4407,7 @@ function claimFactsCardV(c){
   if (c.repDate) { const n = demandDaysBetween(c.repDate, demandToday()); if (n !== null && n >= 0) line += 'Represented for '+n+' day'+(n===1?'':'s')+'. '; }
   return '<div class="card" style="padding:12px 14px;margin-bottom:12px;"><div style="font-weight:700;font-size:13px;">Claim facts that start the clock</div>'+
     '<div style="font-size:12px;color:var(--muted);margin:3px 0 10px;max-width:780px;line-height:1.55;">Several state rules count time from the first notice of the claim or from when the claimant got a lawyer. Record both dates exactly as the file shows them.</div>'+
-    '<div style="display:flex;gap:10px;flex-wrap:wrap;">'+inp('First notice of loss date','fnolDate',c.fnolDate,'date')+inp('Actual date of representation','repDate',c.repDate,'date')+inp('Plaintiff attorney','plaintiffAttorney',plaintiffAtty(c),'text','Name')+inp('Plaintiff firm','plaintiffFirm',plaintiffFirmOf(c),'text','Firm')+inp('Client account','clientAccount',c.clientAccount,'text','Carrier or client account')+'</div>'+
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;">'+inp('First notice of loss date','fnolDate',c.fnolDate,'date')+inp('Actual date of representation','repDate',c.repDate,'date')+inp('Plaintiff attorney','plaintiffAttorney',plaintiffAtty(c),'text','Name')+inp('Plaintiff firm','plaintiffFirm',plaintiffFirmOf(c),'text','Firm')+inp('Defense firm matter #','firmMatterNo',c.firmMatterNo,'text','Your firm\'s file number')+inp('Client account','clientAccount',c.clientAccount,'text','Carrier or client account')+'</div>'+
     (line ? '<div style="font-size:12px;margin-top:8px;color:var(--ink);">'+esc(line)+'</div>' : '')+'</div>';
 }
 
@@ -4967,7 +4982,7 @@ function roiOutV(r){
   const o = roiCompute(r), f = v => Math.round(v).toLocaleString(), m = v => '$' + Math.round(v).toLocaleString();
   const tile = (label, v, sub) => '<div style="flex:1 1 180px;border:1px solid #E5E7EB;border-radius:10px;padding:12px 14px;background:#fff;"><div style="font-size:11.5px;color:var(--muted);">'+label+'</div><div style="font-size:30px;font-weight:800;line-height:1.15;">'+v+'</div><div style="font-size:11px;color:var(--dim);">'+sub+'</div></div>';
   let h = '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">'+tile('Hours saved each year', f(o.hours), 'about '+o.fte.toFixed(1)+' full-time people')+tile('Value of that time', m(o.value), 'at '+m(r.rate)+' an hour')+tile('Time-limit demands tracked', f(o.demands), 'each with two adjusters and an escalation path')+'</div>';
-  h += '<div class="card" style="padding:0;overflow-x:auto;margin-bottom:12px;"><table><thead><tr><th>Where the time comes from</th><th>Per year</th><th>Before</th><th>With Case Closed Pro</th><th>Hours saved</th></tr></thead><tbody>'+
+  h += '<div class="card" style="padding:0;overflow-x:auto;margin-bottom:12px;"><table><thead><tr><th>Where the time comes from</th><th>Per year</th><th>Before</th><th>With Case Closed Sentinel</th><th>Hours saved</th></tr></thead><tbody>'+
     o.rows.map(x => '<tr><td>'+esc(x.label)+'<div style="font-size:11px;color:var(--dim);">'+esc(x.unit)+'</div></td><td>'+f(x.volume)+'</td><td>'+x.before+(x.hours===undefined?'':'')+(ROI_DEFAULTS.rows.find(d=>d.k===x.k).hours?' hr':' min')+'</td><td>'+x.after+(ROI_DEFAULTS.rows.find(d=>d.k===x.k).hours?' hr':' min')+'</td><td style="font-weight:800;">'+f(x.hours)+'</td></tr>').join('')+
     '<tr><td colspan="4" style="text-align:right;font-weight:700;">Total</td><td style="font-weight:800;">'+f(o.hours)+'</td></tr></tbody></table></div>';
   if (o.price) h += '<div class="card" style="padding:12px 16px;margin-bottom:12px;"><div style="font-weight:800;font-size:13.5px;margin-bottom:4px;">Against the price</div><div style="font-size:12.5px;line-height:1.6;">Time saved is worth '+m(o.value)+' a year against a price of '+m(o.price)+', a difference of <strong style="color:'+(o.netTime>=0?'#15803D':'#B45309')+';">'+(o.netTime>=0?'+':'-')+m(Math.abs(o.netTime))+'</strong> from time alone. Separately, if one missed time-limit demand costs '+m(r.missCost)+', the price is covered if it prevents <strong>'+o.breakEvenMisses.toFixed(2)+'</strong> such event a year.</div></div>';
@@ -4982,7 +4997,7 @@ function roiSet(path, v){
 function roiReset(){ S.roi = null; render(); }
 function roiCopy(){
   const r = roiState(), o = roiCompute(r);
-  const t = 'Case Closed Pro: estimated time saved\nOpen litigated claims: '+r.openClaims+'; new per year: '+r.newPerYear+'; adjusters: '+r.adjusters+'\nHours saved per year: '+Math.round(o.hours).toLocaleString()+' (about '+o.fte.toFixed(1)+' full-time people)\nValue at $'+r.rate+'/hour: $'+Math.round(o.value).toLocaleString()+'\nThese are estimates from the inputs above, not guaranteed results.';
+  const t = 'Case Closed Sentinel: estimated time saved\nOpen litigated claims: '+r.openClaims+'; new per year: '+r.newPerYear+'; adjusters: '+r.adjusters+'\nHours saved per year: '+Math.round(o.hours).toLocaleString()+' (about '+o.fte.toFixed(1)+' full-time people)\nValue at $'+r.rate+'/hour: $'+Math.round(o.value).toLocaleString()+'\nThese are estimates from the inputs above, not guaranteed results.';
   try { navigator.clipboard.writeText(t); alert('Summary copied.'); } catch (e) { alert(t); }
 }
 function roiV(){
@@ -4990,15 +5005,15 @@ function roiV(){
   const num = (label, key, val, w, hint) => '<div class="fld" style="flex:1 1 '+(w||170)+'px;margin:0;"><label class="lbl">'+label+'</label><input class="inp" type="number" min="0" value="'+esc(val)+'" oninput="roiSet(\''+key+'\',this.value)">'+(hint?'<div style="font-size:10.5px;color:var(--dim);margin-top:2px;">'+hint+'</div>':'')+'</div>';
   let h = '<div class="wrap" style="padding-top:18px;">';
   h += '<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-end;"><div><div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">What it is worth to you</div>'+
-    '<div style="font-size:13px;color:var(--muted);margin:4px 0 14px;max-width:760px;line-height:1.6;">Tell us the size of your litigated caseload and see the time Case Closed Pro could give back. Every number below can be changed, so you can use your own.</div></div><div style="display:flex;gap:8px;"><button class="btn btn-out" onclick="roiCopy()">Copy summary</button><button class="btn btn-out" onclick="window.print()">Print</button><button class="btn btn-out" onclick="roiReset()">Reset</button></div></div>';
+    '<div style="font-size:13px;color:var(--muted);margin:4px 0 14px;max-width:760px;line-height:1.6;">Tell us the size of your litigated caseload and see the time Case Closed Sentinel could give back. Every number below can be changed, so you can use your own.</div></div><div style="display:flex;gap:8px;"><button class="btn btn-out" onclick="roiCopy()">Copy summary</button><button class="btn btn-out" onclick="window.print()">Print</button><button class="btn btn-out" onclick="roiReset()">Reset</button></div></div>';
   h += '<div class="card" style="padding:14px 16px;margin-bottom:14px;"><div style="font-weight:800;font-size:14px;margin-bottom:8px;">Your caseload</div><div style="display:flex;gap:12px;flex-wrap:wrap;">'+
     num('Open litigated claims','openClaims',r.openClaims)+num('New litigated claims a year','newPerYear',r.newPerYear)+num('Adjusters handling them','adjusters',r.adjusters)+num('Cost of an adjuster hour ($)','rate',r.rate,170,'Salary plus benefits, per hour')+num('Claims that get a time-limit demand (%)','demandPct',r.demandPct,200,'Your best estimate')+'</div></div>';
   h += '<div id="roiOut">'+roiOutV(r)+'</div>';
   h += '<details style="margin:6px 0 14px;" '+(S.roiOpen?'open':'')+' ontoggle="S.roiOpen=this.open"><summary style="font-weight:800;font-size:13.5px;cursor:pointer;">Change the time assumptions</summary><div class="card" style="padding:14px 16px;margin-top:8px;"><div style="font-size:12px;color:var(--muted);margin-bottom:10px;max-width:760px;line-height:1.55;">These are starting assumptions, not measured results. In a pilot we measure your real numbers before and after, and replace these with them.</div>'+
-    r.rows.map((x, i) => '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;"><div style="flex:2 1 260px;font-size:12.5px;font-weight:600;">'+esc(x.label)+'<div style="font-size:11px;color:var(--dim);font-weight:400;">'+esc(x.unit)+'</div></div>'+num('Before ('+(x.hours?'hours':'minutes')+')','rows.'+i+'.before',x.before,110)+num('With Case Closed Pro','rows.'+i+'.after',x.after,110)+'</div>').join('')+'</div></details>';
+    r.rows.map((x, i) => '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;"><div style="flex:2 1 260px;font-size:12.5px;font-weight:600;">'+esc(x.label)+'<div style="font-size:11px;color:var(--dim);font-weight:400;">'+esc(x.unit)+'</div></div>'+num('Before ('+(x.hours?'hours':'minutes')+')','rows.'+i+'.before',x.before,110)+num('With Case Closed Sentinel','rows.'+i+'.after',x.after,110)+'</div>').join('')+'</div></details>';
   h += '<details style="margin:6px 0 14px;"><summary style="font-weight:800;font-size:13.5px;cursor:pointer;">Optional: compare against price and exposure</summary><div class="card" style="padding:14px 16px;margin-top:8px;"><div style="display:flex;gap:12px;flex-wrap:wrap;">'+
     num('Annual price you are weighing ($)','price',r.price,200,'Leave at 0 to hide')+num('Cost of one missed time-limit demand ($)','missCost',r.missCost,220,'Use your own number')+num('Days faster each claim closes','daysFaster',r.daysFaster,170,'Leave at 0 unless you have a basis')+'</div></div></details>';
-  h += '<div style="font-size:11.5px;color:var(--dim);max-width:820px;line-height:1.55;margin-top:10px;">This is an estimate built from the numbers above. It is not a guarantee of savings or of any result on a claim. Case Closed Pro supports claims staff and does not decide how a demand or a claim should be handled.</div>';
+  h += '<div style="font-size:11.5px;color:var(--dim);max-width:820px;line-height:1.55;margin-top:10px;">This is an estimate built from the numbers above. It is not a guarantee of savings or of any result on a claim. Case Closed Sentinel supports claims staff and does not decide how a demand or a claim should be handled.</div>';
   return h + '</div>';
 }
 
@@ -8832,6 +8847,49 @@ function buildReportData(rptId){
       cols = ['Matter #','Injured worker','Employer','Claim type','Injury date','Disability','Paid','Reserve','Next hearing','Flags'];
       rows = compRows().map(x => [x.c.matterNo||x.c.id, x.k.claimant||'—', x.k.employer||x.c.client, x.k.claimClass||'—', x.k.injuryDate||'—', x.k.disability||'—', fM(compPaid(x.c)), fM(compReserve(x.c)), x.k.hearingDate||'—', x.fl.map(y => y.text).join(' ')||'—']);
       break;
+    case 'r31': { /* Settlement Report */
+      cols = ['Matter #','Client','Carrier','Demand','Settlement','Reserve','% of Reserve','Status'];
+      rows = CASES.filter(c => (c.exposure && c.exposure.settlementAmount > 0)).map(c => { const res = (c.insurance && c.insurance.reserveAmount) || (c.exposure && c.exposure.reserveAmount) || 0; return [c.matterNo||c.id, c.client, (c.insurance && c.insurance.carrier) || '—', fM(c.exposure.demandAmount), fM(c.exposure.settlementAmount), fM(res), res ? Math.round(c.exposure.settlementAmount / res * 100) + '%' : '—', c.status]; });
+      break; }
+    case 'r32': { /* AOB Resolution (post HB 7065) */
+      cols = ['Matter #','Client','Carrier','Coverage','Demand','Settlement / Paid','Days Open','Status'];
+      rows = CASES.filter(c => c.aob === 'Yes' && (c.status === 'Closed' || (c.exposure && c.exposure.settlementAmount > 0) || (c.closing && c.closing.dispositionDate))).map(c => [c.matterNo||c.id, c.client, (c.insurance && c.insurance.carrier) || '—', c.coverageType || '—', fM(c.exposure && c.exposure.demandAmount), fM((c.closing && c.closing.finalIndemnityPaid) || (c.exposure && c.exposure.settlementAmount)), daysOpen(c), c.status]);
+      break; }
+    case 'r33': { /* Reporting Delay Audit */
+      cols = ['Matter #','Client','Carrier','First Notice of Loss','Represented','Days to Representation','Filed','Flag'];
+      rows = CASES.filter(c => c.fnolDate || c.repDate).map(c => { const n = (c.fnolDate && c.repDate) ? demandDaysBetween(c.fnolDate, c.repDate) : null; return [c.matterNo||c.id, c.client, (c.insurance && c.insurance.carrier) || '—', c.fnolDate || 'Not recorded', c.repDate || 'Not recorded', n == null ? '—' : n, c.filed || '—', n == null ? 'Dates missing' : n < 0 ? 'Represented before notice' : n > 90 ? 'Long gap (90+ days)' : n > 30 ? 'Over 30 days' : 'OK']; });
+      break; }
+    case 'r34': { /* Aging Pending Closures */
+      cols = ['Matter #','Client','Stage','Days Since Activity','Open Liens','Release','Final Invoice','Atty'];
+      rows = CASES.filter(c => c.status !== 'Closed' && (c.litigationStage === 'Closing' || c.status === 'Closing')).map(c => ({c, d: Math.floor((Date.now() - caseLastActivity(c)) / 864e5)})).filter(x => x.d >= 180).sort((a,b) => b.d - a.d).map(x => [x.c.matterNo||x.c.id, x.c.client, x.c.litigationStage, x.d, (x.c.liens || []).filter(l => !/resolved|released|paid|satisfied/i.test(l.status || '')).length, (x.c.closing && x.c.closing.releaseStatus) || '—', (x.c.closing && x.c.closing.finalInvoiceSubmitted) ? 'Submitted' : 'Not submitted', x.c.attorney]);
+      break; }
+    case 'r35': { /* Active matters by law firm matter # */
+      cols = ['Defense Firm','Firm Matter #','Matter #','Client','Stage','Atty'];
+      rows = CASES.filter(c => c.status !== 'Closed').map(c => [(c.defenseCounsel && (c.defenseCounsel.firm || c.defenseCounsel.name)) || 'No defense firm', c.firmMatterNo || (c.defenseCounsel && c.defenseCounsel.firmMatterNo) || 'Not recorded', c.matterNo||c.id, c.client, c.litigationStage, c.attorney]).sort((a,b) => String(a[0]).localeCompare(String(b[0])) || String(a[1]).localeCompare(String(b[1])));
+      break; }
+    case 'r36': { /* Location detail */
+      cols = ['State','County / Venue','Court','Matters','Open','Total Reserve'];
+      const g = {};
+      CASES.forEach(c => { const st2 = caseStateName(c) || 'Not recorded', ven = (c.court && c.court.venueCounty) || 'Not recorded', ct = (c.court && c.court.name) || 'Not recorded', k = st2 + '|' + ven + '|' + ct; const o = g[k] = g[k] || {st:st2, ven, ct, n:0, open:0, res:0}; o.n++; if (c.status !== 'Closed') o.open++; o.res += Number((c.insurance && c.insurance.reserveAmount) || 0); });
+      rows = Object.keys(g).map(k => g[k]).sort((a,b) => b.n - a.n).map(o => [o.st, o.ven, o.ct, o.n, o.open, fM(o.res)]);
+      break; }
+    case 'r37': { /* Closed in previous month */
+      cols = ['Matter #','Client','Closed On','Outcome','Paid','Atty'];
+      const now = new Date(), y = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear(), m = now.getMonth() === 0 ? 12 : now.getMonth();
+      const pre = y + '-' + String(m).padStart(2, '0');
+      rows = CASES.filter(c => c.status === 'Closed' && String((c.closing && c.closing.dispositionDate) || '').slice(0, 7) === pre).map(c => [c.matterNo||c.id, c.client, c.closing.dispositionDate, c.closing.dispositionType || '—', fM(c.closing.finalIndemnityPaid), c.attorney]);
+      break; }
+    case 'r38': { /* Last updated yesterday */
+      cols = ['Matter #','Client','Update Type','Update','By','Atty'];
+      const yd = new Date(Date.now() - 864e5).toISOString().slice(0, 10); rows = [];
+      CASES.forEach(c => (c.updates || []).filter(u => String(u.date || '').slice(0, 10) === yd).forEach(u => rows.push([c.matterNo||c.id, c.client, u.type || '—', String(u.text || '').slice(0, 140), u.author || '—', c.attorney])));
+      break; }
+    case 'r39': { /* Outstanding A/R by carrier */
+      cols = ['Carrier','Matters','Billed','Paid','Outstanding','% Outstanding'];
+      const g = {};
+      CASES.forEach(c => { const k = (c.insurance && c.insurance.carrier) || 'No carrier recorded', o = g[k] = g[k] || {n:0, b:0, p:0}; o.n++; o.b += Number((c.billing && c.billing.totalBilled) || 0); o.p += Number((c.billing && c.billing.totalPaid) || 0); });
+      rows = Object.keys(g).map(k => ({k, o:g[k]})).filter(x => x.o.b > 0).sort((a,b) => (b.o.b - b.o.p) - (a.o.b - a.o.p)).map(x => [x.k, x.o.n, fM(x.o.b), fM(x.o.p), fM(x.o.b - x.o.p), x.o.b ? Math.round((x.o.b - x.o.p) / x.o.b * 100) + '%' : '0%']);
+      break; }
     case 'w2':
       cols = ['Matter #','Injured worker','Open steps','Done','Resolution'];
       rows = compRows().filter(x => x.k.medicare === 'Yes').map(x => { const m = compMedicare(x.c); return [x.c.matterNo||x.c.id, x.k.claimant||'—', m.open.map(i => i[1]).join('; ')||'None', m.done+' of '+m.total, x.k.settlementType||'None']; });
@@ -8983,7 +9041,7 @@ function openEmailModal(savedId){
   const message = 'Hi,\n\nAttached is the "' + snap.name + '" report generated on ' + snap.generatedDate +
     ' (' + snap.rowCount + ' rows).\n\n' +
     (snap.aiSummary ? 'Summary:\n' + snap.aiSummary + '\n\n' : '') +
-    'Full data is attached as a CSV export from Case Closed Pro.';
+    'Full data is attached as a CSV export from Case Closed Sentinel.';
   st({showEmailModal:true, emailingReportId:savedId, _emailTo:S._emailTo||'', _emailSubject:subject, _emailMessage:message, emailStatus:'', emailStatusType:''});
 }
 
@@ -10163,7 +10221,7 @@ async function onbWelcome(orgId){
 function onbCopyWelcome(orgId){
   const c = (S.onb.customers||[]).find(x => x.id === orgId); if (!c) return;
   const url = location.origin + '/case-closed-pro.html';
-  const t = 'Hi '+(c.ownerName||'there')+',\n\nWelcome to Case Closed Pro. Your account for '+c.name+' is ready.\n\nSign in here: '+url+'\nYour login is this email address. We will give you your temporary password separately (by phone or text) — please change it after you sign in.\n\nThree things to do first:\n  1. Turn on two-factor sign-in (your name in the top corner, then Security).\n  2. Invite your attorneys and staff (Team tab).\n  3. Import your open cases, or add a few by hand.\n\nOnce your cases are in, we will walk through the dashboards and Sentinel with you.\n\n— The Case Closed Pro team';
+  const t = 'Hi '+(c.ownerName||'there')+',\n\nWelcome to Case Closed Sentinel. Your account for '+c.name+' is ready.\n\nSign in here: '+url+'\nYour login is this email address. We will give you your temporary password separately (by phone or text) — please change it after you sign in.\n\nThree things to do first:\n  1. Turn on two-factor sign-in (your name in the top corner, then Security).\n  2. Invite your attorneys and staff (Team tab).\n  3. Import your open cases, or add a few by hand.\n\nOnce your cases are in, we will walk through the dashboards and Sentinel with you.\n\n— The Case Closed Sentinel team';
   if (navigator.clipboard) navigator.clipboard.writeText(t).then(()=>st({onbSaved:'Welcome text copied'})).catch(()=>prompt('Copy this text:', t));
   else prompt('Copy this text:', t);
 }
@@ -11248,7 +11306,7 @@ function hcReportV(r){
   // Header
   h += '<div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:6px;border-bottom:3px solid #0B1220;padding-bottom:8px;">';
   h += '<div><div class="serif" style="font-size:24px;font-weight:700;line-height:1.15;">Sentinel Health Check</div><div style="font-size:13px;color:var(--muted);margin-top:2px;">Prepared for '+name+' · '+esc(R.generatedAt)+' · '+plural(R.matterCount,'open matter')+' reviewed</div></div>';
-  h += '<div style="font-size:11px;color:var(--dim);">Case Closed Pro</div></div>';
+  h += '<div style="font-size:11px;color:var(--dim);">Case Closed Sentinel</div></div>';
 
   // Score and findings
   h += '<div class="hc-sec" style="display:flex;gap:22px;flex-wrap:wrap;margin-top:16px;align-items:flex-start;">';
@@ -11274,15 +11332,15 @@ function hcReportV(r){
   const top = R.topFiles.map((t,i)=>({ cls: i>=5?'hc-extra':'', cells:[(i+1), '<strong>'+esc(t.client)+'</strong><div style="font-size:10.5px;color:var(--dim);">'+esc(t.matterNo||'')+' · '+esc(t.attorney)+'</div>', hcM(t.value), esc(t.why.join('; ')), esc(t.action)] }));
   h += hcSec('Where to look first','the ten files that most need a human this week', top.length ? hcTbl(['#','Matter','Exposure','Why it is here','Suggested next step'], top, ['left','left','right','left','left']) : '<div style="font-size:13px;">Nothing here trips a threshold.</div>');
 
-  // What Case Closed Pro does about it
+  // What Case Closed Sentinel does about it
   const W = R.withProduct, bul = [];
   if (W.deadlineAlerts) bul.push('<strong>'+plural(W.deadlineAlerts,'deadline')+'</strong> inside 90 days would already be on the calendar with escalating alerts, so none arrives as a surprise.');
   if (W.staleNudges) bul.push('<strong>'+plural(W.staleNudges,'file')+'</strong> quiet for 30+ days would have triggered a status-update nudge to the responsible attorney.');
   if (W.routing.count) bul.push('<strong>'+plural(W.routing.count,'unassigned matter')+'</strong> would go to Sentinel Match for a ranked attorney recommendation'+(W.routing.plan.length?' (balancing the load, '+W.routing.plan.map(p=>esc(p.name)+' +'+p.count).join(', ')+')':'')+', each with the reasoning shown.');
   if (W.reserveReviews) bul.push('<strong>'+plural(W.reserveReviews,'reserve')+'</strong> would be queued for review against how the rest of the book reserves similar matters.');
   if (W.dataGapsFlagged) bul.push('<strong>'+plural(W.dataGapsFlagged,'file')+'</strong> with several missing fields would be flagged for cleanup at intake.');
-  if (!bul.length) bul.push('Nothing urgent here. Case Closed Pro would keep it that way by watching deadlines, activity and reserves continuously.');
-  h += hcSec('What Case Closed Pro would do with this book','', '<ul style="margin:0 0 0 18px;padding:0;font-size:13px;line-height:1.6;">'+bul.map(b=>'<li style="margin-bottom:5px;">'+b+'</li>').join('')+'</ul>');
+  if (!bul.length) bul.push('Nothing urgent here. Case Closed Sentinel would keep it that way by watching deadlines, activity and reserves continuously.');
+  h += hcSec('What Case Closed Sentinel would do with this book','', '<ul style="margin:0 0 0 18px;padding:0;font-size:13px;line-height:1.6;">'+bul.map(b=>'<li style="margin-bottom:5px;">'+b+'</li>').join('')+'</ul>');
 
   // ---- Appendix (full report only) ----
   h += '<div class="hc-detail hc-detail-break"></div>';
@@ -14449,6 +14507,8 @@ function randomizeDemoData(){
 }
 
 /* ── INITIALIZE ────────────────────────────────────────── */
+/* demo only: one closing matter that has gone quiet, so the Aging Pending Closures report has something to show */
+{ const d = CASES.find(x => x.id === 'CC-008'); if (d) { d.litigationStage = 'Closing'; (d.updates || []).forEach((u, k) => { u.date = new Date(Date.now() - (200 + k * 9) * 864e5).toISOString().slice(0, 10); }); } }
 if (!API_BASE) randomizeDemoData(); // hard gate — never runs against a real connected backend
 
 // One-time check: if this page load came from a "?verifyToken=..."
