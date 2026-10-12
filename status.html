@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Case Closed status</title>
+<style>
+:root{--bg:#F7F8FA;--card:#fff;--ink:#14213D;--mute:#5B6678;--line:#E3E7EE;--ok:#15803D;--warn:#B45309;--bad:#B91C1C}
+@media (prefers-color-scheme:dark){:root{--bg:#0F1623;--card:#172033;--ink:#E8ECF4;--mute:#9AA6BB;--line:#26324A;--ok:#4ADE80;--warn:#FBBF24;--bad:#F87171}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:640px;margin:0 auto;padding:36px 16px 60px}
+h1{font-size:22px;margin:0 0 4px}.sub{color:var(--mute);font-size:14px;margin-bottom:22px}
+.banner{border-radius:12px;padding:18px 20px;font-weight:700;font-size:18px;border:1px solid var(--line);background:var(--card);display:flex;gap:12px;align-items:center}
+.dot{width:14px;height:14px;border-radius:50%;background:var(--mute);flex:none}
+.ok .dot{background:var(--ok)}.degraded .dot{background:var(--warn)}.down .dot{background:var(--bad)}
+.list{margin-top:16px;border:1px solid var(--line);border-radius:12px;background:var(--card);overflow:hidden}
+.row{display:flex;justify-content:space-between;gap:12px;padding:13px 18px;border-bottom:1px solid var(--line);font-size:15px}.row:last-child{border:0}
+.row span:last-child{font-weight:600}.good{color:var(--ok)}.badc{color:var(--bad)}.muted{color:var(--mute);font-weight:400!important;font-size:13px}
+footer{margin-top:20px;color:var(--mute);font-size:13px}
+</style></head><body><main>
+<h1>Case Closed status</h1><div class="sub" id="sub">Checking…</div>
+<div class="banner" id="banner"><span class="dot"></span><span id="msg">Checking…</span></div>
+<div class="list" id="list"></div>
+<footer>Updates every 30 seconds. If this page says the service is waking up, give it a minute: it is starting after a quiet period. Questions: support@cclosed.com</footer>
+</main>
+<script>
+var API=(new URLSearchParams(location.search).get('api')||'https://case-closed-pro-site.onrender.com').replace(/\/$/,'');
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function show(cls,msg,sub,comps){
+  document.getElementById('banner').className='banner '+cls;document.getElementById('msg').textContent=msg;document.getElementById('sub').textContent=sub;
+  document.getElementById('list').innerHTML=(comps||[]).map(function(c){return '<div class="row"><span>'+esc(c.name)+'</span><span class="'+(c.ok?'good':'badc')+'">'+(c.ok?'Working':(c.note||'Problem'))+(c.ms!=null&&c.ok?' <span class="muted">'+c.ms+' ms</span>':'')+'</span></div>'}).join('');
+}
+function load(){
+  var ctl=new AbortController(),t=setTimeout(function(){ctl.abort()},25000);
+  if(!window.__seen){show('', 'Checking…','Contacting the service…',[]);}
+  fetch(API+'/api/status',{signal:ctl.signal,cache:'no-store'}).then(function(r){return r.json().then(function(j){return j})}).then(function(j){
+    clearTimeout(t);window.__seen=1;
+    var m={operational:['ok','All systems working'],degraded:['degraded','Some features are slow or delayed'],down:['down','Service is down']}[j.status]||['','Unknown'];
+    show(m[0],m[1],'Checked '+new Date(j.time).toLocaleString(),j.components);
+  }).catch(function(){clearTimeout(t);show('down','We could not reach the service','Checked '+new Date().toLocaleString()+'. It may be starting up. This page will try again.',[])});
+}
+load();setInterval(load,30000);
+</script></body></html>

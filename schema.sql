@@ -1,5 +1,5 @@
 -- ============================================================
--- Case Closed Pro — Production Schema (PostgreSQL 14+)
+-- Case Closed — Production Schema (PostgreSQL 14+)
 -- ============================================================
 -- Design approach: relational core for anything you need to
 -- filter/index/bill on (org, status, dates, money), JSONB for
@@ -535,3 +535,93 @@ DO $$ BEGIN
     CREATE POLICY sso_config_lookup ON sso_config FOR SELECT USING (current_setting('app.is_platform_admin', true) = 'true');
   END IF;
 END $$;
+
+-- ---------------------------------------------------------------
+-- Scheduled emails (added October 2026). Recurring emails an admin sets up: daily, every other day, chosen weekdays, weekly, every other week, monthly.
+-- The server also creates this on startup if it is missing. Safe to run more than once.
+-- ---------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS scheduled_emails (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL, name TEXT NOT NULL,
+  recipients TEXT[] NOT NULL DEFAULT '{}',
+  schedule JSONB NOT NULL, params JSONB NOT NULL DEFAULT '{}'::jsonb,
+  enabled BOOLEAN NOT NULL DEFAULT true,
+  last_sent_date TEXT, last_sent_at TIMESTAMPTZ, last_error TEXT, last_result TEXT,
+  created_by UUID, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS idx_scheduled_emails_org ON scheduled_emails(org_id);
+ALTER TABLE scheduled_emails ENABLE ROW LEVEL SECURITY;
+ALTER TABLE scheduled_emails FORCE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'scheduled_emails' AND policyname = 'scheduled_emails_tenant_isolation') THEN
+    CREATE POLICY scheduled_emails_tenant_isolation ON scheduled_emails USING (org_id = current_setting('app.current_org_id', true)::uuid);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'scheduled_emails' AND policyname = 'scheduled_emails_admin_bypass') THEN
+    CREATE POLICY scheduled_emails_admin_bypass ON scheduled_emails USING (current_setting('app.is_platform_admin', true) = 'true');
+  END IF;
+  END $$;
+
+-- ---------------------------------------------------------------
+-- Claim feed history (added October 2026). One row per real load, with what changed, so a load can be undone.
+-- The server also creates this on startup if it is missing. Safe to run more than once.
+-- ---------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS feed_runs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  source TEXT NOT NULL, key_name TEXT,
+  received INT NOT NULL DEFAULT 0, created INT NOT NULL DEFAULT 0, updated INT NOT NULL DEFAULT 0,
+  unchanged INT NOT NULL DEFAULT 0, failed INT NOT NULL DEFAULT 0,
+  errors JSONB NOT NULL DEFAULT '[]'::jsonb, changes JSONB NOT NULL DEFAULT '[]'::jsonb,
+  dry_run BOOLEAN NOT NULL DEFAULT false,
+  created_by UUID, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  undone_at TIMESTAMPTZ, undone_by UUID, undo_result JSONB);
+CREATE INDEX IF NOT EXISTS idx_feed_runs_org ON feed_runs(org_id, created_at DESC);
+ALTER TABLE feed_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE feed_runs FORCE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'feed_runs' AND policyname = 'feed_runs_tenant_isolation') THEN
+    CREATE POLICY feed_runs_tenant_isolation ON feed_runs USING (org_id = current_setting('app.current_org_id', true)::uuid);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'feed_runs' AND policyname = 'feed_runs_admin_bypass') THEN
+    CREATE POLICY feed_runs_admin_bypass ON feed_runs FOR SELECT USING (current_setting('app.is_platform_admin', true) = 'true');
+  END IF;
+  END $$;
+
+-- case_documents: real files per matter + who-viewed log
+CREATE TABLE IF NOT EXISTS case_documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    case_id UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+    name TEXT NOT NULL, mime TEXT NOT NULL, size_bytes INT NOT NULL, doc_type TEXT NOT NULL DEFAULT 'Other',
+    source TEXT NOT NULL DEFAULT 'upload', content BYTEA NOT NULL,
+    uploaded_by UUID, uploaded_by_name TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS idx_case_documents_case ON case_documents(org_id, case_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS case_document_views (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    document_id UUID NOT NULL REFERENCES case_documents(id) ON DELETE CASCADE,
+    user_id UUID, user_name TEXT, action TEXT NOT NULL DEFAULT 'download', at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS idx_case_document_views_doc ON case_document_views(org_id, document_id, at DESC);
+ALTER TABLE case_documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE case_documents FORCE ROW LEVEL SECURITY;
+DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'case_documents' AND policyname = 'case_documents_tenant_isolation') THEN
+        CREATE POLICY case_documents_tenant_isolation ON case_documents USING (org_id = current_setting('app.current_org_id', true)::uuid);
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'case_documents' AND policyname = 'case_documents_admin_bypass') THEN
+        CREATE POLICY case_documents_admin_bypass ON case_documents FOR SELECT USING (current_setting('app.is_platform_admin', true) = 'true');
+      END IF;
+    END $$;
+ALTER TABLE case_document_views ENABLE ROW LEVEL SECURITY;
+ALTER TABLE case_document_views FORCE ROW LEVEL SECURITY;
+DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'case_document_views' AND policyname = 'case_document_views_tenant_isolation') THEN
+        CREATE POLICY case_document_views_tenant_isolation ON case_document_views USING (org_id = current_setting('app.current_org_id', true)::uuid);
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'case_document_views' AND policyname = 'case_document_views_admin_bypass') THEN
+        CREATE POLICY case_document_views_admin_bypass ON case_document_views FOR SELECT USING (current_setting('app.is_platform_admin', true) = 'true');
+      END IF;
+    END $$;
+
+-- single sign-on only switch (owner can require SSO once it has worked)
+ALTER TABLE sso_config ADD COLUMN IF NOT EXISTS enforce_sso BOOLEAN NOT NULL DEFAULT false;

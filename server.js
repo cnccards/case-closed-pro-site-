@@ -1,5 +1,5 @@
 /**
- * Case Closed Sentinel — Production API Server
+ * Case Closed — Production API Server
  * ---------------------------------------------------------------
  * Rewired from the lowdb prototype to real Postgres with real
  * multi-tenancy: every case belongs to an organization (org_id),
@@ -30,6 +30,15 @@ import crypto from 'crypto';
 import zlib from 'zlib';
 import { encryptSecret, decryptSecret, normDomains, emailDomain, checkIssuer, discover, newLoginRequest, buildAuthUrl, exchangeCode, verifyIdToken, emailFromClaims } from './sso.js';
 import { FEED_MAX_ROWS, rowsFromBody, normalizeRow, applyFields } from './claim-feed.js';
+import { FEED_RUNS_DDL, runFeed as runFeedCore, logRun, listRuns, undoRun, listFeedCreated, deleteFeedCreated } from './feed-history.js';
+import { toExportRow, toCsv } from './feed-export.js';
+import { budgetStatus } from './budget.js';
+import { parseAddress, secretOk, parseInbound, senderVerified, noteText, newToken, addressFor } from './email-in.js';
+import { counselTrackRecords, trackRecordText } from './outcomes.js';
+import { DEFAULT_POLICY, cleanPolicy, reviewChange, noticeMessage, approverEmails } from './approvals.js';
+import { CASE_DOCUMENTS_DDL, validateUpload, deliveryHeaders, DOC_TYPES, ORG_QUOTA_BYTES } from './case-documents.js';
+import { SCHEDULED_EMAILS_DDL, KINDS as SCHED_KINDS, MAX_SCHEDULES_PER_ORG, cleanInput as cleanSchedInput, viewRow as schedView, makeScheduler } from './scheduled-emails.js';
+import { earlyWarning } from './early-warning.js';
 
 const { Pool } = pkg;
 
@@ -160,7 +169,7 @@ async function withTenantScope(req, res, next) {
       // admin panel's org directory) — see the matching permissive
       // policy in schema.sql keyed off this same setting, rather
       // than skipping RLS for this connection entirely.
-      await client.query(`SET LOCAL app.is_platform_admin = 'true'`);
+      await client.query(`SET LOCAL app.is_platform_admin = 'true'; SET LOCAL app.current_org_id = '00000000-0000-0000-0000-000000000000'`);
     } else {
       // CRITICAL FIX: Postgres's SET command does not support bind
       // parameters ($1) — this previously silently failed with a
@@ -329,7 +338,7 @@ function verifyTotp(secretBase32, token, windowSteps = 1) {
   }
   return false;
 }
-function otpauthUrl(secretBase32, email, issuer = 'Case Closed Sentinel') {
+function otpauthUrl(secretBase32, email, issuer = 'Case Closed') {
   const label = encodeURIComponent(`${issuer}:${email}`);
   return `otpauth://totp/${label}?secret=${secretBase32}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
 }
@@ -475,6 +484,25 @@ app.set('trust proxy', 1); // behind Render's proxy: use the real client address
 app.use(express.json({ limit: '15mb' })); // 10,000-row imports
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || '*' }));
 
+// Public status for the status page. No secrets and nothing about any customer.
+const SERVER_STARTED = Date.now();
+app.get('/api/status', async (req, res) => {
+  const t0 = Date.now(); let db = { ok: false, ms: null };
+  try { await Promise.race([q('SELECT 1'), new Promise((_, rej) => setTimeout(() => rej(new Error('slow')), 4000))]); db = { ok: true, ms: Date.now() - t0 }; } catch (e) { db = { ok: false, ms: null }; }
+  let sched = { ok: null, lastTick: null };
+  try { sched = { ok: scheduler.state.lastTick ? !!scheduler.state.lastTickOk : null, lastTick: scheduler.state.lastTick || null }; } catch (e) {}
+  const stale = sched.lastTick && (Date.now() - new Date(sched.lastTick).getTime()) > 30 * 60 * 1000;
+  const status = !db.ok ? 'down' : (sched.ok === false || stale) ? 'degraded' : 'operational';
+  res.set('Cache-Control', 'no-store').status(db.ok ? 200 : 503).json({
+    status, time: new Date().toISOString(), uptimeSeconds: Math.round((Date.now() - SERVER_STARTED) / 1000),
+    components: [
+      { name: 'Application and API', ok: true }, { name: 'Database', ok: db.ok, ms: db.ms },
+      { name: 'Scheduled emails', ok: sched.ok === false || stale ? false : true, lastRun: sched.lastTick },
+      { name: 'Email sending', ok: SMTP_CONFIGURED, note: SMTP_CONFIGURED ? '' : 'Not set up' }
+    ]
+  });
+});
+
 app.get('/api/health', async (req, res) => {
   try {
     await q('SELECT 1');
@@ -514,7 +542,7 @@ app.post('/api/contact-sales', async (req, res) => {
       to: SALES_EMAILS.join(','),
       replyTo: email,
       subject: `New sales inquiry: ${name.trim()}${company ? ' (' + String(company).trim() + ')' : ''}`,
-      text: `Name: ${name.trim()}\nEmail: ${email}\nCompany: ${company ? String(company).trim() : '—'}\n\nMessage:\n${message ? String(message).trim() : '(no message provided)'}\n\n—\nSubmitted from the Case Closed Sentinel marketing site. Reply-to is set to the submitter's email.`
+      text: `Name: ${name.trim()}\nEmail: ${email}\nCompany: ${company ? String(company).trim() : '—'}\n\nMessage:\n${message ? String(message).trim() : '(no message provided)'}\n\n—\nSubmitted from the Case Closed marketing site. Reply-to is set to the submitter's email.`
     });
     res.json({ success: true, message: `Thanks — we'll be in touch shortly.` });
   } catch (e) {
@@ -620,6 +648,14 @@ app.post('/api/auth/login', async (req, res) => {
   if (!ok) return invalid();
 
   loginFails.delete(throttleKey);
+  // SSO-only: when the customer requires single sign-on, passwords stop working for everyone except the account owner
+  // (the way back in if the identity provider is down) and platform admins.
+  if (user.role !== 'owner' && !isPlatformAdminEmail(user.email) && user.org_id) {
+    try {
+      const enf = await ssoLookup('org_id = $1 AND enabled = true AND enforce_sso = true', [user.org_id]);
+      if (enf.length) return res.status(403).json({ error: 'Your company requires single sign-on. Click "Sign In with Company SSO" instead.', ssoRequired: true });
+    } catch (e) { console.error('SSO-only check failed (letting the password sign-in continue):', e.message); }
+  }
   if (user.totp_enabled) {
     // Password is correct, but the account requires a 2FA code next.
     // No session token yet — only a narrow pending token good for
@@ -717,7 +753,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       await mailer.sendMail({
         from: process.env.FROM_EMAIL || process.env.SMTP_USER,
         to: user.email,
-        subject: 'Reset your Case Closed Sentinel password',
+        subject: 'Reset your Case Closed password',
         text: `Hi ${user.name},\n\nSomeone requested a password reset for your account. This link expires in 1 hour:\n\n${resetUrl}\n\nIf you didn't request this, you can safely ignore this email — your password will not change.`
       });
     } catch (e) {
@@ -957,12 +993,22 @@ async function ensureFeedTables() {
       IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'integration_keys' AND policyname = 'integration_keys_tenant_isolation') THEN
         CREATE POLICY integration_keys_tenant_isolation ON integration_keys USING (org_id = current_setting('app.current_org_id', true)::uuid);
       END IF; END $$`);
+    for (const stmt of FEED_RUNS_DDL) await pool.query(stmt);
     feedTablesReady = true;
   } catch (e) {
-    console.error('Claim feed table could not be created automatically (run the integration_keys block in schema.sql):', e.message);
+    console.error('Claim feed table could not be created automatically (run the integration_keys and feed_runs blocks in schema.sql):', e.message);
   }
 }
 setTimeout(ensureFeedTables, 4500);
+// Scheduled emails (see scheduled-emails.js). The table is created on first use or at startup.
+let schedTablesReady = false;
+async function ensureSchedTables() {
+  if (schedTablesReady) return true;
+  try { for (const stmt of SCHEDULED_EMAILS_DDL) await pool.query(stmt); schedTablesReady = true; }
+  catch (e) { console.error('Scheduled emails table could not be created automatically (run the scheduled_emails block in schema.sql):', e.message); }
+  return schedTablesReady;
+}
+setTimeout(ensureSchedTables, 5200);
 const feedLimits = new Map();
 function feedRate(key, max) {
   const now = Date.now(), hour = 60 * 60 * 1000;
@@ -972,7 +1018,7 @@ function feedRate(key, max) {
   return rl.count <= max;
 }
 // Opens a transaction scoped to the key's customer. Returns { client, key } or sends the error and returns null.
-async function feedOpen(req, res) {
+async function feedOpen(req, res, kind = 'claim_feed') {
   const hdr = String(req.headers.authorization || '');
   const token = (/^Bearer\s+(\S+)$/i.exec(hdr) || [])[1] || String(req.headers['x-api-key'] || '').trim();
   const m = FIRM_TOKEN_RE.exec(token || '');
@@ -983,7 +1029,7 @@ async function feedOpen(req, res) {
   try {
     await client.query('BEGIN');
     await client.query(`SET LOCAL app.current_org_id = '${m[1].toLowerCase()}'`);
-    const key = (await client.query(`SELECT id, name FROM integration_keys WHERE token_hash = $1 AND active = true AND kind = 'claim_feed'`, [sha256hex(token)])).rows[0];
+    const key = (await client.query(`SELECT id, name FROM integration_keys WHERE token_hash = $1 AND active = true AND kind = $2`, [sha256hex(token), kind])).rows[0];
     if (!key) { await client.query('ROLLBACK'); client.release(); res.status(401).json({ error: 'This key is not valid or has been turned off.' }); return null; }
     if (!feedRate('key:' + key.id, 120)) { await client.query('ROLLBACK'); client.release(); res.status(429).json({ error: 'This key has reached its hourly limit (120 requests). Send larger batches less often.' }); return null; }
     return { client, key, orgId: m[1].toLowerCase() };
@@ -996,40 +1042,67 @@ async function feedOpen(req, res) {
   }
 }
 async function runFeed(db, orgId, keyName, rows, dryRun) {
-    const out = { ok: true, dryRun, received: rows.length, created: 0, updated: 0, unchanged: 0, failed: 0, errors: [], unknownColumns: [] };
-    const unknown = new Set();
-    for (let i = 0; i < rows.length; i++) {
-      try {
-        const { fields, unknown: unk } = normalizeRow(rows[i]);
-        unk.forEach(u => unknown.add(String(u).slice(0, 60)));
-        await withRowSavepoint(db, async () => {
-          const cur = (await db.query('SELECT client, type, status, litigation_stage, carrier, reserve_amount, value, filed_date, data FROM cases WHERE org_id = $1 AND lower(claim_no) = lower($2) ORDER BY created_at LIMIT 1 FOR UPDATE', [orgId, fields.claimNo])).rows[0];
-          if (!cur && !fields.client) throw new Error('client is required for a new claim');
-          const base = defaultCaseData();
-          base.updates = [{ date: new Date().toISOString().slice(0, 10), author: 'Claim feed', type: 'Case Opened', text: `Matter created from the claim feed (${keyName}).` }];
-          const r = applyFields(cur || null, fields, base);
-          if (r.isNew) {
-            const c = r.cols;
-            await db.query(
-              `INSERT INTO cases (org_id, matter_no, client, type, status, litigation_stage, carrier, claim_no, reserve_amount, filed_date, value, data)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-              [orgId, 'FD-' + crypto.randomBytes(4).toString('hex').toUpperCase(), c.client, c.type || 'Other', c.status || 'Active', c.litigation_stage || 'Pre-Suit', c.carrier || null, fields.claimNo, c.reserve_amount || 0, c.filed_date || null, c.value || 0, JSON.stringify(r.data)]);
-            out.created++;
-          } else if (r.changed.length) {
-            const sets = ['data = $3', 'updated_at = now()'], vals = [orgId, fields.claimNo, JSON.stringify(r.data)];
-            for (const [col, v] of Object.entries(r.cols)) { vals.push(v); sets.push(`${col} = $${vals.length}`); }
-            await db.query(`UPDATE cases SET ${sets.join(', ')} WHERE org_id = $1 AND lower(claim_no) = lower($2)`, vals);
-            out.updated++;
-          } else out.unchanged++;
-        });
-      } catch (e) {
-        out.failed++;
-        if (out.errors.length < 50) out.errors.push({ row: i + 1, claimNo: String((rows[i] && (rows[i].claimNo || rows[i].claim_no || rows[i]['Claim Number'])) || '').slice(0, 80), error: e.message });
-      }
-    }
-    out.unknownColumns = Array.from(unknown).slice(0, 40);
-  return out;
+  return runFeedCore(db, orgId, keyName, rows, dryRun, { withRowSavepoint, defaultCaseData });
 }
+// Writes the load to the history. If the history table is unavailable the load still succeeds.
+async function recordFeedRun(db, orgId, meta, out) {
+  await db.query('SAVEPOINT feed_log');
+  try { const r = await logRun(db, orgId, meta, out); await db.query('RELEASE SAVEPOINT feed_log'); return r; }
+  catch (e) {
+    await db.query('ROLLBACK TO SAVEPOINT feed_log').catch(() => {}); await db.query('RELEASE SAVEPOINT feed_log').catch(() => {});
+    console.error('Feed history could not be saved:', e.message);
+    const { changes, ...reply } = out; return reply;
+  }
+}
+
+// ---------------------------------------------------------------
+// EMAIL-IN webhook (public, protected by a shared secret). See email-in.js.
+// Set INBOUND_EMAIL_DOMAIN (the domain whose mail goes to the provider), INBOUND_EMAIL_SECRET (16+ characters),
+// and point the provider's inbound webhook at  https://<server>/api/inbound/email?key=<secret>.
+// Always answers 200 once the secret is right, so the provider does not retry mail we chose not to save.
+// ---------------------------------------------------------------
+app.post('/api/inbound/email', async (req, res) => {
+  if (!secretOk(process.env.INBOUND_EMAIL_SECRET, req)) return res.status(401).json({ error: 'Not allowed.' });
+  const m = parseInbound(req.body);
+  if (!m) return res.status(400).json({ error: 'Not an email.' });
+  const target = m.to.map(parseAddress).find(Boolean);
+  if (!target) return res.json({ ok: true, saved: false, reason: 'No matter address on this message.' });
+  if (!feedRate('inbound:' + target.orgId, 300)) return res.status(429).json({ error: 'Too many messages.' });
+  if (!(await ensureDocTables())) return res.status(503).json({ error: 'Document storage is not ready.' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN'); await client.query(`SELECT set_config('app.current_org_id', $1, true)`, [target.orgId]);
+    const c = (await client.query(`SELECT id, data FROM cases WHERE org_id = $1 AND data->>'inboundToken' = $2 FOR UPDATE`, [target.orgId, target.token])).rows[0];
+    if (!c) { await client.query('ROLLBACK'); return res.json({ ok: true, saved: false, reason: 'Unknown matter address.' }); }
+    const seen = Array.isArray(c.data.inboundIds) ? c.data.inboundIds : [];
+    if (m.messageId && seen.includes(m.messageId)) { await client.query('ROLLBACK'); return res.json({ ok: true, saved: false, reason: 'Already saved.' }); }
+    const known = (await client.query(`SELECT 1 FROM users WHERE org_id = $1 AND lower(email) = $2 UNION ALL SELECT 1 FROM approved_counsel WHERE org_id = $1 AND lower(email) = $2 LIMIT 1`, [target.orgId, m.from.email]).catch(() => ({ rows: [] }))).rows.length > 0
+      || String((c.data.defenseCounsel && c.data.defenseCounsel.email) || '').toLowerCase() === m.from.email;
+    if (!known || !senderVerified(m, process.env.INBOUND_ALLOW_UNVERIFIED === '1')) {
+      await client.query('ROLLBACK');
+      audit(target.orgId, null, 'inbound.rejected', 'case', c.id, { from: m.from.email, known, verified: senderVerified(m, false) }, req.ip).catch(() => {});
+      return res.json({ ok: true, saved: false, reason: 'Sender not recognized or not verified.' });
+    }
+    const used = await orgDocBytes(client, target.orgId), saved = [], skipped = [];
+    let usedNow = used;
+    for (const a of m.attachments) {
+      const v = validateUpload({ name: a.name, buf: a.buf, usedBytes: usedNow });
+      if (!v.ok) { skipped.push(a.name + ' (' + v.error.replace(/\.$/, '') + ')'); continue; }
+      await client.query(`INSERT INTO case_documents (org_id, case_id, name, mime, size_bytes, doc_type, source, content, uploaded_by_name) VALUES ($1,$2,$3,$4,$5,'Correspondence','email',$6,$7)`, [target.orgId, c.id, v.name, v.mime, a.buf.length, a.buf, m.from.email]);
+      usedNow += a.buf.length; saved.push(v.name);
+    }
+    const note = { date: easternNow().date, author: m.from.name || m.from.email, type: 'Email', text: noteText(m, skipped) + (saved.length ? '\n\nFiles saved: ' + saved.join(', ') : ''), visibility: 'private', authorOrgId: target.orgId };
+    await client.query(`UPDATE cases SET data = jsonb_set(jsonb_set(data, '{updates}', COALESCE(data->'updates','[]'::jsonb) || $2::jsonb), '{inboundIds}', $3::jsonb) WHERE id = $1`, [c.id, JSON.stringify([note]), JSON.stringify([...seen, m.messageId].filter(Boolean).slice(-200))]);
+    await client.query('COMMIT');
+    audit(target.orgId, null, 'inbound.saved', 'case', c.id, { from: m.from.email, files: saved.length, skipped: skipped.length }, req.ip).catch(() => {});
+    res.json({ ok: true, saved: true, files: saved.length, skipped: skipped.length });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch (x) {}
+    console.error('inbound email failed:', e.message);
+    res.status(500).json({ error: 'Could not save the message.' });
+  } finally { client.release(); }
+});
+
 app.get('/api/feed/ping', async (req, res) => {
   const f = await feedOpen(req, res); if (!f) return;
   try {
@@ -1047,15 +1120,47 @@ app.post('/api/feed/claims', express.text({ type: ['text/csv', 'text/plain', 'ap
     if (!rows || !rows.length) { await f.client.query('ROLLBACK'); return res.status(400).json({ error: 'Send {"claims":[...]} as JSON, or a CSV file (Content-Type: text/csv) with a header row.' }); }
     if (rows.length > FEED_MAX_ROWS) { await f.client.query('ROLLBACK'); return res.status(413).json({ error: `Too many claims in one request (${rows.length}). Send ${FEED_MAX_ROWS} or fewer per request.` }); }
     const out = await runFeed(f.client, f.orgId, f.key.name, rows, dryRun);
-    if (dryRun) { await f.client.query('ROLLBACK'); return res.json(out); }
+    if (dryRun) { await f.client.query('ROLLBACK'); const { changes, ...dryReply } = out; return res.json(dryReply); }
+    const reply = await recordFeedRun(f.client, f.orgId, { source: 'api', keyName: f.key.name }, out);
     await f.client.query('UPDATE integration_keys SET last_used_at = now(), last_summary = $2 WHERE id = $1', [f.key.id, JSON.stringify({ at: new Date().toISOString(), received: out.received, created: out.created, updated: out.updated, unchanged: out.unchanged, failed: out.failed })]);
     await f.client.query('COMMIT');
     audit(f.orgId, null, 'claim_feed.import', 'case', null, { key: f.key.name, received: out.received, created: out.created, updated: out.updated, failed: out.failed }, req.ip).catch(() => {});
-    res.json(out);
+    res.json(reply);
   } catch (e) {
     try { await f.client.query('ROLLBACK'); } catch (x) {}
     console.error('claim feed failed:', e.message);
     res.status(500).json({ error: 'The claims could not be processed. Nothing was saved. Try again or contact support.' });
+  } finally { f.client.release(); }
+});
+
+// OUTBOUND FEED. A claims system pulls current matter status with an export key (a separate key from
+// the one that sends claims in). Cursor paging: send back the nextCursor to get only what changed.
+//   GET /api/feed/export?cursor=<from the last reply>&limit=500&format=json|csv
+const EXPORT_AT = `to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US')`;
+app.get('/api/feed/export', async (req, res) => {
+  const f = await feedOpen(req, res, 'claim_export'); if (!f) return;
+  try {
+    const m = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6})_([0-9a-f-]{36})$/i.exec(String(req.query.cursor || ''));
+    if (req.query.cursor && !m) { await f.client.query('ROLLBACK'); return res.status(400).json({ error: 'That cursor is not valid. Use the nextCursor from the previous reply, or leave it out to start from the beginning.' }); }
+    const limit = Math.max(1, Math.min(2000, parseInt(req.query.limit, 10) || 500));
+    const vals = [f.orgId, limit + 1];
+    let where = 'org_id = $1';
+    if (m) { vals.push(m[1], m[2]); where += ` AND (updated_at, id) > ($3::timestamp AT TIME ZONE 'UTC', $4::uuid)`; }
+    const r = await f.client.query(`SELECT *, ${EXPORT_AT} AS cursor_at FROM cases WHERE ${where} ORDER BY updated_at, id LIMIT $2`, vals);
+    const more = r.rows.length > limit, rows = r.rows.slice(0, limit);
+    const today = easternNow().date;
+    const out = rows.map(x => { const c = rowToCase(x); return toExportRow(c, earlyWarning(c, today)); });
+    const last = rows[rows.length - 1];
+    const nextCursor = last ? `${last.cursor_at}_${last.id}` : (m ? `${m[1]}_${m[2]}` : '');
+    await f.client.query('UPDATE integration_keys SET last_used_at = now(), last_summary = $2 WHERE id = $1', [f.key.id, JSON.stringify({ at: new Date().toISOString(), exported: out.length })]);
+    await f.client.query('COMMIT');
+    res.set('X-Next-Cursor', nextCursor).set('X-Has-More', more ? 'true' : 'false');
+    if (String(req.query.format || '').toLowerCase() === 'csv' || /text\/csv/.test(req.headers.accept || '')) return res.type('text/csv').send(toCsv(out));
+    res.json({ ok: true, count: out.length, hasMore: more, nextCursor, claims: out });
+  } catch (e) {
+    try { await f.client.query('ROLLBACK'); } catch (x) {}
+    console.error('claim export failed:', e.message);
+    res.status(500).json({ error: 'The export could not be produced. Try again.' });
   } finally { f.client.release(); }
 });
 
@@ -1091,6 +1196,7 @@ async function ensureSsoTable() {
       IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'sso_config' AND policyname = 'sso_config_lookup') THEN
         CREATE POLICY sso_config_lookup ON sso_config FOR SELECT USING (current_setting('app.is_platform_admin', true) = 'true');
       END IF; END $$`);
+    await pool.query('ALTER TABLE sso_config ADD COLUMN IF NOT EXISTS enforce_sso BOOLEAN NOT NULL DEFAULT false');
     ssoTableReady = true;
   } catch (e) { console.error('SSO table could not be created automatically (run the sso_config block in schema.sql):', e.message); }
 }
@@ -1105,7 +1211,7 @@ async function ssoLookup(where, params) {
   if (!ssoTableReady) await ensureSsoTable();
   const c = await pool.connect();
   try {
-    await c.query('BEGIN'); await c.query(`SET LOCAL app.is_platform_admin = 'true'`);
+    await c.query('BEGIN'); await c.query(`SET LOCAL app.is_platform_admin = 'true'; SET LOCAL app.current_org_id = '00000000-0000-0000-0000-000000000000'`);
     const r = await c.query(`SELECT * FROM sso_config WHERE ${where}`, params);
     await c.query('COMMIT'); return r.rows;
   } catch (e) { try { await c.query('ROLLBACK'); } catch (x) {} throw e; } finally { c.release(); }
@@ -1457,7 +1563,7 @@ app.post('/api/admin/self-test-isolation', requirePlatformAdmin, async (req, res
 // never carries into the next one. Returns a fresh login every time
 // (existing sandbox sessions elsewhere will need to log in again).
 // ---------------------------------------------------------------
-const SANDBOX_ORG_NAME = process.env.SANDBOX_ORG_NAME || 'Case Closed Sentinel — Sandbox';
+const SANDBOX_ORG_NAME = process.env.SANDBOX_ORG_NAME || 'Case Closed — Sandbox';
 const SANDBOX_OWNER_EMAIL = (process.env.SANDBOX_OWNER_EMAIL || 'sandbox@cclosed.com').toLowerCase();
 const SANDBOX_OWNER_NAME = process.env.SANDBOX_OWNER_NAME || 'Sandbox Demo';
 
@@ -2271,7 +2377,7 @@ app.post('/api/admin/organizations/:id/welcome-email', requirePlatformAdmin, asy
   const url = `${process.env.APP_URL || 'http://localhost:3000'}/case-closed-pro.html`;
   const text = welcomeEmailText(row.ownerName, row.name, url);
   try {
-    await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: row.ownerEmail, subject: `Welcome to Case Closed Sentinel — ${row.name}`, text });
+    await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: row.ownerEmail, subject: `Welcome to Case Closed — ${row.name}`, text });
     await audit(req.params.id, req.user.sub, 'admin.welcome_email_sent', 'organization', req.params.id, { to: row.ownerEmail, by: req.user.email }, req.ip);
     res.json({ sent: true, to: row.ownerEmail });
   } catch (e) { res.status(502).json({ error: 'Could not send: ' + e.message }); }
@@ -2279,7 +2385,7 @@ app.post('/api/admin/organizations/:id/welcome-email', requirePlatformAdmin, asy
 function welcomeEmailText(ownerName, orgName, url) {
   return `Hi ${ownerName || 'there'},
 
-Welcome to Case Closed Sentinel. Your account for ${orgName} is ready.
+Welcome to Case Closed. Your account for ${orgName} is ready.
 
 Sign in here: ${url}
 Your login is this email address. We will give you your temporary password separately (by phone or text) — please change it after you sign in.
@@ -2291,7 +2397,7 @@ Three things to do first:
 
 Once your cases are in, we will walk through the dashboards and Sentinel with you. Reply to this email any time if you get stuck.
 
-— The Case Closed Sentinel team`;
+— The Case Closed team`;
 }
 
 app.post('/api/admin/organizations/:id/suspend', requirePlatformAdmin, async (req, res) => {
@@ -2544,8 +2650,8 @@ app.post('/api/team/invite', requireOrgRole('admin'), async (req, res) => {
       await mailer.sendMail({
         from: process.env.FROM_EMAIL || process.env.SMTP_USER,
         to: normalizedEmail,
-        subject: `You're invited to join ${req.user.email.split('@')[1]} on Case Closed Sentinel`,
-        text: `${req.user.email} has invited you to join their organization on Case Closed Sentinel.\n\nAccept your invite (expires in 7 days):\n${inviteUrl}\n\nIf you weren't expecting this, you can ignore this email.`
+        subject: `You're invited to join ${req.user.email.split('@')[1]} on Case Closed`,
+        text: `${req.user.email} has invited you to join their organization on Case Closed.\n\nAccept your invite (expires in 7 days):\n${inviteUrl}\n\nIf you weren't expecting this, you can ignore this email.`
       });
     } catch (e) {
       console.error('Invite email failed to send:', e.message);
@@ -2583,8 +2689,8 @@ app.post('/api/team/invites/:id/resend', requireOrgRole('admin'), async (req, re
       await mailer.sendMail({
         from: process.env.FROM_EMAIL || process.env.SMTP_USER,
         to: targetEmail,
-        subject: `Reminder: you're invited to join ${req.user.email.split('@')[1]} on Case Closed Sentinel`,
-        text: `${req.user.email} has invited you to join their organization on Case Closed Sentinel.\n\nAccept your invite (expires in 7 days):\n${inviteUrl}\n\nIf you weren't expecting this, you can ignore this email.`
+        subject: `Reminder: you're invited to join ${req.user.email.split('@')[1]} on Case Closed`,
+        text: `${req.user.email} has invited you to join their organization on Case Closed.\n\nAccept your invite (expires in 7 days):\n${inviteUrl}\n\nIf you weren't expecting this, you can ignore this email.`
       });
     } catch (e) {
       console.error('Resend invite email failed to send:', e.message);
@@ -3000,7 +3106,7 @@ app.post('/api/cases/:id/assign', async (req, res) => {
           from: process.env.FROM_EMAIL || process.env.SMTP_USER,
           to: attorneyUser.email,
           subject: `New matter assigned to you: ${updated.matter_no} — ${updated.client}`,
-          text: `Hi ${attorneyUser.name},\n\nYou've been assigned a new matter in Case Closed Sentinel.\n\nMatter: ${updated.matter_no}\nClient: ${updated.client}\nType: ${updated.type || '—'}\nCarrier: ${updated.carrier || '—'}\nValue: ${updated.value != null ? '$' + Number(updated.value).toLocaleString() : '—'}${sol}\nAssigned by: ${assignerName}${reason ? '\nWhy you: ' + reason : ''}\n\nSign in to open it and get started:\n${caseUrl}\n`
+          text: `Hi ${attorneyUser.name},\n\nYou've been assigned a new matter in Case Closed.\n\nMatter: ${updated.matter_no}\nClient: ${updated.client}\nType: ${updated.type || '—'}\nCarrier: ${updated.carrier || '—'}\nValue: ${updated.value != null ? '$' + Number(updated.value).toLocaleString() : '—'}${sol}\nAssigned by: ${assignerName}${reason ? '\nWhy you: ' + reason : ''}\n\nSign in to open it and get started:\n${caseUrl}\n`
         });
         notified = true;
       } catch (e) {
@@ -3015,6 +3121,35 @@ app.post('/api/cases/:id/assign', async (req, res) => {
   }
 });
 
+
+// ---- Approval workflow helpers (see approvals.js) ----
+async function loadApprovalPolicy(req) {
+  try { const r = await req.db.query(`SELECT value FROM org_settings WHERE org_id = $1 AND key = 'approval_policy'`, [req.orgId]); return r.rows[0] ? cleanPolicy(r.rows[0].value) : { ...DEFAULT_POLICY }; }
+  catch (e) { return { ...DEFAULT_POLICY }; }
+}
+async function actingUser(req) {
+  let name = '';
+  try { name = (await req.db.query('SELECT name FROM users WHERE id = $1', [req.user?.sub])).rows[0]?.name || ''; } catch (e) {}
+  return { email: req.user?.email || '', name: name || req.user?.email || '', role: req.user?.role, platformAdmin: !!req.user?.platformAdmin };
+}
+async function sendApprovalNotices(orgId, c, notices) {
+  if (!SMTP_CONFIGURED) return;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN'); await client.query(`SELECT set_config('app.current_org_id', $1, true)`, [orgId]);
+    const pol = await client.query(`SELECT value FROM org_settings WHERE org_id = $1 AND key = 'approval_policy'`, [orgId]).then(r => r.rows[0] ? cleanPolicy(r.rows[0].value) : DEFAULT_POLICY).catch(() => DEFAULT_POLICY);
+    const admins = (await client.query(`SELECT email FROM users WHERE org_id = $1 AND role IN ('owner','admin')`, [orgId])).rows.map(x => x.email);
+    const org = (await client.query('SELECT name FROM organizations WHERE id = $1', [orgId])).rows[0];
+    await client.query('COMMIT');
+    for (const n of notices) {
+      const m = noticeMessage(n, c, org?.name || '', process.env.APP_URL || '');
+      const to = n.type === 'requested' ? approverEmails(pol, n.level, admins) : [n.request.requestedBy].filter(Boolean);
+      if (to.length) await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: to.join(','), subject: m.subject, text: m.text });
+    }
+  } catch (e) { try { await client.query('ROLLBACK'); } catch (x) {} throw e; }
+  finally { client.release(); }
+}
+
 app.patch('/api/cases/:id', async (req, res) => {
   const existing = await req.db.query('SELECT * FROM cases WHERE id = $1 AND org_id = $2', [req.params.id, req.orgId]);
   if (!existing.rows[0]) return res.status(404).json({ error: 'Case not found' });
@@ -3024,7 +3159,19 @@ app.patch('/api/cases/:id', async (req, res) => {
     return res.status(404).json({ error: 'Case not found' });
   }
   const b = req.body || {};
-  const mergedData = { ...current.data, ...(b.data || {}) };
+  if (b.data) { delete b.data.inboundToken; delete b.data.inboundIds; }
+  let mergedData = { ...current.data, ...(b.data || {}) };
+  // Approval workflow: the server decides who asked and who approved, and enforces the owner's rules.
+  let reserveToWrite = b.reserveAmount, approvalNotices = [];
+  if (b.data || b.reserveAmount != null) {
+    const policy = await loadApprovalPolicy(req);
+    const who = await actingUser(req);
+    const rv = reviewChange({ policy, prevData: current.data || {}, nextData: mergedData, prevReserve: current.reserve_amount, nextReserve: b.reserveAmount, user: who, now: new Date().toISOString() });
+    if (!rv.ok) return res.status(403).json({ error: rv.error });
+    mergedData = rv.data; approvalNotices = rv.notices;
+    if (rv.reserve != null) reserveToWrite = rv.reserve;
+    else if (policy.enabled && b.reserveAmount != null && Number(b.reserveAmount) !== Number(current.reserve_amount)) { /* allowed by reviewChange */ }
+  }
 
   // Reassigning WHO can see this case is an access-control action,
   // not a normal field edit — restricted to admin/owner so a
@@ -3046,10 +3193,14 @@ app.patch('/api/cases/:id', async (req, res) => {
        carrier = COALESCE($7, carrier), claim_no = COALESCE($8, claim_no), reserve_amount = COALESCE($9, reserve_amount),
        value = COALESCE($10, value), data = $11, assigned_attorney_user_id = $12
      WHERE id = $13 AND org_id = $14 RETURNING *`,
-    [b.matterNo, b.client, b.type, b.status, b.litigationStage, b.attorney, b.carrier, b.claimNo, b.reserveAmount, b.value,
+    [b.matterNo, b.client, b.type, b.status, b.litigationStage, b.attorney, b.carrier, b.claimNo, reserveToWrite, b.value,
      JSON.stringify(mergedData), assignedAttorneyUserId, req.params.id, req.orgId]
   );
   await audit(req.orgId, req.user?.sub, 'case.update', 'case', req.params.id, { fields: Object.keys(b) }, req.ip);
+  if (approvalNotices.length) {
+    for (const n of approvalNotices) audit(req.orgId, req.user?.sub, 'approval.' + n.type, 'case', req.params.id, { kind: n.kind, amount: n.kind === 'authority' ? n.request.amountRequested : n.request.to }, req.ip).catch(() => {});
+    res.on('finish', () => { sendApprovalNotices(req.orgId, rowToCase(result.rows[0]), approvalNotices).catch(e => console.error('approval email failed:', e.message)); });
+  }
   res.json(rowToCase(result.rows[0]));
 });
 
@@ -3216,7 +3367,7 @@ app.delete('/api/approved-counsel/:id', requireOrgRole('admin'), counselTableGua
 // organization can read; owners and admins can change. Row-level security keeps one customer's
 // settings from another. Created on startup if missing (same SQL is in schema.sql).
 // ---------------------------------------------------------------
-const ORG_SETTING_KEYS = new Set(['rev_guidelines', 'phase_budgets']);
+const ORG_SETTING_KEYS = new Set(['rev_guidelines', 'phase_budgets', 'approval_policy']);
 let orgSettingsReady = false;
 async function ensureOrgSettingsTable() {
   try {
@@ -3247,8 +3398,9 @@ app.get('/api/org-settings/:key', orgSettingsGuard, async (req, res) => {
 });
 app.put('/api/org-settings/:key', requireOrgRole('admin'), orgSettingsGuard, async (req, res) => {
   if (!ORG_SETTING_KEYS.has(req.params.key)) return res.status(400).json({ error: 'Unknown setting.' });
-  const v = req.body && req.body.value;
+  let v = req.body && req.body.value;
   if (!v || typeof v !== 'object' || Array.isArray(v)) return res.status(400).json({ error: 'Send the setting as an object.' });
+  if (req.params.key === 'approval_policy') { if (req.user?.role !== 'owner' && !req.user?.platformAdmin) return res.status(403).json({ error: 'Only the account owner can change the approval rules.' }); v = cleanPolicy(v); }
   const json = JSON.stringify(v);
   if (json.length > 250000) return res.status(413).json({ error: 'That setting is too large to save.' });
   await req.db.query(`INSERT INTO org_settings (org_id, key, value, updated_by, updated_at) VALUES ($1, $2, $3::jsonb, $4, now())
@@ -3268,10 +3420,12 @@ app.post('/api/feed/upload', requireOrgRole('admin'), express.text({ type: ['tex
   if (rows.length > FEED_MAX_ROWS) return res.status(413).json({ error: `Too many claims in one file (${rows.length}). Split it into files of ${FEED_MAX_ROWS} or fewer.` });
   await req.db.query('SAVEPOINT feed_upload');
   try {
-    const out = await runFeed(req.db, req.orgId, 'File upload (' + (req.user?.email || 'admin') + ')', rows, dryRun);
-    if (dryRun) await req.db.query('ROLLBACK TO SAVEPOINT feed_upload');
-    else audit(req.orgId, req.user?.sub, 'claim_feed.upload', 'case', null, { received: out.received, created: out.created, updated: out.updated, failed: out.failed }, req.ip).catch(() => {});
-    res.json(out);
+    const keyName = 'File upload (' + (req.user?.email || 'admin') + ')';
+    const out = await runFeed(req.db, req.orgId, keyName, rows, dryRun);
+    if (dryRun) { await req.db.query('ROLLBACK TO SAVEPOINT feed_upload'); const { changes, ...dryReply } = out; return res.json(dryReply); }
+    const reply = await recordFeedRun(req.db, req.orgId, { source: 'upload', keyName, userId: req.user?.sub }, out);
+    audit(req.orgId, req.user?.sub, 'claim_feed.upload', 'case', null, { received: out.received, created: out.created, updated: out.updated, failed: out.failed }, req.ip).catch(() => {});
+    res.json(reply);
   } catch (e) {
     await req.db.query('ROLLBACK TO SAVEPOINT feed_upload').catch(() => {});
     console.error('claim upload failed:', e.message);
@@ -3283,7 +3437,7 @@ app.post('/api/feed/upload', requireOrgRole('admin'), express.text({ type: ['tex
 // Single sign-on setup (signed-in customer admins). The client secret is stored encrypted and never sent back.
 app.get('/api/sso-config', requireOrgRole('admin'), async (req, res) => {
   if (!ssoTableReady) await ensureSsoTable();
-  const r = await req.db.query('SELECT issuer, client_id, domains, enabled, auto_create, default_role, updated_at, last_login_at, (client_secret_enc IS NOT NULL) AS has_secret FROM sso_config WHERE org_id = $1', [req.orgId]);
+  const r = await req.db.query('SELECT issuer, client_id, domains, enabled, auto_create, default_role, enforce_sso, updated_at, last_login_at, (client_secret_enc IS NOT NULL) AS has_secret FROM sso_config WHERE org_id = $1', [req.orgId]);
   res.json({ config: r.rows[0] || null, redirectUri: ssoApiBase(req) + '/api/sso/callback' });
 });
 app.put('/api/sso-config', requireOrgRole('admin'), async (req, res) => {
@@ -3300,15 +3454,22 @@ app.put('/api/sso-config', requireOrgRole('admin'), async (req, res) => {
     // A domain can belong to one customer only.
     const taken = (await ssoLookup('org_id <> $1 AND domains && $2::text[]', [req.orgId, domains]));
     if (taken.length) return res.status(409).json({ error: 'One of those domains is already used by another customer. Contact support if it is yours.' });
+    let enforce = !!b.enforceSso;
+    if (enforce) {
+      if (!enabled) return res.status(400).json({ error: 'Turn single sign-on on before you require it.' });
+      if (req.user?.role !== 'owner' && !req.user?.platformAdmin) return res.status(403).json({ error: 'Only the account owner can require single sign-on.' });
+      const last = (await req.db.query('SELECT last_login_at FROM sso_config WHERE org_id = $1', [req.orgId])).rows[0];
+      if (!last || !last.last_login_at) return res.status(400).json({ error: 'Sign in once with single sign-on first, to prove it works. Then you can require it. (This stops you locking everyone out.)' });
+    }
     if (enabled) {
       try { await discover(issuer); } catch (e) { return res.status(400).json({ error: 'Could not reach that identity provider: ' + e.message }); }
     }
     const enc = secretIn ? encryptSecret(secretIn, SSO_SECRET) : prev.client_secret_enc;
-    await req.db.query(`INSERT INTO sso_config (org_id, issuer, client_id, client_secret_enc, domains, enabled, auto_create, default_role, updated_by, updated_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
-      ON CONFLICT (org_id) DO UPDATE SET issuer = EXCLUDED.issuer, client_id = EXCLUDED.client_id, client_secret_enc = EXCLUDED.client_secret_enc, domains = EXCLUDED.domains, enabled = EXCLUDED.enabled, auto_create = EXCLUDED.auto_create, default_role = EXCLUDED.default_role, updated_by = EXCLUDED.updated_by, updated_at = now()`,
-      [req.orgId, issuer, clientId, enc, domains, enabled, autoCreate, role, req.user?.sub || null]);
-    await audit(req.orgId, req.user?.sub, 'sso.configure', 'organization', req.orgId, { issuer, domains, enabled }, req.ip);
+    await req.db.query(`INSERT INTO sso_config (org_id, issuer, client_id, client_secret_enc, domains, enabled, auto_create, default_role, updated_by, updated_at, enforce_sso)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now(), $10)
+      ON CONFLICT (org_id) DO UPDATE SET issuer = EXCLUDED.issuer, client_id = EXCLUDED.client_id, client_secret_enc = EXCLUDED.client_secret_enc, domains = EXCLUDED.domains, enabled = EXCLUDED.enabled, auto_create = EXCLUDED.auto_create, enforce_sso = EXCLUDED.enforce_sso, default_role = EXCLUDED.default_role, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+      [req.orgId, issuer, clientId, enc, domains, enabled, autoCreate, role, req.user?.sub || null, enforce && enabled]);
+    await audit(req.orgId, req.user?.sub, 'sso.configure', 'organization', req.orgId, { issuer, domains, enabled, enforce }, req.ip);
     res.json({ ok: true });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
@@ -3322,7 +3483,7 @@ app.delete('/api/sso-config', requireOrgRole('admin'), async (req, res) => {
 // Claim feed keys (signed-in customer admins).
 app.get('/api/integration-keys', requireOrgRole('admin'), async (req, res) => {
   if (!feedTablesReady) await ensureFeedTables();
-  const r = await req.db.query(`SELECT id, name, active, created_at, last_used_at, last_summary FROM integration_keys WHERE org_id = $1 AND kind = 'claim_feed' ORDER BY created_at DESC`, [req.orgId]);
+  const r = await req.db.query(`SELECT id, name, kind, active, created_at, last_used_at, last_summary FROM integration_keys WHERE org_id = $1 AND kind IN ('claim_feed', 'claim_export') ORDER BY created_at DESC`, [req.orgId]);
   res.json({ keys: r.rows });
 });
 app.post('/api/integration-keys', requireOrgRole('admin'), async (req, res) => {
@@ -3330,8 +3491,9 @@ app.post('/api/integration-keys', requireOrgRole('admin'), async (req, res) => {
   const name = String((req.body && req.body.name) || '').trim().slice(0, 120);
   if (!name) return res.status(400).json({ error: 'Name the system that will send claims (for example: Claims system).' });
   const token = req.orgId.toLowerCase() + '.' + crypto.randomBytes(32).toString('hex');
-  const r = await req.db.query(`INSERT INTO integration_keys (org_id, token_hash, name, created_by) VALUES ($1,$2,$3,$4) RETURNING id`, [req.orgId, sha256hex(token), name, req.user?.sub || null]);
-  await audit(req.orgId, req.user?.sub, 'integration_key.create', 'integration_key', r.rows[0].id, { name }, req.ip);
+  const kind = (req.body && req.body.kind) === 'claim_export' ? 'claim_export' : 'claim_feed';
+  const r = await req.db.query(`INSERT INTO integration_keys (org_id, token_hash, name, kind, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING id`, [req.orgId, sha256hex(token), name, kind, req.user?.sub || null]);
+  await audit(req.orgId, req.user?.sub, 'integration_key.create', 'integration_key', r.rows[0].id, { name, kind }, req.ip);
   res.json({ ok: true, id: r.rows[0].id, token });
 });
 app.delete('/api/integration-keys/:id', requireOrgRole('admin'), async (req, res) => {
@@ -3339,6 +3501,216 @@ app.delete('/api/integration-keys/:id', requireOrgRole('admin'), async (req, res
   const r = await req.db.query('UPDATE integration_keys SET active = false WHERE id = $1 AND org_id = $2', [req.params.id, req.orgId]);
   await audit(req.orgId, req.user?.sub, 'integration_key.revoke', 'integration_key', req.params.id, {}, req.ip);
   res.json({ revoked: r.rowCount });
+});
+
+// Claim feed history, undo and clean-up (signed-in customer admins). See feed-history.js.
+app.get('/api/feed/runs', requireOrgRole('admin'), async (req, res) => {
+  if (!feedTablesReady) await ensureFeedTables();
+  res.json({ runs: await listRuns(req.db, req.orgId, 30) });
+});
+app.post('/api/feed/runs/:id/undo', requireOrgRole('admin'), async (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ error: 'Bad id' });
+  try {
+    const r = await undoRun(req.db, req.orgId, req.params.id, req.user?.sub);
+    audit(req.orgId, req.user?.sub, 'claim_feed.undo', 'feed_run', req.params.id, { restored: r.restored, removed: r.removed, skipped: r.skipped.length }, req.ip).catch(() => {});
+    res.json({ ok: true, ...r });
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message });
+    console.error('feed undo failed:', e.message);
+    res.status(500).json({ error: 'That load could not be undone. Nothing was changed.' });
+  }
+});
+app.get('/api/feed/created-matters', requireOrgRole('admin'), async (req, res) => {
+  res.json({ matters: await listFeedCreated(req.db, req.orgId) });
+});
+app.post('/api/feed/delete-matters', requireOrgRole('admin'), async (req, res) => {
+  const ids = (req.body && req.body.ids) || [];
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Pick at least one matter.' });
+  const r = await deleteFeedCreated(req.db, req.orgId, ids);
+  audit(req.orgId, req.user?.sub, 'claim_feed.delete_matters', 'case', null, { deleted: r.deleted }, req.ip).catch(() => {});
+  res.json({ ok: true, ...r });
+});
+
+// Same data for a signed-in admin, as a file download (no key needed).
+app.get('/api/feed/export-file', requireOrgRole('admin'), async (req, res) => {
+  const r = await req.db.query('SELECT * FROM cases WHERE org_id = $1 ORDER BY created_at LIMIT 20000', [req.orgId]);
+  const today = easternNow().date;
+  const rows = r.rows.map(x => { const c = rowToCase(x); return toExportRow(c, earlyWarning(c, today)); });
+  audit(req.orgId, req.user?.sub, 'claim_feed.export_file', 'case', null, { rows: rows.length }, req.ip).catch(() => {});
+  res.set('Content-Disposition', `attachment; filename="matters-${today}.csv"`).type('text/csv').send(toCsv(rows));
+});
+
+
+// ---- Documents per matter (real file storage + who-viewed log). See case-documents.js. ----
+
+let docTablesReady = false;
+async function ensureDocTables() {
+  if (docTablesReady) return true;
+  try { for (const stmt of CASE_DOCUMENTS_DDL) await pool.query(stmt); docTablesReady = true; }
+  catch (e) { console.error('Document tables could not be created automatically (run the case_documents block in schema.sql):', e.message); }
+  return docTablesReady;
+}
+setTimeout(ensureDocTables, 5400);
+const docGate = async (req, res, next) => { if (await ensureDocTables()) return next(); res.status(503).json({ error: 'Document storage is not set up on this server yet.' }); };
+async function docCaseOk(req, caseId) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(caseId))) return false;
+  const r = await scopedCaseQuery(req, req.user?.persona === 'defense' ? ' AND c.id = $2' : ' AND id = $2', [caseId]);
+  return !!r.rows[0];
+}
+const userLabel = req => String(req.user?.name || req.user?.email || 'User').slice(0, 120);
+async function orgDocBytes(db, orgId) { return Number((await db.query('SELECT COALESCE(sum(size_bytes),0)::bigint AS n FROM case_documents WHERE org_id = $1', [orgId])).rows[0].n); }
+// The matter's own email address (admin or the matter's people can ask for it).
+app.post('/api/cases/:id/inbound-address', docGate, async (req, res) => {
+  const domain = String(process.env.INBOUND_EMAIL_DOMAIN || '').trim();
+  if (!domain || !process.env.INBOUND_EMAIL_SECRET) return res.status(503).json({ error: 'Email-in is not set up on this server yet. See the setup notes.', setup: true });
+  if (!(await docCaseOk(req, req.params.id))) return res.status(404).json({ error: 'Case not found' });
+  const rotate = req.body && req.body.rotate === true;
+  if (rotate && !['owner', 'admin'].includes(req.user?.role) && !req.user?.platformAdmin) return res.status(403).json({ error: 'Only an admin can replace the address.' });
+  const cur = (await req.db.query(`SELECT data->>'inboundToken' AS t FROM cases WHERE id = $1 AND org_id = $2`, [req.params.id, req.orgId])).rows[0];
+  let token = cur && cur.t;
+  if (!token || rotate) { token = newToken(); await req.db.query(`UPDATE cases SET data = jsonb_set(data, '{inboundToken}', to_jsonb($3::text)) WHERE id = $1 AND org_id = $2`, [req.params.id, req.orgId, token]); await audit(req.orgId, req.user?.sub, rotate ? 'inbound.rotate' : 'inbound.create', 'case', req.params.id, null, req.ip); }
+  res.json({ address: addressFor(req.orgId, token, domain) });
+});
+app.get('/api/cases/:id/documents', docGate, async (req, res) => {
+  if (!(await docCaseOk(req, req.params.id))) return res.status(404).json({ error: 'Case not found' });
+  const r = await req.db.query(`SELECT d.id, d.name, d.mime, d.size_bytes, d.doc_type, d.source, d.uploaded_by_name, d.created_at,
+      (SELECT count(*) FROM case_document_views v WHERE v.document_id = d.id)::int AS views,
+      (SELECT max(at) FROM case_document_views v WHERE v.document_id = d.id) AS last_viewed
+    FROM case_documents d WHERE d.org_id = $1 AND d.case_id = $2 ORDER BY d.created_at DESC`, [req.orgId, req.params.id]);
+  res.json({ documents: r.rows.map(x => ({ id: x.id, name: x.name, mime: x.mime, size: x.size_bytes, type: x.doc_type, source: x.source, uploadedBy: x.uploaded_by_name, createdAt: x.created_at, views: x.views, lastViewed: x.last_viewed })), types: DOC_TYPES, quota: ORG_QUOTA_BYTES });
+});
+app.post('/api/cases/:id/documents', docGate, express.raw({ type: () => true, limit: '16mb' }), async (req, res) => {
+  if (!(await docCaseOk(req, req.params.id))) return res.status(404).json({ error: 'Case not found' });
+  if (req.user?.role === 'viewer') return res.status(403).json({ error: 'Your role cannot add files.' });
+  const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+  const v = validateUpload({ name: req.query.name, buf, usedBytes: await orgDocBytes(req.db, req.orgId) });
+  if (!v.ok) return res.status(400).json({ error: v.error });
+  const type = DOC_TYPES.includes(req.query.type) ? req.query.type : 'Other';
+  const r = await req.db.query(`INSERT INTO case_documents (org_id, case_id, name, mime, size_bytes, doc_type, content, uploaded_by, uploaded_by_name) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+    [req.orgId, req.params.id, v.name, v.mime, buf.length, type, buf, req.user?.sub || null, userLabel(req)]);
+  await audit(req.orgId, req.user?.sub, 'document.upload', 'case', req.params.id, { name: v.name, bytes: buf.length }, req.ip);
+  res.status(201).json({ ok: true, id: r.rows[0].id });
+});
+app.get('/api/documents/:docId/download', docGate, async (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.docId)) return res.status(400).json({ error: 'Bad id' });
+  const r = await req.db.query('SELECT id, case_id, name, mime, content FROM case_documents WHERE id = $1 AND org_id = $2', [req.params.docId, req.orgId]);
+  const d = r.rows[0];
+  if (!d || !(await docCaseOk(req, d.case_id))) return res.status(404).json({ error: 'File not found' });
+  await req.db.query(`INSERT INTO case_document_views (org_id, document_id, user_id, user_name, action) VALUES ($1,$2,$3,$4,$5)`, [req.orgId, d.id, req.user?.sub || null, userLabel(req), req.query.inline ? 'view' : 'download']);
+  res.set(deliveryHeaders(d.name, d.mime, !!req.query.inline)).send(d.content);
+});
+app.get('/api/documents/:docId/views', docGate, async (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.docId)) return res.status(400).json({ error: 'Bad id' });
+  const d = (await req.db.query('SELECT case_id FROM case_documents WHERE id = $1 AND org_id = $2', [req.params.docId, req.orgId])).rows[0];
+  if (!d || !(await docCaseOk(req, d.case_id))) return res.status(404).json({ error: 'File not found' });
+  const r = await req.db.query('SELECT user_name, action, at FROM case_document_views WHERE document_id = $1 AND org_id = $2 ORDER BY at DESC LIMIT 100', [req.params.docId, req.orgId]);
+  res.json({ views: r.rows.map(x => ({ user: x.user_name, action: x.action, at: x.at })) });
+});
+app.delete('/api/documents/:docId', docGate, async (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.docId)) return res.status(400).json({ error: 'Bad id' });
+  const d = (await req.db.query('SELECT id, case_id, name, uploaded_by FROM case_documents WHERE id = $1 AND org_id = $2', [req.params.docId, req.orgId])).rows[0];
+  if (!d || !(await docCaseOk(req, d.case_id))) return res.status(404).json({ error: 'File not found' });
+  const admin = ['owner', 'admin'].includes(req.user?.role) || req.user?.platformAdmin;
+  if (!admin && d.uploaded_by !== req.user?.sub) return res.status(403).json({ error: 'Only an admin or the person who added the file can delete it.' });
+  await req.db.query('DELETE FROM case_documents WHERE id = $1 AND org_id = $2', [d.id, req.orgId]);
+  await audit(req.orgId, req.user?.sub, 'document.delete', 'case', d.case_id, { name: d.name }, req.ip);
+  res.json({ ok: true });
+});
+
+
+// ---- Saved views: each person's own named filter sets for the matters list (stored per user in org_settings) ----
+app.get('/api/my-views', orgSettingsGuard, async (req, res) => {
+  const r = await req.db.query('SELECT value FROM org_settings WHERE org_id = $1 AND key = $2', [req.orgId, 'views:' + req.user.sub]);
+  res.json({ views: (r.rows[0] && Array.isArray(r.rows[0].value.views)) ? r.rows[0].value.views : [] });
+});
+app.put('/api/my-views', orgSettingsGuard, async (req, res) => {
+  const list = Array.isArray(req.body && req.body.views) ? req.body.views.slice(0, 30) : null;
+  if (!list) return res.status(400).json({ error: 'Send a list of views.' });
+  const views = list.map(v => ({ id: String(v.id || '').slice(0, 40), name: String(v.name || '').trim().slice(0, 60), filters: (v.filters && typeof v.filters === 'object') ? Object.fromEntries(Object.entries(v.filters).slice(0, 15).map(([k, x]) => [String(k).slice(0, 30), String(x == null ? '' : x).slice(0, 120)])) : {} })).filter(v => v.id && v.name);
+  await req.db.query(`INSERT INTO org_settings (org_id, key, value, updated_by, updated_at) VALUES ($1, $2, $3::jsonb, $4, now()) ON CONFLICT (org_id, key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`, [req.orgId, 'views:' + req.user.sub, JSON.stringify({ views }), req.user.sub]);
+  res.json({ ok: true, views });
+});
+
+
+// ---- Customer audit view: the account's own activity log (owner/admin). Always limited to this customer. ----
+app.get('/api/audit-log', requireOrgRole('admin'), async (req, res) => {
+  const lim = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 100));
+  const params = [req.orgId], where = ['a.org_id = $1'];
+  if (req.query.before && /^\d{1,18}$/.test(String(req.query.before))) { params.push(req.query.before); where.push(`a.id < $${params.length}`); }
+  if (req.query.action) { params.push(String(req.query.action).slice(0, 60).replace(/[%_\\]/g, '\\$&') + '%'); where.push(`a.action LIKE $${params.length}`); }
+  if (req.query.user && /^[0-9a-f-]{36}$/i.test(String(req.query.user))) { params.push(req.query.user); where.push(`a.user_id = $${params.length}`); }
+  if (req.query.from && /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from))) { params.push(req.query.from); where.push(`a.created_at >= $${params.length}::date`); }
+  if (req.query.to && /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.to))) { params.push(req.query.to); where.push(`a.created_at < ($${params.length}::date + 1)`); }
+  params.push(lim + 1);
+  const r = await q(`SELECT a.id, a.action, a.entity_type, a.entity_id, a.detail, a.ip_address, a.created_at, u.name AS user_name, u.email AS user_email
+    FROM audit_log a LEFT JOIN users u ON u.id = a.user_id AND u.org_id = a.org_id WHERE ${where.join(' AND ')} ORDER BY a.id DESC LIMIT $${params.length}`, params);
+  const rows = r.rows.slice(0, lim).map(x => ({ id: String(x.id), at: x.created_at, action: x.action, entityType: x.entity_type, entityId: x.entity_id, detail: x.detail, ip: x.ip_address, user: x.user_name || x.user_email || (x.action.startsWith('inbound') || x.action.startsWith('claim_feed') ? 'System' : '') }));
+  if (req.query.format === 'csv') {
+    const cell = v => { let t = v == null ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v)); if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+    const csv = ['When,Who,What,Item,Details,IP'].concat(rows.map(x => [new Date(x.at).toISOString(), x.user, x.action, (x.entityType || '') + ' ' + (x.entityId || ''), x.detail, x.ip].map(cell).join(','))).join('\r\n') + '\r\n';
+    audit(req.orgId, req.user?.sub, 'audit.export', 'organization', req.orgId, { rows: rows.length }, req.ip).catch(() => {});
+    return res.set('Content-Disposition', 'attachment; filename="activity-log.csv"').type('text/csv').send(csv);
+  }
+  res.json({ entries: rows, next: r.rows.length > lim ? rows[rows.length - 1].id : null });
+});
+
+// Scheduled emails (signed-in customer admins). See scheduled-emails.js and schedule.js.
+app.get('/api/scheduled-emails', requireOrgRole('admin'), async (req, res) => {
+  if (!(await ensureSchedTables())) return res.status(503).json({ error: 'Scheduled emails are not set up on this server yet. Run the scheduled_emails block from schema.sql once.' });
+  const et = easternNow();
+  const rows = (await req.db.query('SELECT * FROM scheduled_emails WHERE org_id = $1 ORDER BY created_at', [req.orgId])).rows;
+  const accts = (await req.db.query(`SELECT DISTINCT data->>'clientAccount' AS a FROM cases WHERE org_id = $1 AND COALESCE(data->>'clientAccount','') <> '' ORDER BY 1`, [req.orgId])).rows.map(x => x.a);
+  res.json({
+    schedules: rows.map(r => schedView(r, et)), accounts: accts, emailConfigured: SMTP_CONFIGURED, now: et, max: MAX_SCHEDULES_PER_ORG,
+    kinds: Object.entries(SCHED_KINDS).map(([key, k]) => ({ key, label: k.label, who: k.who, blurb: k.blurb })),
+    scheduler: { lastTick: scheduler.state.lastTick, ok: scheduler.state.lastTickOk }
+  });
+});
+app.post('/api/scheduled-emails', requireOrgRole('admin'), async (req, res) => {
+  if (!(await ensureSchedTables())) return res.status(503).json({ error: 'Scheduled emails are not set up on this server yet.' });
+  let v; try { v = cleanSchedInput(req.body, easternNow().date); } catch (e) { return res.status(400).json({ error: e.message }); }
+  const n = (await req.db.query('SELECT count(*)::int AS n FROM scheduled_emails WHERE org_id = $1', [req.orgId])).rows[0].n;
+  if (n >= MAX_SCHEDULES_PER_ORG) return res.status(400).json({ error: `Up to ${MAX_SCHEDULES_PER_ORG} scheduled emails. Delete one you no longer use.` });
+  const r = await req.db.query(`INSERT INTO scheduled_emails (org_id, kind, name, recipients, schedule, params, enabled, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    [req.orgId, v.kind, v.name, v.recipients, JSON.stringify(v.schedule), JSON.stringify(v.params), v.enabled, req.user?.sub || null]);
+  audit(req.orgId, req.user?.sub, 'scheduled_email.create', 'scheduled_email', r.rows[0].id, { kind: v.kind, pattern: v.schedule.pattern }, req.ip).catch(() => {});
+  res.json({ ok: true, schedule: schedView(r.rows[0], easternNow()) });
+});
+app.put('/api/scheduled-emails/:id', requireOrgRole('admin'), async (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ error: 'Bad id' });
+  let v; try { v = cleanSchedInput(req.body, easternNow().date); } catch (e) { return res.status(400).json({ error: e.message }); }
+  // Changing the schedule restarts the count (last_sent_date cleared) so the next send follows the new rule.
+  const r = await req.db.query(`UPDATE scheduled_emails SET kind = $3, name = $4, recipients = $5, schedule = $6, params = $7, enabled = $8, last_error = NULL, updated_at = now() WHERE id = $1 AND org_id = $2 RETURNING *`,
+    [req.params.id, req.orgId, v.kind, v.name, v.recipients, JSON.stringify(v.schedule), JSON.stringify(v.params), v.enabled]);
+  if (!r.rows[0]) return res.status(404).json({ error: 'Not found' });
+  audit(req.orgId, req.user?.sub, 'scheduled_email.update', 'scheduled_email', req.params.id, { kind: v.kind, pattern: v.schedule.pattern, enabled: v.enabled }, req.ip).catch(() => {});
+  res.json({ ok: true, schedule: schedView(r.rows[0], easternNow()) });
+});
+app.delete('/api/scheduled-emails/:id', requireOrgRole('admin'), async (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ error: 'Bad id' });
+  const r = await req.db.query('DELETE FROM scheduled_emails WHERE id = $1 AND org_id = $2', [req.params.id, req.orgId]);
+  audit(req.orgId, req.user?.sub, 'scheduled_email.delete', 'scheduled_email', req.params.id, {}, req.ip).catch(() => {});
+  res.json({ deleted: r.rowCount });
+});
+// Sends the signed-in admin a real copy of one scheduled email, right now, to themselves only.
+const previewRate = new Map();
+app.post('/api/scheduled-emails/:id/preview', requireOrgRole('admin'), async (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ error: 'Bad id' });
+  if (!SMTP_CONFIGURED) return res.status(503).json({ error: 'Email is not configured on this server. Set SMTP_HOST/PORT/USER/PASS and FROM_EMAIL.' });
+  if (!req.user?.email) return res.status(400).json({ error: 'A signed-in user is required' });
+  const k = req.orgId, now = Date.now(), prev = (previewRate.get(k) || []).filter(t => now - t < 3600000);
+  if (prev.length >= 20) return res.status(429).json({ error: 'That is a lot of previews for one hour. Try again later.' });
+  previewRate.set(k, prev.concat(now));
+  const row = (await req.db.query('SELECT * FROM scheduled_emails WHERE id = $1 AND org_id = $2', [req.params.id, req.orgId])).rows[0];
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  try {
+    const org = (await q('SELECT id, name, plan_tier, features FROM organizations WHERE id = $1', [req.orgId])).rows[0];
+    const r = await scheduler.previewFor(req.db, org, row, req.user.email, req.user.name);
+    res.json({ ok: true, sent: r.sent, note: r.note, to: req.user.email });
+  } catch (e) {
+    console.error('scheduled email preview failed:', e.message);
+    res.status(502).json({ error: 'The preview could not be sent: ' + e.message });
+  }
 });
 
 // Firm submission links and inbox (signed-in customers).
@@ -3586,6 +3958,11 @@ function requireFeature(key) {
   };
 }
 
+
+async function loadClosedCases(req) {
+  try { const r = await req.db.query(`SELECT * FROM cases WHERE org_id = $1 AND status = 'Closed' ORDER BY updated_at DESC LIMIT 3000`, [req.orgId]); return r.rows.map(rowToCase); }
+  catch (e) { return []; }
+}
 // Sentinel Match — recommends which attorney should handle this matter.
 app.post('/api/ai/sentinel-match/:caseId', requireFeature('sentinel_match'), async (req, res) => {
   try {
@@ -3597,7 +3974,8 @@ app.post('/api/ai/sentinel-match/:caseId', requireFeature('sentinel_match'), asy
       [req.orgId]
     );
     const system = 'You are Sentinel Match, an AI that recommends the best-fit attorney for a litigation matter based on specialization, workload, and case complexity. Be specific and concise — 3-4 sentences, name your top recommendation and briefly justify it. This is a recommendation for a human to review, not an automatic assignment.';
-    const prompt = `Matter to assign:\n${JSON.stringify(caseSummaryForAI(c), null, 2)}\n\nCurrent attorney workloads (open matter count):\n${JSON.stringify(roster.rows, null, 2)}\n\nWho should handle this matter, and why?`;
+    const past = trackRecordText(counselTrackRecords(await loadClosedCases(req)), roster.rows.map(r => r.attorney), c.type);
+    const prompt = `Matter to assign:\n${JSON.stringify(caseSummaryForAI(c), null, 2)}\n\nCurrent attorney workloads (open matter count):\n${JSON.stringify(roster.rows, null, 2)}\n\n${past ? past + '\n\n' : ''}Who should handle this matter, and why?`;
     const analysis = await callClaude(system, prompt, 400);
     await audit(req.orgId, req.user?.sub, 'ai.sentinel_match', 'case', c.id, null, req.ip);
     res.json({ analysis });
@@ -3958,7 +4336,7 @@ function computeHealthReport(cases) {
     return { matterNo: r.matterNo, client: r.client, attorney: r.attorney || 'Unassigned', value: r.value, why, action, score: Math.round(score) };
   }).filter(Boolean).sort((a, b) => b.score - a.score).slice(0, 10);
 
-  // 8. Plain-English "what Case Closed Sentinel does about this" counts. The
+  // 8. Plain-English "what Case Closed does about this" counts. The
   // routing simulation hands unassigned matters, one at a time, to whoever
   // currently carries the fewest open files.
   const sim = {}; Object.entries(byAtty).forEach(([k, a]) => { sim[k] = a.open; });
@@ -4392,7 +4770,8 @@ app.post('/api/recommend-attorney', requireFeature('sentinel_match'), async (req
     const roster = attorneys.map(name => ({ name, openMatters: workloadMap[name] || 0 }));
 
     const system = 'You recommend the best-fit attorney for a new litigation matter from a given roster, tiered gold/silver/bronze. Return a JSON object with EXACTLY this shape: {"gold": {"attorney": "<name from roster>", "reasoning": "<1 sentence>"}, "silver": {"attorney": "<different name from roster>", "reasoning": "<1 sentence>"}, "bronze": {"attorney": "<different name from roster>", "reasoning": "<1 sentence>"}}. All three attorney names MUST be exactly as given in the roster and MUST be three different people. Weigh case type fit, priority, and current workload (fewer open matters is generally better, but not the only factor).';
-    const prompt = `New matter:\n${JSON.stringify(caseDetails, null, 2)}\n\nAvailable attorneys with current open-matter counts:\n${JSON.stringify(roster, null, 2)}\n\nRecommend gold/silver/bronze.`;
+    const past = trackRecordText(counselTrackRecords(await loadClosedCases(req)), attorneys, caseDetails && caseDetails.type);
+    const prompt = `New matter:\n${JSON.stringify(caseDetails, null, 2)}\n\nAvailable attorneys with current open-matter counts:\n${JSON.stringify(roster, null, 2)}\n\n${past ? past + '\n\n' : ''}Recommend gold/silver/bronze.`;
     const recommendations = await callClaudeJSON(system, prompt, 500);
     await audit(req.orgId, req.user?.sub, 'ai.recommend_attorney', null, null, null, req.ip);
     res.json(recommendations);
@@ -4438,7 +4817,7 @@ app.post('/api/reports/email', async (req, res) => {
   try {
     const info = await mailer.sendMail({
       from: process.env.FROM_EMAIL || process.env.SMTP_USER,
-      to: recipients, subject: subject || `Report: ${reportName || 'Case Closed Sentinel Report'}`,
+      to: recipients, subject: subject || `Report: ${reportName || 'Case Closed Report'}`,
       text: message || `Attached: ${reportName || 'report'}`,
       attachments: [{ filename: filename || 'report.csv', content: csv, contentType: 'text/csv' }]
     });
@@ -4589,7 +4968,7 @@ async function buildSentinelDigest(orgId, db) {
   };
 
   const subject = `Sentinel Digest — ${orgName} — week of ${today}`;
-  const footer = `\n\n---\nPrepared by Sentinel from your Case Closed Sentinel data as of ${today}. AI-written summaries can contain errors; please verify before acting. This is not legal advice.\n`;
+  const footer = `\n\n---\nPrepared by Sentinel from your Case Closed data as of ${today}. AI-written summaries can contain errors; please verify before acting. This is not legal advice.\n`;
   let body, usedAI = false;
   try {
     const system = 'You are Sentinel, the analyst inside a litigation-management platform for insurance carriers and TPAs. Write a weekly executive briefing for a busy claims or legal executive who will read it on their phone in two minutes. Use ONLY the data provided; never invent facts, names, dates or numbers, and quote figures exactly as given. Plain text only: no markdown symbols, no asterisks or pound signs. Use these ALL-CAPS section headings, skipping any section that has nothing to say: HEADLINE (2 sentences: the single most important thing this week), WHAT CHANGED THIS WEEK, NEEDS A DECISION, DEADLINES AND RISK, MONEY, WORKLOAD, RECOMMENDED ACTIONS (3 to 5 specific, numbered actions that name the matters and people involved). Use short hyphen bullets. Aim for 300 to 450 words. Be direct and calm; flag what is urgent without alarm. Do not give legal advice and do not predict case outcomes.';
@@ -4648,6 +5027,13 @@ function freqDue(freq, lastSent, et, dayLong) {
   const wk = d => { const [y, m, dd] = d.split('-').map(Number); return isoWeekKey(new Date(y, m - 1, dd)); };
   return !weekend && (!lastSent || wk(lastSent) !== wk(et.date));
 }
+// Customers who set up the new scheduled emails for a kind are skipped by the older fixed timers.
+async function orgsWithSchedule(client, kind) {
+  try {
+    if (!(await ensureSchedTables())) return new Set();
+    return new Set((await client.query(`SELECT DISTINCT org_id FROM scheduled_emails WHERE kind = $1 AND enabled = true`, [kind])).rows.map(x => x.org_id));
+  } catch (e) { return new Set(); }
+}
 async function runWeeklyDigestCheck(){
   if (!SMTP_CONFIGURED) return;
   const et = easternNow();
@@ -4659,12 +5045,14 @@ async function runWeeklyDigestCheck(){
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query(`SET LOCAL app.is_platform_admin = 'true'`);
+    await client.query(`SET LOCAL app.is_platform_admin = 'true'; SET LOCAL app.current_org_id = '00000000-0000-0000-0000-000000000000'`);
     const all = await client.query(
       `SELECT w.*, o.plan_tier, o.features FROM weekly_digest_config w JOIN organizations o ON o.id = w.org_id
        WHERE w.enabled = true AND o.access_status = 'active'`
     );
+    const skipDigest = await orgsWithSchedule(client, 'digest');
     const due = { rows: all.rows.filter(r => {
+      if (skipDigest.has(r.org_id)) return false; // this customer set up the new schedules instead
       const f = r.features || {};
       const freq = REPORT_FREQS.includes(f.digest_freq) ? f.digest_freq : 'weekly';
       return freqDue(freq, f.digest_last_sent || '', et, r.day_of_week);
@@ -4703,6 +5091,22 @@ async function runWeeklyDigestCheck(){
 }
 setInterval(runWeeklyDigestCheck, 60 * 60 * 1000); // every hour
 runWeeklyDigestCheck(); // also check once on startup, in case the process just woke up on the right day
+
+// The scheduled-emails engine (scheduled-emails.js): checks every 10 minutes for anything due.
+const scheduler = makeScheduler({
+  pool, mailer, smtpConfigured: SMTP_CONFIGURED, from: process.env.FROM_EMAIL || process.env.SMTP_USER,
+  easternNow, rowToCase, appUrl: `${process.env.APP_URL || 'http://localhost:3000'}/case-closed-pro.html`,
+  legacy: {
+    async digestFor(client, org) {
+      if (orgFeatures(org).sentinel_digest) { const d = await buildSentinelDigest(org.id, client); return { subject: d.subject, text: d.text, save: true }; }
+      return { subject: `Weekly Executive Summary — ${new Date().toISOString().slice(0, 10)}`, text: await buildWeeklyDigestText(org.id, client), save: false };
+    },
+    saveDigest: (client, orgId, d) => saveSentinelDigest(client, orgId, d),
+    alertMessages: alertMessagesForOrg
+  }
+});
+setInterval(() => { scheduler.tick().catch(e => console.error('Scheduled email tick failed:', e.message)); }, 10 * 60 * 1000).unref?.();
+setTimeout(() => { ensureSchedTables().then(ok => ok && scheduler.tick()).catch(e => console.error('Scheduled email startup check failed:', e.message)); }, 60 * 1000);
 
 // ---------------------------------------------------------------
 // Daily alert emails — OPTIONAL (off until an owner/admin turns them on).
@@ -4831,6 +5235,10 @@ function computeAlertItems(cases, opts = {}) {
   add('trial', 'amber', `Trial in the next ${ALERT_T.TRIAL_DAYS} days`, trial, c => `${label(c)} — ${c.keyDates.trialDate} (${dtxt(dleft(c.keyDates.trialDate))})`);
   const burn = open.filter(c => (c.insurance?.reserveAmount || 0) > 0 && (c.billing?.totalBilled || 0) / c.insurance.reserveAmount > ALERT_T.BURN_PCT);
   add('burn', 'amber', `Spend above ${Math.round(ALERT_T.BURN_PCT * 100)}% of reserve`, burn, c => `${label(c)} — billed ${money(c.billing.totalBilled)} of ${money(c.insurance.reserveAmount)}`);
+  add('budget_over', 'red', 'Defense spend over budget', open.filter(c => budgetStatus(c).level === 'over'), c => { const b = budgetStatus(c); return `${label(c)} — billed ${money(b.billed)} of ${money(b.budget)} budget (${Math.round(b.pct * 100)}%)`; });
+  add('budget_warn', 'amber', 'Defense spend at 75% of budget or more', open.filter(c => budgetStatus(c).level === 'warn'), c => { const b = budgetStatus(c); return `${label(c)} — billed ${money(b.billed)} of ${money(b.budget)} budget (${Math.round(b.pct * 100)}%)`; });
+  const pendingReq = open.flatMap(c => ['authorityRequests', 'reserveRequests', 'budgetRequests'].flatMap(k => (c[k] || []).filter(a => a && a.status === 'Pending').map(() => c)));
+  add('approvals', 'amber', 'Requests waiting for approval', [...new Set(pendingReq)], c => `${label(c)} — ${pendingReq.filter(x => x === c).length} waiting`);
   const stale = open.filter(c => caseLastActivityMs(c) && now - caseLastActivityMs(c) > ALERT_T.STALE_DAYS * day).sort((a, b) => caseLastActivityMs(a) - caseLastActivityMs(b));
   add('stale', 'amber', `No activity in ${ALERT_T.STALE_DAYS}+ days`, stale, c => `${label(c)} — quiet ${Math.floor((now - caseLastActivityMs(c)) / day)} days`);
   add('nostep', 'amber', 'No next step recorded', open.filter(c => !c.nextStep), c => label(c));
@@ -4863,30 +5271,34 @@ function buildAlertEmail(orgName, recipientName, items, personal) {
     if (i.more) t += `   - ...and ${i.more} more\n`;
     t += '\n';
   });
-  t += `Open Case Closed Sentinel to see the full list:\n${url}\n\n`;
+  t += `Open Case Closed to see the full list:\n${url}\n\n`;
   t += personal ? '' : 'You get this email because you are an owner or admin of this account. Any admin can turn these emails off from the dashboard.\n';
-  return { subject: items.length ? `Case Closed Sentinel: ${total} item${total !== 1 ? 's' : ''} need attention — ${orgName}` : `Case Closed Sentinel: all clear — ${orgName}`, text: t };
+  return { subject: items.length ? `Case Closed: ${total} item${total !== 1 ? 's' : ''} need attention — ${orgName}` : `Case Closed: all clear — ${orgName}`, text: t };
 }
 function easternNow() {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hour12: false, weekday: 'short' }).formatToParts(new Date()).map(p => [p.type, p.value]));
   return { date: `${parts.year}-${parts.month}-${parts.day}`, hour: parseInt(parts.hour, 10) % 24, weekday: parts.weekday };
 }
-async function sendAlertEmailsForOrg(client, org) {
+async function alertMessagesForOrg(client, org) {
   const casesResult = await client.query('SELECT * FROM cases WHERE org_id = $1', [org.id]);
   const cases = casesResult.rows.map(rowToCase);
   const users = (await client.query('SELECT id, email, name, role FROM users WHERE org_id = $1 AND is_active = true', [org.id])).rows;
   const pay = await client.query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(amount),0) AS amt FROM payables WHERE org_id = $1 AND status = 'Submitted'`, [org.id]);
   const orgItems = computeAlertItems(cases, { payablesWaiting: pay.rows[0].n, payablesAmount: Number(pay.rows[0].amt) });
-  let sent = 0;
+  const msgs = [];
   for (const u of users) {
     const isMgr = u.role === 'owner' || u.role === 'admin';
     const items = isMgr ? orgItems : computeAlertItems(cases.filter(c => { const nm = (u.name || '').trim().toLowerCase(); return c.assignedAttorneyUserId === u.id || (nm && (claimsPrimary(c).toLowerCase() === nm || claimsBackup(c).toLowerCase() === nm)); }), { personal: true });
     if (!items.length) continue; // never email an empty day
     const mail = buildAlertEmail(org.name, u.name, items, !isMgr);
-    await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: u.email, subject: mail.subject, text: mail.text });
-    sent++;
+    msgs.push({ to: u.email, subject: mail.subject, text: mail.text });
   }
-  return sent;
+  return msgs;
+}
+async function sendAlertEmailsForOrg(client, org) {
+  const msgs = await alertMessagesForOrg(client, org);
+  for (const m of msgs) await mailer.sendMail({ from: process.env.FROM_EMAIL || process.env.SMTP_USER, to: m.to, subject: m.subject, text: m.text });
+  return msgs.length;
 }
 async function runDailyAlertCheck() {
   if (!SMTP_CONFIGURED) return;
@@ -4896,13 +5308,14 @@ async function runDailyAlertCheck() {
   try {
     client = await pool.connect();
     await client.query('BEGIN');
-    await client.query(`SET LOCAL app.is_platform_admin = 'true'`);
+    await client.query(`SET LOCAL app.is_platform_admin = 'true'; SET LOCAL app.current_org_id = '00000000-0000-0000-0000-000000000000'`);
     const due = await client.query(
       `SELECT id, name, features FROM organizations
        WHERE access_status = 'active' AND name NOT LIKE 'Health Check —%'
          AND COALESCE(features->>'alert_emails_on', 'false') = 'true'
          AND COALESCE(features->>'alert_emails_last_sent', '') <> $1`, [et.date]);
-    due.rows = due.rows.filter(o => freqDue(REPORT_FREQS.includes(o.features?.alert_emails_freq) ? o.features.alert_emails_freq : 'daily', o.features?.alert_emails_last_sent || '', et, null));
+    const skipAlerts = await orgsWithSchedule(client, 'alerts');
+    due.rows = due.rows.filter(o => !skipAlerts.has(o.id) && freqDue(REPORT_FREQS.includes(o.features?.alert_emails_freq) ? o.features.alert_emails_freq : 'daily', o.features?.alert_emails_last_sent || '', et, null));
     for (const org of due.rows) {
       try {
         const n = await sendAlertEmailsForOrg(client, org);
@@ -4938,9 +5351,9 @@ function buildDemandEmail(orgName, recipientName, rows, backupFor, missingBackup
     t += `  ${tag} ${demandLine(r)}${bk}\n`;
   });
   if (missingBackup && missingBackup.length) {
-    t += `\nNo backup claims person is assigned on: ${missingBackup.map(c => c.matterNo || c.id).join(', ')}. Assign one in Case Closed Sentinel so these dates are double-tracked.\n`;
+    t += `\nNo backup claims person is assigned on: ${missingBackup.map(c => c.matterNo || c.id).join(', ')}. Assign one in Case Closed so these dates are double-tracked.\n`;
   }
-  t += `\nRecord the response (accepted, rejected, counter-offered, or extension granted) in Case Closed Sentinel so demand reminders stop:\n${url}\n\n`;
+  t += `\nRecord the response (accepted, rejected, counter-offered, or extension granted) in Case Closed so demand reminders stop:\n${url}\n\n`;
   t += 'An unanswered time-limit demand can expose the insurer to a judgment above policy limits, and a missed statute of limitations can end a defense or create a claim against the firm. This is an automated reminder, not legal advice; confirm deadlines against the source documents and with counsel.\n';
   const kind = demands.length && demands.length === rows.length ? 'time-limit demand' : 'time-critical date';
   return { subject: `${late ? 'URGENT PAST DEADLINE' : 'URGENT'}: ${rows.length} ${kind}${rows.length !== 1 ? 's' : ''} — ${orgName}`, text: t };
@@ -4978,7 +5391,7 @@ async function runDemandWatchCheck() {
   try {
     client = await pool.connect();
     await client.query('BEGIN');
-    await client.query(`SET LOCAL app.is_platform_admin = 'true'`);
+    await client.query(`SET LOCAL app.is_platform_admin = 'true'; SET LOCAL app.current_org_id = '00000000-0000-0000-0000-000000000000'`);
     const due = await client.query(
       `SELECT id, name FROM organizations
        WHERE access_status = 'active' AND name NOT LIKE 'Health Check —%'
@@ -5078,7 +5491,7 @@ function buildEscalationEmail(orgName, kind, c, d, hrs, acked) {
   t += `Matter: ${c.matterNo || c.id} ${c.client}\nState: ${d.state || 'not set'}\nDeadline: ${demandDeadlineText(d)}\nTime: ${hoursText(hrs)}\n`;
   if (Number(d.demandAmount)) t += `Demand: $${Math.round(Number(d.demandAmount)).toLocaleString('en-US')}${Number(d.policyLimits) ? ` (limits $${Math.round(Number(d.policyLimits)).toLocaleString('en-US')})` : ''}\n`;
   t += `${caseTeamText(c).replace(/^ — /, '')}\nAcknowledged: ${acked ? 'yes, by everyone assigned' : 'NO'}\n`;
-  t += `\nOpen it, acknowledge it, and record the response:\n${url}\n\nResponding to the demand in Case Closed Sentinel ends these notices. This is an automated reminder, not legal advice; confirm the deadline against the demand letter and with counsel.\n`;
+  t += `\nOpen it, acknowledge it, and record the response:\n${url}\n\nResponding to the demand in Case Closed ends these notices. This is an automated reminder, not legal advice; confirm the deadline against the demand letter and with counsel.\n`;
   const sub = kind.late ? `URGENT PAST DEADLINE: ${c.client} time-limit demand` : kind.isNew ? `New time-limit demand: ${c.client}` : `[Escalation: ${kind.label}] ${hoursText(hrs)}: ${c.client} time-limit demand`;
   return { subject: sub, text: t };
 }
@@ -5152,7 +5565,7 @@ async function runDemandEscalations() {
   try {
     client = await pool.connect();
     await client.query('BEGIN');
-    await client.query(`SET LOCAL app.is_platform_admin = 'true'`);
+    await client.query(`SET LOCAL app.is_platform_admin = 'true'; SET LOCAL app.current_org_id = '00000000-0000-0000-0000-000000000000'`);
     const orgs = await client.query(
       `SELECT id, name, features FROM organizations
        WHERE access_status = 'active' AND name NOT LIKE 'Health Check —%' AND COALESCE(features->>'demand_emails_on', 'false') = 'true'`);
@@ -5289,7 +5702,7 @@ async function runDailyBackupCheck(){
     let dump;
     try {
       await client.query('BEGIN');
-      await client.query(`SET LOCAL app.is_platform_admin = 'true'`); // cross-org export, same bypass pattern as the admin org directory
+      await client.query(`SET LOCAL app.is_platform_admin = 'true'; SET LOCAL app.current_org_id = '00000000-0000-0000-0000-000000000000'`); // cross-org export, same bypass pattern as the admin org directory
       dump = {};
       for (const table of BACKUP_TABLES) {
         const result = await client.query(`SELECT * FROM ${table}`); // table names come only from the fixed BACKUP_TABLES list above, never user input
@@ -5316,7 +5729,7 @@ async function runDailyBackupCheck(){
     await mailer.sendMail({
       from: process.env.FROM_EMAIL || process.env.SMTP_USER,
       to: recipient,
-      subject: `Case Closed Sentinel — daily backup — ${dateStr}`,
+      subject: `Case Closed — daily backup — ${dateStr}`,
       text: `Attached: a full export of every application table as of ${new Date().toISOString()}.\n\n` +
         Object.entries(tableCounts).map(([t, n]) => `  ${t}: ${n} row(s)`).join('\n') +
         `\n\nThis file contains real customer data — store and delete it accordingly. It is gzip-compressed JSON; ` +
@@ -5356,7 +5769,7 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Case Closed Sentinel API (production) listening on :${PORT}`);
+  console.log(`Case Closed API (production) listening on :${PORT}`);
   console.log(SMTP_CONFIGURED ? `Email sending ENABLED via ${process.env.SMTP_HOST}` : 'Email sending DISABLED — set SMTP_HOST/USER/PASS to enable');
   console.log(API_KEY ? 'Static API_KEY auth path ENABLED (requires X-Org-Id header)' : 'Static API_KEY auth path DISABLED — user JWTs only');
 });

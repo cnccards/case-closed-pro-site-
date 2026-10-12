@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>Case Closed Sentinel — Carrier-Grade Litigation Intelligence</title>
+<title>Case Closed — Carrier-Grade Litigation Intelligence</title>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700;9..144,900&family=Inter+Tight:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
 
 <!-- BLOCKER 7: Monitoring with Sentry (Error Tracking) -->
@@ -220,7 +220,15 @@ label{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing
     min-width:0;
   }
   .nav-scroll::-webkit-scrollbar{display:none;}
+  .nav-row{flex-wrap:wrap;padding-left:12px !important;padding-right:12px !important;}
+  .nav-row .nav-scroll{flex:1 1 100% !important;order:-1;}
   .nav-side-btn{padding:7px 10px;font-size:11px;}
+  #ct table{display:block;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  #ct .card{max-width:100%;}
+  #ct [style*="display:flex"]{flex-wrap:wrap;}
+  #ct select,#ct input:not([type=checkbox]):not([type=radio]),#ct textarea{max-width:100%;}
+  .row-link{min-height:40px;}
+  .btn{min-height:36px;}
   /* Search box: fixed 260px width would force the header row to overflow
      next to the brand mark and user avatar on a phone. Give it its own
      full-width row underneath instead of squeezing it into the top row. */
@@ -265,7 +273,7 @@ label{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing
 <div id="app"></div>
 <script>
 /* ============================================================
-   CASE CLOSED PRO v2 — Carrier-Grade Litigation Intelligence
+   CASE CLOSED v2 — Carrier-Grade Litigation Intelligence
    Single-file SaaS prototype. Insurance defense focus.
    ============================================================ */
 
@@ -1711,7 +1719,7 @@ function syncCaseToApi(c) {
       carrier: insurance?.carrier, claimNo: insurance?.claimNo, reserveAmount: insurance?.reserveAmount,
       data
     })
-  }).catch(e => console.error('Background sync failed for', id, ':', e.message));
+  }).catch(e => { console.error('Background sync failed for', id, ':', e.message); if (/^Approval rule:/.test(e.message)) { alert(e.message.replace(/^Approval rule:\s*/, '')); if (typeof loadCasesFromApi === 'function') loadCasesFromApi().then(() => render()).catch(() => {}); } });
 }
 
 const gc = () => S.caseId ? CASES.find(c => c.id === S.caseId) : null;
@@ -1747,6 +1755,7 @@ function getDeadlineAlerts(){
       const d = daysUntil(c.keyDates.mediationDate);
       if (d <= 90) alerts.push({caseId:c.id, matterNo:label, client:c.client, kind:'Mediation', tab:'dates', date:c.keyDates.mediationDate, days:d, text:'Mediation date'});
     }
+    { const bs = budgetState(c); if (bs.level === 'over' || bs.level === 'warn') alerts.push({caseId:c.id, matterNo:label, client:c.client, kind:'Budget', tab:'billing', date:'', days:bs.level === 'over' ? 0 : 7, flag:true, text:(bs.level === 'over' ? 'Over budget: ' : 'At '+Math.round(bs.pct*100)+'% of budget: ')+fM(bs.billed)+' of '+fM(bs.budget)}); }
     if (c.nextStep && c.nextStepDue) {
       const d = daysUntil(c.nextStepDue);
       if (d <= 30) alerts.push({caseId:c.id, matterNo:label, client:c.client, kind:'Next Step', tab:'overview', date:c.nextStepDue, days:d, text:c.nextStep});
@@ -1905,7 +1914,7 @@ async function demoUnlock(){
 }
 async function demoGateSend(){
   const v = id => (document.getElementById(id) || {value:''}).value.trim();
-  const name = v('dgName'), email = v('dgEmail'), company = v('dgCompany'), message = v('dgMsg') || 'I would like to see a live demo of Case Closed Sentinel.';
+  const name = v('dgName'), email = v('dgEmail'), company = v('dgCompany'), message = v('dgMsg') || 'I would like to see a live demo of Case Closed.';
   if (!name || !email || !email.includes('@')) { st({dgMsgOut:'', dgErr:'Enter your name and a valid work email.'}); return; }
   st({dgBusy:true, dgErr:''});
   try {
@@ -1924,11 +1933,11 @@ function demoGateV(){
   const lbl = 'display:block;font-size:11px;font-weight:700;color:var(--muted);margin:10px 0 4px;';
   let h = '<div style="min-height:100vh;background:linear-gradient(160deg,#0b2b52 0%, var(--pri) 45%, var(--pri2) 130%);padding:36px 16px;display:flex;align-items:center;justify-content:center;">';
   h += '<div style="max-width:880px;width:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;">';
-  h += '<div style="color:#fff;padding:8px 6px;"><div style="font-family:var(--serif);font-size:30px;font-weight:700;line-height:1.2;margin-bottom:12px;">See Case Closed Sentinel live</div>'+
+  h += '<div style="color:#fff;padding:8px 6px;"><div style="font-family:var(--serif);font-size:30px;font-weight:700;line-height:1.2;margin-bottom:12px;">See Case Closed live</div>'+
     '<div style="font-size:14.5px;color:#C9D8EC;line-height:1.7;margin-bottom:20px;">The best way to see it is with one of us. We walk through your own litigated-claim workflow, including how Verdict Shield keeps time-limit demands from going unanswered.</div>'+
     '<a href="'+LIVE_DEMO_VIDEO_URL+'" target="_blank" rel="noopener" style="display:inline-block;background:#fff;color:var(--pri);padding:13px 24px;border-radius:8px;font-weight:800;font-size:14px;text-decoration:none;">📹 Book a live video demo</a>'+
     '<div style="font-size:12px;color:#9FB4D3;margin-top:10px;">Pick a time that works. Usually 30 minutes.</div>'+
-    '<div style="margin-top:34px;border-top:1px solid rgba(255,255,255,.2);padding-top:16px;"><span style="font-size:12.5px;color:#C9D8EC;">Case Closed Sentinel team?</span> <span style="font-size:12.5px;color:#fff;font-weight:700;cursor:pointer;text-decoration:underline;" onclick="st({dgPwOpen:'+(!S.dgPwOpen)+',dgPwErr:\'\'})">Enter the demo password</span>';
+    '<div style="margin-top:34px;border-top:1px solid rgba(255,255,255,.2);padding-top:16px;"><span style="font-size:12.5px;color:#C9D8EC;">Case Closed team?</span> <span style="font-size:12.5px;color:#fff;font-weight:700;cursor:pointer;text-decoration:underline;" onclick="st({dgPwOpen:'+(!S.dgPwOpen)+',dgPwErr:\'\'})">Enter the demo password</span>';
   if (S.dgPwOpen) h += '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;"><input id="dgPw" type="password" autocomplete="off" placeholder="Demo password" style="'+inp2+'max-width:230px;" onkeydown="if(event.key===\'Enter\')demoUnlock()"><button onclick="demoUnlock()" style="background:var(--pri3);color:#00263a;border:none;border-radius:8px;padding:10px 18px;font-weight:800;cursor:pointer;">Open the demo</button></div>'+(S.dgPwErr?'<div style="color:#FECACA;font-size:12px;margin-top:6px;">'+esc(S.dgPwErr)+'</div>':'');
   h += '</div></div>';
   h += '<div style="background:#fff;border-radius:14px;padding:22px 24px;box-shadow:0 24px 60px rgba(0,10,30,.35);">';
@@ -2152,7 +2161,7 @@ function landingPageV() {
         '<rect x="278" y="80" width="10" height="27" fill="#F5B700" stroke="none"/>'+
         '<rect x="261" y="80" width="10" height="20" fill="#F5B700" stroke="none"/>'+
         '<rect x="244" y="80" width="10" height="13" fill="#F5B700" stroke="none"/></svg></div>';
-  h += '<div style="font-weight:700;font-size:18px;color:var(--ink);font-family:var(--serif);">Case Closed Sentinel</div>';
+  h += '<div style="font-weight:700;font-size:18px;color:var(--ink);font-family:var(--serif);">Case Closed</div>';
   h += '</div>';
   h += '<div style="display:flex;gap:30px;align-items:center;font-size:14px;">';
   const navLink = (id, label) => '<a href="#" onclick="st({showLandingTab:\''+id+'\'});return false;" style="color:'+(tab===id?'var(--pri2)':'var(--muted)')+';text-decoration:underline;text-underline-offset:3px;cursor:pointer;font-weight:'+(tab===id?'700':'500')+';">'+label+'</a>';
@@ -2185,7 +2194,7 @@ function landingPageV() {
   if (tab === 'roi') {
     h += '<div style="padding:100px 40px;text-align:center;max-width:700px;margin:0 auto;">';
     h += '<h1 style="font-family:var(--serif);font-size:34px;font-weight:700;color:var(--ink);margin-bottom:16px;">ROI Calculator</h1>';
-    h += '<p style="font-size:15px;color:var(--muted);line-height:1.7;margin-bottom:28px;">Most firms recoup the cost of Case Closed Sentinel from a single improved settlement decision. Talk to sales for a portfolio-specific ROI estimate.</p>';
+    h += '<p style="font-size:15px;color:var(--muted);line-height:1.7;margin-bottom:28px;">Most firms recoup the cost of Case Closed from a single improved settlement decision. Talk to sales for a portfolio-specific ROI estimate.</p>';
     h += '<button onclick="window.location.href=\'mailto:sales@cclosed.com?subject=ROI%20Estimate%20Request\'" style="background:var(--pri);color:#fff;border:none;padding:12px 28px;border-radius:7px;font-weight:700;cursor:pointer;font-size:14px;">Request an ROI Estimate</button>';
     h += '</div>';
     h += '</div>';
@@ -2205,7 +2214,7 @@ function landingPageV() {
   h += '<div style="background:linear-gradient(160deg,#0b2b52 0%, var(--pri) 45%, var(--pri2) 130%);color:#fff;padding:90px 40px 70px;text-align:center;">';
   h += '<div style="display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(0,201,219,.5);color:var(--pri3);font-size:11px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;padding:7px 18px;border-radius:20px;margin-bottom:34px;">✦ Carrier-Grade Litigation Intelligence</div>';
   h += '<h1 style="font-family:var(--serif);font-size:48px;font-weight:700;line-height:1.15;max-width:900px;margin:0 auto 22px;">One shared source of truth for your claims team <span style="color:var(--pri3);">and</span> defense counsel.</h1>';
-  h += '<p style="font-size:16px;color:#C9D8EC;max-width:640px;margin:0 auto 34px;line-height:1.7;">Case Closed Sentinel replaces the email threads and spreadsheets between claims and outside counsel with a single litigation platform — from first assignment to a closing package your claims team can actually act on.</p>';
+  h += '<p style="font-size:16px;color:#C9D8EC;max-width:640px;margin:0 auto 34px;line-height:1.7;">Case Closed replaces the email threads and spreadsheets between claims and outside counsel with a single litigation platform — from first assignment to a closing package your claims team can actually act on.</p>';
   h += '<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">';
   h += '<button onclick="window.open(\'https://calendly.com/cclosed\')" style="background:#fff;color:var(--pri);padding:13px 26px;border:none;border-radius:7px;font-weight:700;cursor:pointer;font-size:14px;">See a Live Demo</button>';
   h += '<button onclick="window.location.href=\'mailto:sales@cclosed.com?subject=90-Day%20Pilot\'" style="background:transparent;color:#fff;padding:13px 26px;border:1px solid rgba(255,255,255,.5);border-radius:7px;font-weight:700;cursor:pointer;font-size:14px;">Start a 90-Day Pilot</button>';
@@ -2247,7 +2256,7 @@ function landingPageV() {
 
   /* Footer */
   h += '<div style="padding:36px 40px;background:#fff;text-align:center;color:var(--dim);font-size:12.5px;border-top:1px solid var(--line);">';
-  h += '<p>© 2026 Case Closed Sentinel. All rights reserved. &nbsp;|&nbsp; <a href="mailto:sales@cclosed.com" style="color:var(--pri2);text-decoration:none;">sales@cclosed.com</a></p></div>';
+  h += '<p>© 2026 Case Closed. All rights reserved. &nbsp;|&nbsp; <a href="mailto:sales@cclosed.com" style="color:var(--pri2);text-decoration:none;">sales@cclosed.com</a></p></div>';
 
   h += '</div>';
   return h;
@@ -2285,7 +2294,7 @@ function attorneyLoginV() {
   let h = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:linear-gradient(135deg, var(--pri2), var(--pri2)dd);">';
   h += '<div style="background:white;border-radius:12px;padding:40px;width:90%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,0.3);">';
   h += '<div style="text-align:center;margin-bottom:30px;">';
-  h += '<div style="font-size:32px;font-weight:700;margin-bottom:8px;">Case Closed Sentinel</div>';
+  h += '<div style="font-size:32px;font-weight:700;margin-bottom:8px;">Case Closed</div>';
   h += '<div style="font-size:13px;color:var(--muted);">Attorney Portal — Case Management</div>';
   h += '</div>';
   h += '<div class="fld"><label class="lbl">Select Your Name</label>';
@@ -2562,7 +2571,7 @@ function carrierLoginV() {
   h += '<div style="background:white;border-radius:12px;padding:40px;width:90%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,0.3);">';
   h += '<div style="text-align:center;margin-bottom:30px;">';
   h += '<div style="font-size:32px;font-weight:700;margin-bottom:8px;">Carrier Portal</div>';
-  h += '<div style="font-size:13px;color:var(--muted);">Case Closed Sentinel</div>';
+  h += '<div style="font-size:13px;color:var(--muted);">Case Closed</div>';
   h += '</div>';
   h += '<div class="fld"><label class="lbl">Select Your Company</label>';
   h += '<select class="inp" id="carrierSelect" style="padding:10px;border:1px solid var(--line);border-radius:6px;font-size:13px;">';
@@ -2687,6 +2696,13 @@ function render(){
   html += '<div id="ct">';
   if (S.role === 'calendar') html += calendarV();
   else if (S.role === 'lifecycle') html += lifecycleV();
+  else if (S.role === 'sched') html += schedV();
+  else if (S.role === 'diary') html += diaryV();
+  else if (S.role === 'approvals') html += apvV();
+  else if (S.role === 'matters') html += mattersV();
+  else if (S.role === 'audit') html += auditV();
+  else if (S.role === 'risk') html += riskV();
+  else if (S.role === 'creport') html += clientReportV();
   else if (S.role === 'litigation') html += litigationDashV();
   else if (S.role === 'tpa') html += tpaV();
   else if (S.role === 'premium') html += premiumHubV();
@@ -2817,7 +2833,7 @@ document.addEventListener('click', function(e){
    Owners and admins see everything. A member (an attorney or adjuster who only works their own matters) sees the
    daily-work pages. This hides pages to keep the menu simple. The data itself is protected on the server: a member
    only ever receives the matters assigned to them, whatever page they open. */
-const MEMBER_PAGES = ['today','litigation','attorney','demands','claims','calendar','activity'];
+const MEMBER_PAGES = ['today','diary','matters','litigation','attorney','demands','claims','calendar','activity'];
 function viewAsOn(){ return !!(DEMO_MODE || !authToken); }
 function userTier(){
   if (viewAsOn()) return S.viewAs === 'member' ? 'member' : 'owner';
@@ -2904,6 +2920,1086 @@ function lifecycleV(){
   return h;
 }
 
+/*==NEW-FEATURES-BEGIN==*/
+const SCH = (function(){
+// ---------------------------------------------------------------
+// SCHEDULES FOR RECURRING EMAILS. Pure date math: no database, no email, no clock of its own.
+// server.js owns the sending; this file only answers "is this email due today?" and "when is
+// the next one?". All dates are plain 'YYYY-MM-DD' strings in Eastern time (the server passes
+// today's Eastern date in), so there is no time-zone arithmetic in here to get wrong.
+//
+// A schedule looks like:
+//   { pattern: 'daily' | 'weekdays' | 'every_other_day' | 'days' | 'weekly' | 'biweekly' | 'monthly',
+//     days:     ['Mon','Fri']            // pattern 'days': any mix of weekdays
+//     weekday:  'Mon'                    // weekly, biweekly, and monthly 'first_weekday'
+//     monthlyMode: 'day_of_month' | 'first_weekday' | 'last_business_day',
+//     dayOfMonth: 1..28,                 // monthly 'day_of_month'
+//     hour: 0..23,                       // Eastern; sends at the first check after this hour
+//     start: 'YYYY-MM-DD' }              // first possible send; also anchors every-other-day / biweekly
+//
+// A server on a sleeping (free) plan can miss the exact day. So "due" means: the most recent
+// day this schedule should have fired is later than the last day it actually sent, and that
+// day is recent enough that sending it late still makes sense (see MAX_LATE).
+// ---------------------------------------------------------------
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const PATTERNS = ['daily', 'weekdays', 'every_other_day', 'days', 'weekly', 'biweekly', 'monthly'];
+const MONTHLY_MODES = ['day_of_month', 'first_weekday', 'last_business_day'];
+const LONG = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday' };
+// How many days late a missed send is still worth sending.
+const MAX_LATE = { daily: 1, weekdays: 1, every_other_day: 1, days: 2, weekly: 3, biweekly: 4, monthly: 5 };
+
+const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+function parse(s) {
+  const m = DATE_RE.exec(String(s || ''));
+  if (!m) throw new Error('Bad date: ' + s);
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  if (d.getUTCFullYear() !== +m[1] || d.getUTCMonth() !== +m[2] - 1 || d.getUTCDate() !== +m[3]) throw new Error('Bad date: ' + s);
+  return d;
+}
+const fmt = d => d.toISOString().slice(0, 10);
+const addDays = (s, n) => { const d = parse(s); d.setUTCDate(d.getUTCDate() + n); return fmt(d); };
+const daysBetween = (a, b) => Math.round((parse(b) - parse(a)) / 864e5);
+const weekdayOf = s => WEEKDAYS[(parse(s).getUTCDay() + 6) % 7]; // Mon..Sun
+const mondayOf = s => addDays(s, -((parse(s).getUTCDay() + 6) % 7));
+const lastDayOfMonth = s => { const d = parse(s); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate(); };
+const isBusinessDay = s => !['Sat', 'Sun'].includes(weekdayOf(s));
+
+// Checks and cleans a schedule from the browser. Throws an Error with a plain-language message.
+function normalize(input, todayStr) {
+  const s = input && typeof input === 'object' ? input : {};
+  const pattern = PATTERNS.includes(s.pattern) ? s.pattern : null;
+  if (!pattern) throw new Error('Pick how often this should go out.');
+  const out = { pattern, hour: 7 };
+  const hr = s.hour === undefined || s.hour === null || s.hour === '' ? 7 : Number(s.hour);
+  if (!Number.isInteger(hr) || hr < 0 || hr > 23) throw new Error('Pick an hour between 12 AM and 11 PM.');
+  out.hour = hr;
+  if (pattern === 'days') {
+    const days = Array.isArray(s.days) ? s.days.filter(d => WEEKDAYS.includes(d)) : [];
+    const uniq = WEEKDAYS.filter(d => days.includes(d));
+    if (!uniq.length) throw new Error('Pick at least one day of the week.');
+    out.days = uniq;
+  }
+  if (pattern === 'weekly' || pattern === 'biweekly') {
+    if (!WEEKDAYS.includes(s.weekday)) throw new Error('Pick the day of the week.');
+    out.weekday = s.weekday;
+  }
+  if (pattern === 'monthly') {
+    const mode = MONTHLY_MODES.includes(s.monthlyMode) ? s.monthlyMode : 'day_of_month';
+    out.monthlyMode = mode;
+    if (mode === 'day_of_month') {
+      const dom = Number(s.dayOfMonth);
+      if (!Number.isInteger(dom) || dom < 1 || dom > 28) throw new Error('Pick a day of the month between 1 and 28 (so every month has it).');
+      out.dayOfMonth = dom;
+    }
+    if (mode === 'first_weekday') {
+      if (!WEEKDAYS.includes(s.weekday)) throw new Error('Pick the day of the week.');
+      out.weekday = s.weekday;
+    }
+  }
+  const startRaw = s.start ? String(s.start).slice(0, 10) : todayStr;
+  parse(startRaw); // throws on a bad date
+  out.start = startRaw;
+  return out;
+}
+
+// Does this schedule fire on this calendar day (ignoring the hour)?
+function fires(sch, day) {
+  if (day < sch.start) return false;
+  const wd = weekdayOf(day);
+  switch (sch.pattern) {
+    case 'daily': return true;
+    case 'weekdays': return wd !== 'Sat' && wd !== 'Sun';
+    case 'every_other_day': return daysBetween(sch.start, day) % 2 === 0;
+    case 'days': return (sch.days || []).includes(wd);
+    case 'weekly': return wd === sch.weekday;
+    case 'biweekly': return wd === sch.weekday && Math.round(daysBetween(mondayOf(sch.start), mondayOf(day)) / 7) % 2 === 0;
+    case 'monthly': {
+      const dom = parseInt(day.slice(8), 10);
+      if (sch.monthlyMode === 'first_weekday') return wd === sch.weekday && dom <= 7;
+      if (sch.monthlyMode === 'last_business_day') {
+        if (!isBusinessDay(day)) return false;
+        for (let i = dom + 1; i <= lastDayOfMonth(day); i++) { if (isBusinessDay(day.slice(0, 8) + String(i).padStart(2, '0'))) return false; }
+        return true;
+      }
+      return dom === Math.min(sch.dayOfMonth || 1, lastDayOfMonth(day));
+    }
+    default: return false;
+  }
+}
+
+// The latest day on or before `today` this schedule fires, or null (searches back 70 days).
+function lastScheduledDay(sch, today) {
+  for (let i = 0; i <= 70; i++) {
+    const d = addDays(today, -i);
+    if (d < sch.start) return null;
+    if (fires(sch, d)) return d;
+  }
+  return null;
+}
+
+// Is a send due right now? lastSent is the Eastern date of the last send ('' if never).
+// `hour` is the current Eastern hour. Never sends twice for the same scheduled day.
+function isDue(sch, lastSent, today, hour) {
+  const due = lastScheduledDay(sch, today);
+  if (!due) return false;
+  if (lastSent && lastSent >= due) return false;
+  if (due === today && hour < sch.hour) return false;
+  return daysBetween(due, today) <= (MAX_LATE[sch.pattern] || 1);
+}
+
+// First scheduled day strictly after `afterDay` (searches ahead 400 days), or null.
+function nextScheduledDay(sch, afterDay) {
+  for (let i = 1; i <= 400; i++) { const d = addDays(afterDay, i); if (fires(sch, d)) return d; }
+  return null;
+}
+// The day the next email will go out, as seen from now: today if it is still ahead, else the next one.
+function nextSend(sch, lastSent, today, hour) {
+  if (fires(sch, today) && lastSent !== today && hour < sch.hour) return today;
+  if (isDue(sch, lastSent, today, hour)) return today; // overdue: goes out on the next check
+  return nextScheduledDay(sch, today);
+}
+
+function hourLabel(h) { const x = h % 12 || 12; return x + ':00 ' + (h < 12 ? 'AM' : 'PM') + ' ET'; }
+const ORD = n => { const v = n % 100; return n + (['th', 'st', 'nd', 'rd'][(v - 20) % 10] || ['th', 'st', 'nd', 'rd'][v] || 'th'); };
+function describe(sch) {
+  const at = ' at ' + hourLabel(sch.hour);
+  switch (sch.pattern) {
+    case 'daily': return 'Every day' + at;
+    case 'weekdays': return 'Every weekday (Mon-Fri)' + at;
+    case 'every_other_day': return 'Every other day' + at;
+    case 'days': { const n = sch.days.map(d => LONG[d]); return 'Every ' + (n.length > 1 ? n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1] : n[0]) + at; }
+    case 'weekly': return 'Every ' + LONG[sch.weekday] + at;
+    case 'biweekly': return 'Every other ' + LONG[sch.weekday] + at;
+    case 'monthly':
+      if (sch.monthlyMode === 'first_weekday') return 'First ' + LONG[sch.weekday] + ' of each month' + at;
+      if (sch.monthlyMode === 'last_business_day') return 'Last business day of each month' + at;
+      return 'The ' + ORD(sch.dayOfMonth) + ' of each month' + at;
+    default: return '';
+  }
+}
+
+return {WEEKDAYS,PATTERNS,MONTHLY_MODES,fmt,addDays,daysBetween,weekdayOf,normalize,fires,lastScheduledDay,isDue,nextScheduledDay,nextSend,hourLabel,describe};
+})();
+
+
+const EW_VERSION = 1;
+const EW_THRESHOLDS = { high: 60, watch: 35 };
+function ewDays(a, b) {
+  const x = Date.parse(String(a).slice(0, 10) + 'T00:00:00Z'), y = Date.parse(String(b).slice(0, 10) + 'T00:00:00Z');
+  return isFinite(x) && isFinite(y) ? Math.round((y - x) / 864e5) : null;
+}
+function ewMoney(n) { return '$' + Math.round(Number(n) || 0).toLocaleString('en-US'); }
+// Returns { score: 0-100, level: 'high' | 'watch' | 'ok', reasons: [{ key, points, text }] } (reasons strongest first).
+function earlyWarning(c, today) {
+  const reasons = [];
+  const add = (key, points, text) => { if (points > 0) reasons.push({ key, points, text }); };
+  if (!c || c.status === 'Closed') return { score: 0, level: 'ok', reasons: [] };
+  const kd = c.keyDates || {}, ex = c.exposure || {}, ins = c.insurance || {}, bl = c.billing || {}, lc = c.lifecycle || {};
+  const reserve = Number(ins.reserveAmount != null ? ins.reserveAmount : c.reserve) || 0;
+  const likely = Number(ex.likelyExposure) || 0;
+
+  // 1. Time-limit demands that have not been answered (the most expensive thing to miss).
+  let dm = null;
+  (Array.isArray(c.timeLimitDemands) ? c.timeLimitDemands : []).forEach(d => {
+    if (!d || d.status !== 'open') return;
+    const left = ewDays(today, String(d.extendedDeadline || d.deadline || '').slice(0, 10));
+    if (left === null) return;
+    if (dm === null || left < dm) dm = left;
+  });
+  if (dm !== null) {
+    if (dm < 0) add('demand', 40, 'A time-limit demand is ' + Math.abs(dm) + ' day' + (Math.abs(dm) === 1 ? '' : 's') + ' past its deadline with no response recorded');
+    else if (dm <= 3) add('demand', 30, 'A time-limit demand is due ' + (dm === 0 ? 'today' : 'in ' + dm + ' day' + (dm === 1 ? '' : 's')));
+    else if (dm <= 10) add('demand', 20, 'A time-limit demand is due in ' + dm + ' days');
+  }
+
+  // 2. Statute of limitations.
+  if (kd.sol) {
+    const left = ewDays(today, kd.sol);
+    if (left !== null) {
+      if (left < 0) add('sol', 20, 'The statute of limitations date has passed (' + String(kd.sol).slice(0, 10) + ')');
+      else if (left <= 30) add('sol', 20, 'Statute of limitations in ' + left + ' days');
+      else if (left <= 90) add('sol', 10, 'Statute of limitations in ' + left + ' days');
+    }
+  }
+
+  // 3. Answer to the complaint due (or already late) with nobody responsible.
+  if (kd.answerDue) {
+    const left = ewDays(today, kd.answerDue);
+    if (left !== null && left <= 7) add('answer', left < 0 ? 15 : 12, left < 0 ? 'The answer due date passed ' + Math.abs(left) + ' days ago' : 'The answer is due in ' + left + ' day' + (left === 1 ? '' : 's'));
+  }
+
+  // 4. Reserve against likely exposure.
+  if (likely > 0) {
+    if (reserve < likely * 0.5) add('reserve', 30, 'The reserve (' + ewMoney(reserve) + ') is under half of the likely exposure (' + ewMoney(likely) + ')');
+    else if (reserve < likely * 0.8) add('reserve', 20, 'The reserve (' + ewMoney(reserve) + ') is below the likely exposure (' + ewMoney(likely) + ')');
+  }
+  const demandAmt = Number(ex.demandAmount) || 0;
+  if (demandAmt > 0 && reserve > 0 && demandAmt > reserve) add('demandvsreserve', 10, 'The demand (' + ewMoney(demandAmt) + ') is above the reserve');
+
+  // 5. Defense spend against budget.
+  const budget = Number(bl.budget) || 0, billed = Number(bl.totalBilled) || 0;
+  if (budget > 0) {
+    const r = billed / budget;
+    if (r >= 1) add('budget', 20, 'Defense spend (' + ewMoney(billed) + ') has passed the budget (' + ewMoney(budget) + ')');
+    else if (r >= 0.85) add('budget', 12, 'Defense spend is at ' + Math.round(r * 100) + '% of the budget');
+    else if (r >= 0.75) add('budget', 8, 'Defense spend is at ' + Math.round(r * 100) + '% of the budget');
+  } else if (reserve > 0 && billed / reserve > 0.5) add('burn', 10, 'Defense spend is over half of the reserve and no budget is set');
+
+  // 6. Trial coming up.
+  if (kd.trialDate) {
+    const left = ewDays(today, kd.trialDate);
+    if (left !== null && left >= 0) {
+      if (left <= 30) add('trial', 15, 'Trial in ' + left + ' days');
+      else if (left <= 60) add('trial', 10, 'Trial in ' + left + ' days');
+    }
+  }
+
+  // 7. Nothing has happened for a long time.
+  let last = c.filed ? String(c.filed).slice(0, 10) : '';
+  (c.updates || []).forEach(u => { const d = u && u.date ? String(u.date).slice(0, 10) : ''; if (d && d > last) last = d; });
+  if (last) {
+    const quiet = ewDays(last, today);
+    if (quiet !== null) {
+      if (quiet >= 90) add('stale', 15, 'No activity recorded in ' + quiet + ' days');
+      else if (quiet >= 45) add('stale', 10, 'No activity recorded in ' + quiet + ' days');
+    }
+  }
+
+  // 8. A request for settlement authority has been waiting.
+  let oldest = null;
+  (c.authorityRequests || []).forEach(a => {
+    if (a && a.status === 'Pending' && a.date) { const age = ewDays(String(a.date).slice(0, 10), today); if (age !== null && (oldest === null || age > oldest)) oldest = age; }
+  });
+  if (oldest !== null) {
+    if (oldest >= 30) add('authority', 15, 'A settlement authority request has waited ' + oldest + ' days');
+    else if (oldest >= 14) add('authority', 10, 'A settlement authority request has waited ' + oldest + ' days');
+  }
+
+  // 9. Ownership and early lifecycle gaps.
+  if (!(c.attorney || '').trim() || c.attorney === 'Unassigned') add('unassigned', 12, 'No defense attorney is assigned');
+  if (lc.servedDate && !lc.counselAssignedDate) {
+    const age = ewDays(lc.servedDate, today);
+    if (age !== null && age >= 7) add('nocounsel', 15, 'The suit was served ' + age + ' days ago and no counsel assignment is recorded');
+  }
+  if (!c.nextStep) add('nostep', 4, 'No next step is recorded');
+
+  // 10. Overdue tasks.
+  const late = (c.tasks || []).filter(t => t && !t.done && t.due && String(t.due).slice(0, 10) < today).length;
+  if (late >= 3) add('tasks', 10, late + ' tasks are overdue');
+  else if (late >= 1) add('tasks', 6, late + (late === 1 ? ' task is' : ' tasks are') + ' overdue');
+
+  // 11. Size of the downside.
+  const worst = Number(ex.worstCase) || 0;
+  if (worst >= 1000000) add('severity', 8, 'Worst-case exposure is ' + ewMoney(worst));
+
+  reasons.sort((a, b) => b.points - a.points);
+  const score = Math.min(100, reasons.reduce((t, r) => t + r.points, 0));
+  return { score, level: score >= EW_THRESHOLDS.high ? 'high' : score >= EW_THRESHOLDS.watch ? 'watch' : 'ok', reasons };
+}
+
+
+
+function crDate(v) {
+  if (!v) return '';
+  if (v instanceof Date) return isNaN(v) ? '' : v.toISOString().slice(0, 10);
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(String(v));
+  return m ? m[1] : '';
+}
+function crDays(a, b) {
+  const x = Date.parse(a + 'T00:00:00Z'), y = Date.parse(b + 'T00:00:00Z');
+  return isFinite(x) && isFinite(y) ? Math.round((y - x) / 864e5) : null;
+}
+function crAddDays(s, n) { const d = new Date(Date.parse(s + 'T00:00:00Z') + n * 864e5); return d.toISOString().slice(0, 10); }
+function crMoney(n) { return '$' + Math.round(Number(n) || 0).toLocaleString('en-US'); }
+function crEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); }
+function crNiceDate(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ''); if (!m) return s || '';
+  return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+m[2] - 1] + ' ' + (+m[3]) + ', ' + m[1];
+}
+// kind: 'last_month' | 'last_30' | 'last_7' | 'month_to_date'. Returns { start, end, label, kind }.
+function crPeriod(kind, today) {
+  const y = +today.slice(0, 4), mo = +today.slice(5, 7);
+  if (kind === 'last_7') return { kind, start: crAddDays(today, -6), end: today, label: 'Last 7 days' };
+  if (kind === 'last_30') return { kind, start: crAddDays(today, -29), end: today, label: 'Last 30 days' };
+  if (kind === 'month_to_date') return { kind, start: today.slice(0, 8) + '01', end: today, label: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][mo - 1] + ' ' + y + ' (to date)' };
+  const pm = mo === 1 ? 12 : mo - 1, py = mo === 1 ? y - 1 : y;
+  const last = new Date(Date.UTC(py, pm, 0)).getUTCDate();
+  const p2 = n => String(n).padStart(2, '0');
+  return { kind: 'last_month', start: py + '-' + p2(pm) + '-01', end: py + '-' + p2(pm) + '-' + p2(last), label: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][pm - 1] + ' ' + py };
+}
+function crOpened(c) { return crDate(c.openedDate) || crDate(c._createdAt) || crDate(c.filed); }
+function crClosedOn(c) { return crDate(c.closing && c.closing.dispositionDate) || crDate(c._updatedAt); }
+// opts: { account:'' (all accounts), period:{start,end,label}, today, orgName, includeRisk }
+function crBuild(cases, opts) {
+  const o = opts || {}, today = o.today, per = o.period;
+  const acct = String(o.account || '').trim();
+  const mine = cases.filter(c => !acct || String(c.clientAccount || '').trim() === acct);
+  const open = mine.filter(c => c.status !== 'Closed');
+  const inPer = d => d && d >= per.start && d <= per.end;
+  const opened = mine.filter(c => inPer(crOpened(c)));
+  const closed = mine.filter(c => c.status === 'Closed' && inPer(crClosedOn(c)));
+  const reserves = open.reduce((t, c) => t + (Number(c.insurance && c.insurance.reserveAmount) || 0), 0);
+  const likely = open.reduce((t, c) => t + (Number(c.exposure && c.exposure.likelyExposure) || 0), 0);
+  let invoiced = 0, invCount = 0;
+  mine.forEach(c => ((c.billing && c.billing.invoices) || []).forEach(i => { const d = crDate(i.date); if (inPer(d)) { invoiced += Number(i.amount) || 0; invCount++; } }));
+  const openBilled = open.reduce((t, c) => t + (Number(c.billing && c.billing.totalBilled) || 0), 0);
+  const withBudget = open.filter(c => Number(c.billing && c.billing.budget) > 0);
+  const overBudget = withBudget.filter(c => (Number(c.billing.totalBilled) || 0) > Number(c.billing.budget));
+  const closedRows = closed.map(c => {
+    const od = crOpened(c), cd = crClosedOn(c);
+    return { matter: c.matterNo || c.id, client: c.client, disposition: (c.closing && c.closing.dispositionType) || 'Not recorded', indemnity: Number(c.closing && c.closing.finalIndemnityPaid) || 0, fees: Number(c.billing && c.billing.totalBilled) || 0, days: od && cd ? crDays(od, cd) : null, firm: (c.defenseCounsel && (c.defenseCounsel.firm || c.defenseCounsel.name)) || c.attorney || '' };
+  }).sort((a, b) => (a.matter < b.matter ? -1 : 1));
+  const indemnity = closedRows.reduce((t, r) => t + r.indemnity, 0), closedFees = closedRows.reduce((t, r) => t + r.fees, 0);
+  const dispo = {}; closedRows.forEach(r => { dispo[r.disposition] = (dispo[r.disposition] || 0) + 1; });
+  const horizon = crAddDays(today, 60), upcoming = [];
+  open.forEach(c => {
+    const k = c.keyDates || {};
+    [['trialDate', 'Trial'], ['mediationDate', 'Mediation'], ['sol', 'Statute of limitations'], ['discoveryClose', 'Discovery closes'], ['msjDeadline', 'Summary-judgment deadline'], ['answerDue', 'Answer due']].forEach(([f, label]) => {
+      const d = crDate(k[f]); if (d && d >= today && d <= horizon) upcoming.push({ date: d, what: label, matter: c.matterNo || c.id, client: c.client, days: crDays(today, d) });
+    });
+    (Array.isArray(c.timeLimitDemands) ? c.timeLimitDemands : []).forEach(dm => {
+      if (!dm || dm.status !== 'open') return;
+      const d = crDate(dm.extendedDeadline || dm.deadline); if (d && d <= horizon) upcoming.push({ date: d, what: d < today ? 'Time-limit demand (PAST DUE)' : 'Time-limit demand', matter: c.matterNo || c.id, client: c.client, days: crDays(today, d) });
+    });
+  });
+  upcoming.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  let watch = [];
+  if (o.includeRisk !== false) {
+    watch = open.map(c => { const r = earlyWarning(c, today); return { matter: c.matterNo || c.id, client: c.client, score: r.score, level: r.level, reasons: r.reasons.slice(0, 3).map(x => x.text) }; })
+      .filter(x => x.level !== 'ok').sort((a, b) => b.score - a.score).slice(0, 10);
+  }
+  const avg = (list, f) => { const v = list.map(f).filter(x => x != null && x >= 0); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null; };
+  const lcOf = c => ({ fnol: crDate(c.fnolDate), asg: crDate(c.lifecycle && c.lifecycle.counselAssignedDate), filed: crDate(c.filed) });
+  const toAsg = avg(mine, c => { const l = lcOf(c); return l.fnol && l.asg ? crDays(l.fnol, l.asg) : null; });
+  const toFiled = avg(mine, c => { const l = lcOf(c); return l.fnol && l.filed ? crDays(l.fnol, l.filed) : null; });
+  return {
+    account: acct, orgName: o.orgName || '', today, period: per,
+    totals: { open: open.length, opened: opened.length, closed: closed.length, reserves, likelyExposure: likely, invoiced, invoiceCount: invCount, openBilled, indemnityPaid: indemnity, closedFees, budgeted: withBudget.length, overBudget: overBudget.length },
+    dispositions: Object.entries(dispo).sort((a, b) => b[1] - a[1]).map(([name, n]) => ({ name, n })),
+    closedRows, opened: opened.slice(0, 25).map(c => ({ matter: c.matterNo || c.id, client: c.client, type: c.type || '', date: crOpened(c) })),
+    upcoming: upcoming.slice(0, 25), watch,
+    lifecycle: { daysToCounsel: toAsg, daysToSuit: toFiled }
+  };
+}
+function crText(d) {
+  const t = d.totals, L = [];
+  L.push((d.account ? d.account + ' — ' : '') + 'Litigation report, ' + d.period.label);
+  L.push('Prepared by ' + d.orgName + ' on ' + crNiceDate(d.today), '');
+  L.push('AT A GLANCE');
+  L.push('  Open matters: ' + t.open + '   Opened this period: ' + t.opened + '   Closed this period: ' + t.closed);
+  L.push('  Reserves on open matters: ' + crMoney(t.reserves) + '   Likely exposure: ' + crMoney(t.likelyExposure));
+  L.push('  Defense invoices this period: ' + crMoney(t.invoiced) + ' (' + t.invoiceCount + ')   Indemnity paid on closed matters: ' + crMoney(t.indemnityPaid));
+  if (t.budgeted) L.push('  Matters over budget: ' + t.overBudget + ' of ' + t.budgeted + ' with a budget set');
+  if (d.lifecycle.daysToCounsel != null) L.push('  Average days from first notice to counsel assigned: ' + d.lifecycle.daysToCounsel);
+  if (d.lifecycle.daysToSuit != null) L.push('  Average days from first notice to suit filed: ' + d.lifecycle.daysToSuit);
+  if (d.closedRows.length) {
+    L.push('', 'CLOSED THIS PERIOD');
+    d.closedRows.forEach(r => L.push('  ' + r.matter + '  ' + r.client + ' — ' + r.disposition + ', indemnity ' + crMoney(r.indemnity) + ', defense fees ' + crMoney(r.fees) + (r.days != null ? ', ' + r.days + ' days open' : '')));
+  }
+  if (d.upcoming.length) {
+    L.push('', 'COMING UP (next 60 days)');
+    d.upcoming.forEach(u => L.push('  ' + crNiceDate(u.date) + '  ' + u.what + ' — ' + u.matter + ' ' + u.client + (u.days < 0 ? ' (' + Math.abs(u.days) + ' days past)' : u.days === 0 ? ' (today)' : ' (in ' + u.days + ' days)')));
+  }
+  if (d.watch.length) {
+    L.push('', 'MATTERS TO WATCH');
+    d.watch.forEach(w => { L.push('  ' + w.matter + '  ' + w.client + ' — ' + (w.level === 'high' ? 'HIGH' : 'WATCH') + ' (' + w.score + ')'); w.reasons.forEach(r => L.push('      - ' + r)); });
+  }
+  L.push('', 'Figures come from the matters recorded in Case Closed as of ' + crNiceDate(d.today) + '. This report is not legal advice.');
+  return L.join('\n');
+}
+function crHtml(d) {
+  const t = d.totals, NAVY = '#1E3A5F', INK = '#1F2937', MUTE = '#6B7280', LINE = '#E5E7EB';
+  const th = 'style="text-align:left;padding:6px 8px;border-bottom:2px solid ' + NAVY + ';font-size:11px;color:' + MUTE + ';font-weight:600"';
+  const td = (extra) => 'style="padding:6px 8px;border-bottom:1px solid ' + LINE + ';font-size:12px;color:' + INK + ';' + (extra || '') + '"';
+  const tile = (label, val) => '<td style="width:25%;padding:10px 12px;border:1px solid ' + LINE + ';vertical-align:top"><div style="font-size:11px;color:' + MUTE + '">' + crEsc(label) + '</div><div style="font-size:20px;font-weight:700;color:' + NAVY + ';margin-top:2px">' + crEsc(val) + '</div></td>';
+  const sec = h => '<h2 style="font-size:14px;color:' + NAVY + ';margin:22px 0 6px;border-bottom:1px solid ' + LINE + ';padding-bottom:4px">' + crEsc(h) + '</h2>';
+  let h = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:720px;margin:0 auto;color:' + INK + ';line-height:1.45">';
+  h += '<div style="background:' + NAVY + ';color:#fff;padding:16px 20px"><div style="font-size:12px;opacity:.85">' + crEsc(d.orgName) + '</div><div style="font-size:20px;font-weight:700;margin-top:2px">' + crEsc(d.account ? d.account + ' — litigation report' : 'Litigation report — all accounts') + '</div><div style="font-size:12px;opacity:.85;margin-top:2px">' + crEsc(d.period.label) + ' · prepared ' + crEsc(crNiceDate(d.today)) + '</div></div>';
+  h += '<table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;margin-top:14px"><tr>' + tile('Open matters', t.open) + tile('Opened this period', t.opened) + tile('Closed this period', t.closed) + tile('Reserves (open)', crMoney(t.reserves)) + '</tr><tr>' + tile('Likely exposure', crMoney(t.likelyExposure)) + tile('Defense invoices', crMoney(t.invoiced)) + tile('Indemnity paid (closed)', crMoney(t.indemnityPaid)) + tile('Over budget', t.budgeted ? t.overBudget + ' of ' + t.budgeted : 'No budgets set') + '</tr></table>';
+  if (d.lifecycle.daysToCounsel != null || d.lifecycle.daysToSuit != null) {
+    h += '<p style="font-size:12px;color:' + MUTE + ';margin:10px 0 0">' + (d.lifecycle.daysToCounsel != null ? 'First notice to counsel assigned: <b style="color:' + INK + '">' + d.lifecycle.daysToCounsel + ' days</b> on average. ' : '') + (d.lifecycle.daysToSuit != null ? 'First notice to suit filed: <b style="color:' + INK + '">' + d.lifecycle.daysToSuit + ' days</b> on average.' : '') + '</p>';
+  }
+  if (d.closedRows.length) {
+    h += sec('Closed this period');
+    if (d.dispositions.length) h += '<p style="font-size:12px;margin:0 0 6px;color:' + MUTE + '">' + d.dispositions.map(x => crEsc(x.name) + ': ' + x.n).join(' · ') + '</p>';
+    h += '<table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><th ' + th + '>Matter</th><th ' + th + '>Insured</th><th ' + th + '>Outcome</th><th ' + th + '>Indemnity</th><th ' + th + '>Defense fees</th><th ' + th + '>Days open</th></tr>';
+    d.closedRows.forEach(r => { h += '<tr><td ' + td() + '>' + crEsc(r.matter) + '</td><td ' + td() + '>' + crEsc(r.client) + '</td><td ' + td() + '>' + crEsc(r.disposition) + '</td><td ' + td('text-align:right') + '>' + crMoney(r.indemnity) + '</td><td ' + td('text-align:right') + '>' + crMoney(r.fees) + '</td><td ' + td('text-align:right') + '>' + (r.days != null ? r.days : '—') + '</td></tr>'; });
+    h += '</table>';
+  }
+  if (d.opened.length) {
+    h += sec('Opened this period');
+    h += '<table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><th ' + th + '>Matter</th><th ' + th + '>Insured</th><th ' + th + '>Type</th><th ' + th + '>Opened</th></tr>';
+    d.opened.forEach(r => { h += '<tr><td ' + td() + '>' + crEsc(r.matter) + '</td><td ' + td() + '>' + crEsc(r.client) + '</td><td ' + td() + '>' + crEsc(r.type) + '</td><td ' + td() + '>' + crEsc(crNiceDate(r.date)) + '</td></tr>'; });
+    h += '</table>';
+  }
+  if (d.upcoming.length) {
+    h += sec('Coming up in the next 60 days');
+    h += '<table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse"><tr><th ' + th + '>Date</th><th ' + th + '>What</th><th ' + th + '>Matter</th><th ' + th + '>When</th></tr>';
+    d.upcoming.forEach(u => { const late = u.days < 0; h += '<tr><td ' + td() + '>' + crEsc(crNiceDate(u.date)) + '</td><td ' + td(late ? 'color:#B91C1C;font-weight:700' : '') + '>' + crEsc(u.what) + '</td><td ' + td() + '>' + crEsc(u.matter + ' ' + u.client) + '</td><td ' + td() + '>' + (late ? Math.abs(u.days) + ' days past' : u.days === 0 ? 'today' : 'in ' + u.days + ' days') + '</td></tr>'; });
+    h += '</table>';
+  }
+  if (d.watch.length) {
+    h += sec('Matters to watch');
+    d.watch.forEach(w => {
+      const col = w.level === 'high' ? '#B91C1C' : '#B45309';
+      h += '<div style="border-left:4px solid ' + col + ';padding:6px 10px;margin:6px 0;background:#FAFAFA"><div style="font-size:12px"><b>' + crEsc(w.matter) + '</b> ' + crEsc(w.client) + ' <span style="color:' + col + ';font-weight:700">· ' + (w.level === 'high' ? 'High' : 'Watch') + ' (' + w.score + ')</span></div>' + w.reasons.map(r => '<div style="font-size:12px;color:' + MUTE + '">• ' + crEsc(r) + '</div>').join('') + '</div>';
+    });
+  }
+  h += '<p style="font-size:11px;color:' + MUTE + ';margin:22px 0 0;border-top:1px solid ' + LINE + ';padding-top:8px">Figures come from the matters recorded in Case Closed as of ' + crEsc(crNiceDate(d.today)) + '. Indemnity and fees are the amounts recorded on each matter. This report is not legal advice.</p></div>';
+  return h;
+}
+
+
+/* ── ui_10_sched.js ── */
+/* ═══════════ EMAIL SCHEDULES ═══════════
+   An owner or admin sets up recurring emails: what to send, who gets it, how often. The same date
+   rules run in the browser (for the live "next sends" preview) and on the server (SCH above). */
+const SCHED_KINDS_UI = [
+  {key:'digest', label:'Executive briefing', who:'list', blurb:'A plain-English briefing on the whole portfolio (the Sentinel Digest).'},
+  {key:'alerts', label:'Needs-attention alerts', who:'people', blurb:'Each person gets what needs them; managers get the whole portfolio. Skipped on days with nothing to report.'},
+  {key:'diary', label:'Task reminders', who:'people', blurb:'Each person gets their own overdue, due-today and coming-up tasks. Skipped on days with nothing due.'},
+  {key:'risk', label:'Matters at risk', who:'list', blurb:'Open matters that score high or watch on the early-warning checklist, with the reasons.'},
+  {key:'feed_summary', label:'Claim feed summary', who:'list', blurb:'What the claim feed and uploads loaded since the last summary, including failures. Also tells you when nothing arrived.'},
+  {key:'client_report', label:'Client report', who:'list', blurb:'The litigation report for one client account (or all): open, closed, spend, upcoming dates, matters to watch.'}
+];
+const SCHED_PATTERNS = [['daily','Every day'],['weekdays','Every weekday (Mon to Fri)'],['every_other_day','Every other day'],['days','Pick days of the week'],['weekly','Once a week'],['biweekly','Every other week'],['monthly','Once a month']];
+const SCHED_DAYS = [['Mon','Monday'],['Tue','Tuesday'],['Wed','Wednesday'],['Thu','Thursday'],['Fri','Friday'],['Sat','Saturday'],['Sun','Sunday']];
+const SCHED_PERIODS = [['last_month','Last month'],['last_30','Last 30 days'],['last_7','Last 7 days'],['month_to_date','This month so far']];
+function schedIsDemo(){ return DEMO_MODE || !authToken; }
+function schedCanEdit(){ return schedIsDemo() || S.currentUser?.platformAdmin || ['owner','admin'].includes(S.currentUser?.role); }
+function schedToday(){ return demandToday(); }
+function schedDemoData(){
+  if (!S.schedDemo) S.schedDemo = {
+    schedules:[
+      {id:'demo-1', kind:'diary', kindLabel:'Task reminders', who:'people', name:'Task reminders', recipients:[], schedule:{pattern:'weekdays', hour:7, start:schedToday()}, params:{lookahead:3}, enabled:true, lastSentDate:null, lastResult:null, lastError:null},
+      {id:'demo-2', kind:'client_report', kindLabel:'Client report', who:'list', name:'Hartford monthly report', recipients:['claims@hartford.example.com'], schedule:{pattern:'monthly', monthlyMode:'first_weekday', weekday:'Mon', hour:8, start:schedToday()}, params:{account:'Hartford', period:'last_month', includeRisk:true}, enabled:true, lastSentDate:null, lastResult:null, lastError:null}
+    ].map(r => Object.assign(r, schedDecorate(r))),
+    accounts:[], kinds:SCHED_KINDS_UI, emailConfigured:true, max:25
+  };
+  S.schedDemo.accounts = acctNames();
+  return S.schedDemo;
+}
+function schedDecorate(r){
+  let desc = '', next = null;
+  try { const s = SCH.normalize(r.schedule, schedToday()); desc = SCH.describe(s); next = r.enabled === false ? null : SCH.nextScheduledDay(s, SCH.addDays(schedToday(), -1)); } catch (e) { desc = 'Schedule needs to be set again'; }
+  return {description:desc, nextSend:next};
+}
+async function loadScheds(force){
+  if (schedIsDemo() || S.schedLoading || (S.schedData && !force)) return;
+  S.schedLoading = true;
+  try { const r = await apiFetch('/api/scheduled-emails'); st({schedData:r, schedLoading:false, schedErr:''}); }
+  catch (e) { st({schedData:{schedules:[], kinds:SCHED_KINDS_UI, accounts:[]}, schedLoading:false, schedErr:e.message}); }
+}
+function schedData(){ return schedIsDemo() ? schedDemoData() : (S.schedData || {schedules:[], kinds:SCHED_KINDS_UI, accounts:[]}); }
+function schedKind(k){ return SCHED_KINDS_UI.find(x => x.key === k) || SCHED_KINDS_UI[0]; }
+function schedNewForm(){
+  return {id:'', kind:'diary', name:'', recipients:'', pattern:'weekdays', days:['Mon','Fri'], weekday:'Mon', monthlyMode:'day_of_month', dayOfMonth:1, hour:7, start:schedToday(), account:'', period:'last_month', includeRisk:true, lookahead:3, sendEmpty:null, enabled:true};
+}
+function schedEdit(id){
+  const row = schedData().schedules.find(x => x.id === id); if (!row) return;
+  const s = row.schedule || {}, p = row.params || {};
+  S.schedForm = {id:row.id, kind:row.kind, name:row.name || '', recipients:(row.recipients || []).join(', '), pattern:s.pattern || 'daily', days:(s.days || ['Mon','Fri']).slice(), weekday:s.weekday || 'Mon', monthlyMode:s.monthlyMode || 'day_of_month', dayOfMonth:s.dayOfMonth || 1, hour:s.hour == null ? 7 : s.hour, start:s.start || schedToday(), account:p.account || '', period:p.period || 'last_month', includeRisk:p.includeRisk !== false, lookahead:p.lookahead == null ? 3 : p.lookahead, sendEmpty:p.sendEmpty == null ? null : p.sendEmpty, enabled:row.enabled !== false};
+  S.schedNote = ''; render();
+}
+function schedSet(k, v){ if (!S.schedForm) return; S.schedForm[k] = v; render(); }
+function schedToggleDay(d){ const f = S.schedForm; if (!f) return; const i = f.days.indexOf(d); if (i >= 0) f.days.splice(i, 1); else f.days.push(d); render(); }
+function schedBody(f){
+  const kind = schedKind(f.kind);
+  return {
+    kind:f.kind, name:f.name, recipients:kind.who === 'list' ? f.recipients : '', enabled:f.enabled !== false,
+    schedule:{pattern:f.pattern, days:f.days, weekday:f.weekday, monthlyMode:f.monthlyMode, dayOfMonth:Number(f.dayOfMonth), hour:Number(f.hour), start:f.start || schedToday()},
+    params:{account:f.account, period:f.period, includeRisk:f.includeRisk, lookahead:Number(f.lookahead), sendEmpty:f.sendEmpty === null ? undefined : f.sendEmpty}
+  };
+}
+function schedNextDates(sch, n){
+  const out = []; let d = SCH.addDays(schedToday(), -1);
+  for (let i = 0; i < n; i++) { d = SCH.nextScheduledDay(sch, d); if (!d) break; out.push(d); }
+  return out;
+}
+function schedNiceDay(d){ try { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'}); } catch (e) { return d; } }
+async function schedSave(){
+  const f = S.schedForm; if (!f) return;
+  const body = schedBody(f);
+  const kind = schedKind(f.kind);
+  if (kind.who === 'list' && !String(f.recipients || '').trim()) { S.schedFormErr = 'Add at least one email address to send to.'; render(); return; }
+  try { SCH.normalize(body.schedule, schedToday()); } catch (e) { S.schedFormErr = e.message; render(); return; }
+  S.schedFormErr = '';
+  if (schedIsDemo()) {
+    const d = schedDemoData(), rec = String(f.recipients || '').split(/[\s,;]+/).filter(Boolean);
+    const row = {id:f.id || 'demo-' + Date.now(), kind:f.kind, kindLabel:kind.label, who:kind.who, name:f.name || kind.label, recipients:kind.who === 'list' ? rec : [], schedule:SCH.normalize(body.schedule, schedToday()), params:body.params, enabled:f.enabled !== false, lastSentDate:null, lastResult:null, lastError:null};
+    Object.assign(row, schedDecorate(row));
+    const i = d.schedules.findIndex(x => x.id === row.id); if (i >= 0) d.schedules[i] = row; else d.schedules.push(row);
+    S.schedForm = null; S.schedNote = 'Saved. (Sample screen: nothing is actually sent.)'; render(); return;
+  }
+  S.schedBusy = true; render();
+  try {
+    if (f.id) await apiFetch('/api/scheduled-emails/' + f.id, {method:'PUT', body:JSON.stringify(body)});
+    else await apiFetch('/api/scheduled-emails', {method:'POST', body:JSON.stringify(body)});
+    S.schedForm = null; S.schedNote = 'Saved.'; S.schedBusy = false; await loadScheds(true); render();
+  } catch (e) { S.schedFormErr = e.message; S.schedBusy = false; render(); }
+}
+async function schedToggle(id){
+  const row = schedData().schedules.find(x => x.id === id); if (!row) return;
+  if (schedIsDemo()) { row.enabled = !row.enabled; Object.assign(row, schedDecorate(row)); render(); return; }
+  try {
+    const body = {kind:row.kind, name:row.name, recipients:row.recipients, schedule:row.schedule, params:row.params, enabled:!row.enabled};
+    await apiFetch('/api/scheduled-emails/' + id, {method:'PUT', body:JSON.stringify(body)});
+    await loadScheds(true); render();
+  } catch (e) { S.schedErr = e.message; render(); }
+}
+async function schedDelete(id){
+  if (!confirm('Delete this scheduled email? It will stop going out.')) return;
+  if (schedIsDemo()) { const d = schedDemoData(); d.schedules = d.schedules.filter(x => x.id !== id); render(); return; }
+  try { await apiFetch('/api/scheduled-emails/' + id, {method:'DELETE'}); await loadScheds(true); render(); } catch (e) { S.schedErr = e.message; render(); }
+}
+async function schedPreview(id){
+  if (schedIsDemo()) { S.schedNote = 'Sample screen: in a real account this sends you a copy of the email so you can see it.'; render(); return; }
+  S.schedNote = 'Sending…'; render();
+  try { const r = await apiFetch('/api/scheduled-emails/' + id + '/preview', {method:'POST'}); S.schedNote = r.sent ? 'A preview was sent to ' + r.to + '.' : (r.note || 'There is nothing to send right now, so no preview was sent.'); S.schedErr = ''; }
+  catch (e) { S.schedNote = ''; S.schedErr = e.message; }
+  render();
+}
+function schedFormV(){
+  const f = S.schedForm, data = schedData(), kind = schedKind(f.kind);
+  const lbl = t => '<label class="lbl">' + t + '</label>';
+  const opt = (v, t, cur) => '<option value="' + esc(v) + '"' + (String(cur) === String(v) ? ' selected' : '') + '>' + esc(t) + '</option>';
+  let h = '<div class="card" style="padding:16px 18px;margin-bottom:16px;border-left:4px solid var(--pri2);"><div style="font-weight:800;font-size:15px;margin-bottom:10px;">' + (f.id ? 'Change this email' : 'New scheduled email') + '</div>';
+  h += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">';
+  h += '<div class="fld" style="flex:1 1 260px;margin:0;">' + lbl('What should it send?') + '<select class="inp" onchange="schedSet(\'kind\',this.value)">' + SCHED_KINDS_UI.map(k => opt(k.key, k.label, f.kind)).join('') + '</select></div>';
+  h += '<div class="fld" style="flex:1 1 260px;margin:0;">' + lbl('Name (optional)') + '<input class="inp" value="' + esc(f.name) + '" oninput="S.schedForm.name=this.value" placeholder="' + esc(kind.label) + '"></div></div>';
+  h += '<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.5;">' + esc(kind.blurb) + '</div>';
+  if (kind.who === 'list') h += '<div class="fld" style="margin:0 0 10px;">' + lbl('Send to (separate addresses with commas)') + '<input class="inp" value="' + esc(f.recipients) + '" oninput="S.schedForm.recipients=this.value" placeholder="name@company.com, other@company.com"></div>';
+  else h += '<div style="font-size:12.5px;margin-bottom:10px;padding:8px 10px;background:var(--surf2);border-radius:6px;">Goes to the people on your team, each with their own version. You do not need to type any addresses.</div>';
+  if (f.kind === 'client_report') {
+    h += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;"><div class="fld" style="flex:1 1 240px;margin:0;">' + lbl('Client account') + '<select class="inp" onchange="schedSet(\'account\',this.value)">' + opt('', 'All accounts together', f.account) + (data.accounts || []).map(a => opt(a, a, f.account)).join('') + '</select></div>';
+    h += '<div class="fld" style="flex:1 1 200px;margin:0;">' + lbl('Report covers') + '<select class="inp" onchange="schedSet(\'period\',this.value)">' + SCHED_PERIODS.map(p => opt(p[0], p[1], f.period)).join('') + '</select></div></div>';
+    h += '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin-bottom:10px;text-transform:none;letter-spacing:0;font-weight:600;color:var(--ink);"><input type="checkbox" ' + (f.includeRisk ? 'checked' : '') + ' onchange="S.schedForm.includeRisk=this.checked"> Include the "matters to watch" list</label>';
+  }
+  if (f.kind === 'diary') h += '<div class="fld" style="margin:0 0 10px;max-width:260px;">' + lbl('Include tasks due within') + '<select class="inp" onchange="schedSet(\'lookahead\',this.value)">' + [[0,'today only'],[1,'1 day'],[3,'3 days'],[7,'7 days'],[14,'14 days']].map(x => opt(x[0], x[1], f.lookahead)).join('') + '</select></div>';
+  h += '<div style="font-weight:800;font-size:13px;margin:12px 0 6px;">How often</div>';
+  h += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">';
+  h += '<div class="fld" style="flex:1 1 260px;margin:0;">' + lbl('Repeat') + '<select class="inp" onchange="schedSet(\'pattern\',this.value)">' + SCHED_PATTERNS.map(p => opt(p[0], p[1], f.pattern)).join('') + '</select></div>';
+  h += '<div class="fld" style="flex:1 1 200px;margin:0;">' + lbl('At (Eastern time)') + '<select class="inp" onchange="schedSet(\'hour\',this.value)">' + [5,6,7,8,9,10,11,12,13,14,15,16,17,18].map(x => opt(x, SCH.hourLabel(x), f.hour)).join('') + '</select></div></div>';
+  if (f.pattern === 'days') h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">' + SCHED_DAYS.map(d => '<span class="pill' + (f.days.indexOf(d[0]) >= 0 ? ' on' : '') + '" onclick="schedToggleDay(\'' + d[0] + '\')">' + d[1].slice(0, 3) + '</span>').join('') + '</div>';
+  if (f.pattern === 'weekly' || f.pattern === 'biweekly') h += '<div class="fld" style="margin:0 0 10px;max-width:260px;">' + lbl('On') + '<select class="inp" onchange="schedSet(\'weekday\',this.value)">' + SCHED_DAYS.map(d => opt(d[0], d[1], f.weekday)).join('') + '</select></div>';
+  if (f.pattern === 'monthly') {
+    h += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;"><div class="fld" style="flex:1 1 260px;margin:0;">' + lbl('Which day') + '<select class="inp" onchange="schedSet(\'monthlyMode\',this.value)">' + opt('day_of_month', 'A set day of the month (like the 1st)', f.monthlyMode) + opt('first_weekday', 'The first Monday, Tuesday... of the month', f.monthlyMode) + opt('last_business_day', 'The last business day of the month', f.monthlyMode) + '</select></div>';
+    if (f.monthlyMode === 'day_of_month') h += '<div class="fld" style="flex:1 1 160px;margin:0;">' + lbl('Day (1 to 28)') + '<input class="inp" type="number" min="1" max="28" value="' + esc(f.dayOfMonth) + '" oninput="S.schedForm.dayOfMonth=this.value;schedRefreshPreview()"></div>';
+    if (f.monthlyMode === 'first_weekday') h += '<div class="fld" style="flex:1 1 200px;margin:0;">' + lbl('Weekday') + '<select class="inp" onchange="schedSet(\'weekday\',this.value)">' + SCHED_DAYS.map(d => opt(d[0], d[1], f.weekday)).join('') + '</select></div>';
+    h += '</div>';
+  }
+  if (f.pattern === 'every_other_day' || f.pattern === 'biweekly') h += '<div class="fld" style="margin:0 0 10px;max-width:260px;">' + lbl('Starting') + '<input class="inp" type="date" value="' + esc(f.start) + '" onchange="schedSet(\'start\',this.value)"></div>';
+  let prev = '';
+  try { const sch = SCH.normalize(schedBody(f).schedule, schedToday()); prev = '<div id="schedPreview" style="font-size:12.5px;padding:9px 11px;background:var(--surf2);border-radius:6px;margin:4px 0 12px;"><b>' + esc(SCH.describe(sch)) + '.</b> Next: ' + schedNextDates(sch, 3).map(schedNiceDay).map(esc).join(', then ') + '.</div>'; }
+  catch (e) { prev = '<div id="schedPreview" style="font-size:12.5px;color:#B91C1C;margin:4px 0 12px;">' + esc(e.message) + '</div>'; }
+  h += prev;
+  if (S.schedFormErr) h += '<div class="alert-bad" style="margin-bottom:10px;">' + esc(S.schedFormErr) + '</div>';
+  h += '<div style="display:flex;gap:8px;"><button class="btn btn-pri" ' + (S.schedBusy ? 'disabled' : '') + ' onclick="schedSave()">' + (S.schedBusy ? 'Saving…' : 'Save') + '</button><button class="btn btn-out" onclick="st({schedForm:null,schedFormErr:\'\'})">Cancel</button></div></div>';
+  return h;
+}
+function schedRefreshPreview(){
+  const el = document.getElementById('schedPreview'), f = S.schedForm; if (!el || !f) return;
+  try { const sch = SCH.normalize(schedBody(f).schedule, schedToday()); el.style.color = ''; el.innerHTML = '<b>' + esc(SCH.describe(sch)) + '.</b> Next: ' + schedNextDates(sch, 3).map(schedNiceDay).map(esc).join(', then ') + '.'; }
+  catch (e) { el.style.color = '#B91C1C'; el.textContent = e.message; }
+}
+function schedV(){
+  loadScheds();
+  const data = schedData(), can = schedCanEdit(), demo = schedIsDemo();
+  let h = '<div class="wrap" style="max-width:1000px;"><div class="serif" style="font-size:26px;font-weight:700;margin:6px 0 4px;">Email schedules</div>';
+  h += '<div style="font-size:13px;color:var(--muted);line-height:1.6;max-width:760px;margin-bottom:14px;">Choose what gets emailed, who gets it, and how often. Daily, every other day, the days you pick (like Monday and Friday), weekly, every other week, or monthly. Times are Eastern. Use <b>Send me a preview</b> to see the real email before anyone else does.</div>';
+  if (!demo && data.emailConfigured === false) h += '<div class="alert-bad" style="margin-bottom:12px;">Email is not set up on this server yet, so nothing can be sent. See the Email and AI setup instructions.</div>';
+  if (S.schedErr) h += '<div class="alert-bad" style="margin-bottom:10px;">' + esc(S.schedErr) + '</div>';
+  if (S.schedNote) h += '<div class="alert-good" style="margin-bottom:10px;">' + esc(S.schedNote) + '</div>';
+  if (!can) return h + '<div class="card" style="padding:16px;font-size:13px;color:var(--muted);">An owner or admin sets up scheduled emails.</div></div>';
+  if (S.schedForm) h += schedFormV();
+  else h += '<div style="margin-bottom:14px;"><button class="btn btn-pri" onclick="S.schedForm=schedNewForm();S.schedNote=\'\';S.schedFormErr=\'\';render()">+ New scheduled email</button></div>';
+  const rows = data.schedules || [];
+  if (S.schedLoading && !rows.length) h += '<div style="font-size:12.5px;color:var(--muted);">Loading…</div>';
+  else if (!rows.length && !S.schedForm) h += '<div class="card" style="padding:18px;font-size:13px;color:var(--muted);">Nothing is scheduled yet. Click <b>New scheduled email</b> to set one up.</div>';
+  rows.forEach(r => {
+    const who = r.who === 'people' ? 'Each person on the team' : (r.recipients || []).join(', ');
+    h += '<div class="card" style="padding:13px 16px;margin-bottom:10px;' + (r.enabled ? '' : 'opacity:.65;') + '"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start;">';
+    h += '<div style="min-width:240px;flex:1 1 320px;"><div style="font-weight:800;font-size:14px;">' + esc(r.name) + (r.enabled ? '' : ' <span class="tag" style="background:#E5E7EB;color:#374151;">Paused</span>') + '</div>';
+    h += '<div style="font-size:12.5px;color:var(--ink);margin-top:2px;">' + esc(r.kindLabel) + ' · ' + esc(r.description) + '</div>';
+    h += '<div style="font-size:12px;color:var(--muted);margin-top:2px;">To: ' + esc(who) + '</div>';
+    h += '<div style="font-size:12px;color:var(--muted);margin-top:2px;">' + (r.enabled && r.nextSend ? 'Next: <b>' + esc(schedNiceDay(r.nextSend)) + '</b>. ' : '') + (r.lastSentDate ? 'Last: ' + esc(r.lastSentDate) + (r.lastResult ? ' (' + esc(r.lastResult) + ')' : '') : 'Not sent yet') + '</div>';
+    if (r.lastError) h += '<div style="font-size:12px;color:#B91C1C;margin-top:3px;">Last attempt failed: ' + esc(r.lastError) + ' It will try again.</div>';
+    h += '</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><button class="btn btn-out" onclick="schedPreview(\'' + escAttr(r.id) + '\')">Send me a preview</button><button class="btn btn-out" onclick="schedEdit(\'' + escAttr(r.id) + '\')">Change</button><button class="btn btn-out" onclick="schedToggle(\'' + escAttr(r.id) + '\')">' + (r.enabled ? 'Pause' : 'Resume') + '</button><button class="btn btn-out" style="color:#B91C1C;" onclick="schedDelete(\'' + escAttr(r.id) + '\')">Delete</button></div></div></div>';
+  });
+  h += '<div style="font-size:12px;color:var(--dim);line-height:1.6;margin-top:14px;max-width:760px;">Emails go out when the server is running. On the free hosting plan the server sleeps when nobody is using it, so an email can arrive late (it is sent as soon as the server wakes, if it is not too far behind). On a paid always-on plan they arrive on time.' + (!demo && data.scheduler && data.scheduler.lastTick ? ' The scheduler last checked at ' + esc(new Date(data.scheduler.lastTick).toLocaleTimeString()) + '.' : '') + '</div></div>';
+  return h;
+}
+
+
+/* ── ui_20_feed.js ── */
+/* ── Claim feed extras: load history with undo, clear test data, outbound export ── */
+function feedDemoRuns(){ if (!S.feedDemoRuns) S.feedDemoRuns = [
+  {id:'dr-2', source:'Upload', keyName:'Claims file', received:12, created:3, updated:7, unchanged:2, failed:0, at:new Date(Date.now()-3600e3).toISOString(), undoneAt:null, canUndo:true},
+  {id:'dr-1', source:'Key', keyName:'Claims system (sample)', received:40, created:40, updated:0, unchanged:0, failed:0, at:new Date(Date.now()-86400e3*2).toISOString(), undoneAt:null, canUndo:true}]; return S.feedDemoRuns; }
+function feedDemoCreated(){ if (!S.feedDemoCr) S.feedDemoCr = [
+  {id:'dm-1', matterNo:'FD-1A2B3C4D', client:'Acme Logistics LLC', claimNo:'CLM-2026-004417', createdAt:td(), touched:false},
+  {id:'dm-2', matterNo:'FD-5E6F7A8B', client:'Beta Foods Inc', claimNo:'CLM-2026-004502', createdAt:td(), touched:true}]; return S.feedDemoCr; }
+async function loadFeedExtras(force){
+  if (feedIsDemo() || S.feedXLoading || (S.feedRuns && !force)) return;
+  S.feedXLoading = true;
+  try {
+    const [a, b] = await Promise.all([apiFetch('/api/feed/runs'), apiFetch('/api/feed/created-matters')]);
+    st({feedRuns:a.runs || [], feedCreated:b.matters || [], feedXLoading:false});
+  } catch (e) { st({feedRuns:[], feedCreated:[], feedXLoading:false, feedXErr:e.message}); }
+}
+function feedWhen(iso){ const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}); }
+async function feedUndo(id){
+  const runs = feedIsDemo() ? feedDemoRuns() : (S.feedRuns || []);
+  const r0 = runs.find(x => x.id === id); if (!r0) return;
+  if (!confirm('Undo this load? Claims it created are removed, and claims it changed go back to how they were. Anything you edited by hand since is left alone.')) return;
+  if (feedIsDemo()) { r0.undoneAt = new Date().toISOString(); r0.canUndo = false; S.feedUndoMsg = 'Sample screen: undone ('+r0.created+' removed, '+r0.updated+' restored).'; render(); return; }
+  try {
+    const r = await apiFetch('/api/feed/runs/'+encodeURIComponent(id)+'/undo', {method:'POST', body:'{}'});
+    S.feedUndoMsg = 'Undone. '+r.removed+' removed, '+r.restored+' put back'+(r.skipped && r.skipped.length ? ', '+r.skipped.length+' left alone ('+r.skipped.map(x => x.matterNo+': '+x.reason).join(' ')+')' : '')+'.';
+    S.feedRuns = null; S.feedKeys = null;
+    try { if (typeof loadCasesFromApi === 'function') await loadCasesFromApi(); } catch (e) {}
+    await loadFeedExtras(true); render();
+  } catch (e) { S.feedUndoMsg = e.message; render(); }
+}
+function feedPickClean(id, on){ S.feedClean = S.feedClean || {}; if (on) S.feedClean[id] = 1; else delete S.feedClean[id]; render(); }
+async function feedDeleteMatters(){
+  const ids = Object.keys(S.feedClean || {}); if (!ids.length) { alert('Tick the matters to delete first.'); return; }
+  if (!confirm('Delete '+ids.length+' matter'+(ids.length === 1 ? '' : 's')+' for good? This cannot be undone.')) return;
+  if (feedIsDemo()) { const list = feedDemoCreated(); S.feedDemoCr = list.filter(x => !S.feedClean[x.id]); S.feedClean = {}; render(); return; }
+  try { const r = await apiFetch('/api/feed/delete-matters', {method:'POST', body:JSON.stringify({ids})}); S.feedUndoMsg = r.deleted+' matter'+(r.deleted === 1 ? '' : 's')+' deleted.'; S.feedClean = {}; try { if (typeof loadCasesFromApi === 'function') await loadCasesFromApi(); } catch (e) {} await loadFeedExtras(true); render(); }
+  catch (e) { alert(e.message); }
+}
+async function feedCreateExportKey(){
+  const name = ((document.getElementById('fkxName') || {}).value || '').trim();
+  if (!name) { alert('Name the system that will read matters, for example: Claims system.'); return; }
+  if (feedIsDemo()) { feedDemoKeys().unshift({id:'demo-x'+Date.now(), name:name, kind:'claim_export', active:true, created_at:td()}); S.feedNewKey = 'SAMPLE-KEY-NOT-REAL'; S.feedNewName = name; render(); return; }
+  try { const r = await apiFetch('/api/integration-keys', {method:'POST', body:JSON.stringify({name, kind:'claim_export'})}); S.feedNewKey = r.token; S.feedNewName = name; S.feedKeys = null; await loadFeedKeys(true); render(); } catch (e) { alert(e.message); }
+}
+async function feedDownloadAll(){
+  if (feedIsDemo()) { alert('Sample screen: sign in to a real account to download your matters.'); return; }
+  try {
+    const r = await fetch((API_BASE || '') + '/api/feed/export-file', {headers:{Authorization:'Bearer '+authToken}});
+    if (!r.ok) throw new Error('Download failed ('+r.status+').');
+    const b = await r.blob(); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'matters-'+td()+'.csv'; a.click();
+  } catch (e) { alert(e.message); }
+}
+function feedExtrasV(canMake, base, mono){
+  if (!canMake) return '';
+  const demo = feedIsDemo(); loadFeedExtras();
+  const runs = demo ? feedDemoRuns() : (S.feedRuns || []), cr = demo ? feedDemoCreated() : (S.feedCreated || []);
+  let h = '<div class="serif" style="font-size:20px;font-weight:700;margin:6px 0 6px;">Load history</div>';
+  if (S.feedUndoMsg) h += '<div class="alert-good" style="margin-bottom:8px;">'+esc(S.feedUndoMsg)+'</div>';
+  if (!runs.length) h += '<div class="card" style="padding:14px;font-size:13px;color:var(--muted);margin-bottom:14px;">'+(S.feedXLoading ? 'Loading…' : 'No loads yet. Each file or feed you send is listed here, and you can undo it.')+'</div>';
+  else h += '<div class="card" style="padding:0;overflow-x:auto;margin-bottom:14px;"><table><thead><tr><th>When</th><th>From</th><th>Result</th><th></th></tr></thead><tbody>'+runs.map(r => '<tr><td>'+esc(feedWhen(r.at))+'</td><td>'+esc(r.keyName || r.source || '')+'</td><td>'+esc(r.created+' new, '+r.updated+' updated, '+r.unchanged+' unchanged, '+r.failed+' failed')+'</td><td>'+(r.undoneAt ? '<span style="color:var(--dim);">Undone</span>' : (r.canUndo ? '<button class="btn btn-out" onclick="feedUndo(\''+escAttr(r.id)+'\')">Undo</button>' : ''))+'</td></tr>').join('')+'</tbody></table></div>';
+  h += '<div class="serif" style="font-size:20px;font-weight:700;margin-bottom:6px;">Clear test data</div>';
+  if (!cr.length) h += '<div class="card" style="padding:14px;font-size:13px;color:var(--muted);margin-bottom:14px;">No matters created by the claim feed.</div>';
+  else {
+    const picked = Object.keys(S.feedClean || {}).length;
+    h += '<div class="card" style="padding:12px 14px;margin-bottom:14px;"><div style="font-size:12.5px;color:var(--muted);margin-bottom:8px;">Matters the claim feed created. Ones with notes, documents, tasks or billing are marked <b>in use</b>; check them before you delete.</div>'
+      + cr.map(m => '<label style="display:flex;gap:8px;align-items:center;padding:4px 0;font-size:13px;"><input type="checkbox" '+((S.feedClean||{})[m.id] ? 'checked ' : '')+'onchange="feedPickClean(\''+escAttr(m.id)+'\',this.checked)"><b>'+esc(m.matterNo)+'</b> '+esc(m.client)+' <span style="color:var(--dim);">'+esc(m.claimNo || '')+'</span>'+(m.touched ? ' <span class="tag">in use</span>' : '')+'</label>').join('')
+      + '<div style="margin-top:8px;"><button class="btn btn-out" onclick="feedDeleteMatters()" '+(picked ? '' : 'disabled')+'>Delete ticked matters'+(picked ? ' ('+picked+')' : '')+'</button></div></div>';
+  }
+  h += '<div class="serif" style="font-size:20px;font-weight:700;margin-bottom:6px;">Send matters back out</div>'
+    + '<div class="card" style="padding:14px 16px;margin-bottom:14px;"><div style="font-size:12.5px;color:var(--muted);line-height:1.7;margin-bottom:8px;max-width:820px;">Your claims system can pull current matter status from Case Closed, so nobody types an update twice. It asks for what changed since its last request. Use a separate read-only key for this.</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;"><div><label class="lbl">System that will read matters</label><input id="fkxName" class="inp" style="width:300px;" placeholder="Claims system"></div><button class="btn btn-pri" onclick="feedCreateExportKey()">Make read key</button><button class="btn btn-out" onclick="feedDownloadAll()">Download all matters (CSV)</button></div>'
+    + '<div style="'+mono+'">curl "'+esc(base)+'/api/feed/export?format=csv&limit=500" \\\n  -H "Authorization: Bearer YOUR_READ_KEY"\n\n# Next page: send back the X-Next-Cursor value from the last reply\ncurl "'+esc(base)+'/api/feed/export?cursor=CURSOR_FROM_LAST_REPLY" \\\n  -H "Authorization: Bearer YOUR_READ_KEY"</div>'
+    + '<div style="font-size:12px;color:var(--dim);margin-top:8px;line-height:1.6;">The reply header X-Has-More says whether another page is waiting. Each row includes status, dates, reserve, budget and the early-warning risk score.</div></div>';
+  return h;
+}
+
+
+/* ── ui_30_diary.js ── */
+/* ── My Diary: every task across matters, with due dates ── */
+function diaryMe(){ return demandMe(); }
+function diaryRows(){
+  const today = demandToday(), me = diaryMe(), who = S.diaryWho || 'mine', rows = [];
+  acctScope().forEach(c => { if (c.status === 'Closed') return; (c.tasks || []).forEach((t, i) => {
+    if (who === 'mine' && me && t.assignedTo && t.assignedTo !== me) return;
+    if (who === 'mine' && me && !t.assignedTo && !demandIsMine(c)) return;
+    rows.push({c, t, i}); }); });
+  return {today, rows};
+}
+function diaryToggle(cid, idx){
+  const c = CASES.find(x => x.id === cid); if (!c || !c.tasks || !c.tasks[idx]) return;
+  const t = c.tasks[idx]; t.done = !t.done; t.completedDate = t.done ? td() : ''; sc(c); render();
+}
+function diaryAdd(){
+  const g = id => ((document.getElementById(id) || {}).value || '').trim();
+  const cid = g('dyCase'), title = g('dyTitle');
+  if (!cid || !title) { alert('Pick a matter and type what needs doing.'); return; }
+  const c = CASES.find(x => x.id === cid); if (!c) return;
+  if (!c.tasks) c.tasks = [];
+  c.tasks.push({id:'t'+Date.now(), title, assignedTo:g('dyWho') || diaryMe() || c.attorney, priority:g('dyPri') || 'Medium', due:g('dyDue'), done:false, created:td()});
+  sc(c); S.diaryOpenAdd = false; render();
+}
+function diaryV(){
+  const {today, rows} = diaryRows(), who = S.diaryWho || 'mine', show = S.diaryShow || 'open';
+  const open = rows.filter(r => !r.t.done);
+  const over = open.filter(r => r.t.due && r.t.due < today), due0 = open.filter(r => r.t.due === today);
+  const wk = open.filter(r => r.t.due && r.t.due > today && r.t.due <= demandAddDays(today, 7)), later = open.filter(r => r.t.due && r.t.due > demandAddDays(today, 7)), nod = open.filter(r => !r.t.due);
+  const pill = (k, l, cur, fn) => '<span class="pill'+(cur === k ? ' on' : '')+'" onclick="'+fn+'(\''+k+'\')">'+l+'</span>';
+  let h = '<div class="wrap" style="padding-top:18px;max-width:900px;"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-end;"><div><div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">My Diary</div><div style="font-size:13px;color:var(--muted);margin-top:4px;">Every task across your matters, soonest first.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap;">'
+    + pill('mine', 'Mine', who, 'diarySetWho') + pill('all', 'Everyone', who, 'diarySetWho') + pill('open', 'Open', show, 'diarySetShow') + pill('done', 'Done', show, 'diarySetShow') + '<button class="btn btn-pri" onclick="S.diaryOpenAdd=!S.diaryOpenAdd;render()">+ Add task</button></div></div>';
+  h += '<div style="margin:14px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;">' + [['Overdue', over.length, over.length ? '#B91C1C' : 'var(--ink)'], ['Due today', due0.length, 'var(--ink)'], ['Next 7 days', wk.length, 'var(--ink)'], ['Later', later.length + nod.length, 'var(--ink)']].map(k => '<div class="card" style="padding:10px 12px;"><div style="font-size:11.5px;color:var(--muted);">'+k[0]+'</div><div style="font-size:24px;font-weight:800;color:'+k[2]+';">'+k[1]+'</div></div>').join('') + '</div>';
+  if (S.diaryOpenAdd) {
+    const cs = acctScope().filter(c => c.status !== 'Closed');
+    h += '<div class="card" style="padding:12px 14px;margin-bottom:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;align-items:end;"><div><label class="lbl">Matter</label><select id="dyCase" class="inp"><option value="">Choose…</option>'+cs.map(c => '<option value="'+escAttr(c.id)+'">'+esc((c.matterNo || c.id)+' '+(c.client || ''))+'</option>').join('')+'</select></div><div style="grid-column:span 2;"><label class="lbl">What needs doing</label><input id="dyTitle" class="inp"></div><div><label class="lbl">Due</label><input id="dyDue" type="date" class="inp"></div><div><label class="lbl">For</label><input id="dyWho" class="inp" value="'+escAttr(diaryMe())+'"></div><div><label class="lbl">Priority</label><select id="dyPri" class="inp"><option>Medium</option><option>High</option><option>Low</option></select></div><button class="btn btn-pri" onclick="diaryAdd()">Add task</button></div>';
+  }
+  const rowV = r => { const t = r.t, late = !t.done && t.due && t.due < today; return '<div class="card" style="display:flex;gap:10px;align-items:center;padding:9px 12px;margin-bottom:6px;'+(t.done ? 'opacity:.6;' : '')+'"><input type="checkbox" '+(t.done ? 'checked ' : '')+'onchange="diaryToggle(\''+escAttr(r.c.id)+'\','+r.i+')" style="width:17px;height:17px;"><div style="flex:1;min-width:0;cursor:pointer;" onclick="stCase(\''+escAttr(r.c.id)+'\',\'tasks\')"><div style="font-size:13px;font-weight:600;'+(t.done ? 'text-decoration:line-through;' : '')+'">'+esc(t.title)+'</div><div style="font-size:11.5px;color:var(--muted);">'+esc((r.c.matterNo || r.c.id)+' · '+(r.c.client || ''))+(t.assignedTo ? ' · '+esc(t.assignedTo) : '')+(t.priority === 'High' ? ' · <b>High</b>' : '')+'</div></div><div style="font-size:12px;font-weight:700;white-space:nowrap;color:'+(late ? '#B91C1C' : 'var(--ink)')+';">'+(t.due ? esc(t.due) : 'No date')+(late ? ' (late)' : '')+'</div></div>'; };
+  const sec = (title, list) => list.length ? '<div style="font-weight:800;font-size:14px;margin:16px 0 6px;">'+title+' ('+list.length+')</div>' + list.map(rowV).join('') : '';
+  const byDue = (a, b) => (a.t.due || '9999') < (b.t.due || '9999') ? -1 : 1;
+  if (show === 'done') { const dn = rows.filter(r => r.t.done).sort((a, b) => (b.t.completedDate || '') < (a.t.completedDate || '') ? -1 : 1).slice(0, 60); h += dn.length ? dn.map(rowV).join('') : '<div class="card" style="padding:16px;color:var(--muted);font-size:13px;">Nothing finished yet.</div>'; }
+  else {
+    h += sec('Overdue', over.sort(byDue)) + sec('Today', due0) + sec('Next 7 days', wk.sort(byDue)) + sec('Later', later.sort(byDue)) + sec('No date', nod);
+    if (!open.length) h += '<div class="card" style="padding:16px;color:var(--muted);font-size:13px;">Nothing open. Use <b>+ Add task</b> to put something on your diary.</div>';
+  }
+  return h + '</div>';
+}
+function diarySetWho(k){ st({diaryWho:k}); }
+function diarySetShow(k){ st({diaryShow:k}); }
+function demandAddDays(d, n){ const x = new Date(d+'T12:00:00Z'); x.setUTCDate(x.getUTCDate()+n); return x.toISOString().slice(0,10); }
+
+/* ── Matters at risk: the early-warning score for every open matter ── */
+function riskRows(){
+  const today = demandToday();
+  return acctScope().filter(c => c.status !== 'Closed').map(c => ({c, r:earlyWarning(c, today)})).sort((a, b) => b.r.score - a.r.score);
+}
+function riskPill(r){ const hi = r.level === 'high', w = r.level === 'watch'; return '<span style="display:inline-block;min-width:34px;text-align:center;padding:2px 8px;border-radius:10px;font-weight:800;font-size:12px;background:'+(hi ? '#FEE2E2' : w ? '#FEF3C7' : '#ECFDF5')+';color:'+(hi ? '#991B1B' : w ? '#92400E' : '#166534')+';">'+r.score+'</span>'; }
+function riskV(){
+  const all = riskRows(), f = S.riskFilter || 'flagged';
+  const list = f === 'all' ? all : all.filter(x => x.r.level !== 'ok');
+  const hi = all.filter(x => x.r.level === 'high').length, wt = all.filter(x => x.r.level === 'watch').length;
+  let h = '<div class="wrap" style="padding-top:18px;max-width:980px;"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-end;"><div><div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">Matters at risk</div><div style="font-size:13px;color:var(--muted);margin-top:4px;max-width:640px;line-height:1.5;">A plain points checklist, not a prediction. Each score shows exactly what added to it, so you can fix the cause. 60 and up is high, 35 and up is watch.</div></div><div style="display:flex;gap:8px;">'
+    + '<span class="pill'+(f === 'flagged' ? ' on' : '')+'" onclick="st({riskFilter:\'flagged\'})">Flagged ('+(hi+wt)+')</span><span class="pill'+(f === 'all' ? ' on' : '')+'" onclick="st({riskFilter:\'all\'})">All open ('+all.length+')</span></div></div>';
+  h += '<div style="margin:12px 0;font-size:13px;"><b style="color:#991B1B;">'+hi+' high</b> · <b style="color:#92400E;">'+wt+' watch</b> · '+(all.length-hi-wt)+' ok</div>';
+  if (!list.length) return h + '<div class="card" style="padding:16px;color:var(--muted);font-size:13px;">No matters are flagged. Nothing needs attention on the score.</div></div>';
+  h += list.slice(0, 80).map(x => '<div class="card" style="padding:10px 14px;margin-bottom:7px;cursor:pointer;" onclick="stCase(\''+escAttr(x.c.id)+'\',\'overview\')"><div style="display:flex;gap:12px;align-items:center;">'+riskPill(x.r)+'<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:13.5px;">'+esc((x.c.matterNo || x.c.id)+' · '+(x.c.client || ''))+'</div><div style="font-size:12px;color:var(--muted);margin-top:2px;">'+(x.r.reasons.length ? x.r.reasons.slice(0, 4).map(z => esc(z.text)).join(' · ') : 'Nothing flagged.')+'</div></div></div></div>').join('');
+  return h + '</div>';
+}
+
+/* ── Client reports: the monthly report for one client account, shown here and sent by schedule ── */
+function clientReportData(){
+  const today = demandToday(), per = crPeriod(S.crPeriod || 'last_month', today);
+  return crBuild(CASES, {account:S.crAcct || '', period:per, today, orgName:(S.orgName || (S.currentUser && S.currentUser.orgName) || 'Your claims team'), includeRisk:S.crRisk !== false});
+}
+function crPrint(){
+  const d = clientReportData(), w = window.open('', '_blank'); if (!w) { alert('Allow pop-ups for this site, then click again. Choose "Save as PDF" in the print window.'); return; }
+  w.document.write('<!doctype html><title>'+esc((d.account || 'All accounts')+' report')+'</title><body style="margin:20px">'+crHtml(d)+'</body>'); w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 300);
+}
+function crCopyText(){ const t = crText(clientReportData()); try { navigator.clipboard.writeText(t); S.crMsg = 'Copied.'; } catch (e) { S.crMsg = 'Could not copy on this browser.'; } render(); }
+function clientReportV(){
+  const accts = [...new Set(CASES.map(c => String(c.clientAccount || '').trim()).filter(Boolean))].sort();
+  const d = clientReportData();
+  const opt = (v, l, cur) => '<option value="'+escAttr(v)+'"'+(cur === v ? ' selected' : '')+'>'+esc(l)+'</option>';
+  let h = '<div class="wrap" style="padding-top:18px;max-width:860px;"><div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">Client reports</div><div style="font-size:13px;color:var(--muted);margin:4px 0 12px;max-width:640px;line-height:1.5;">A clean report for one client account: what opened, what closed, spend, what is coming up and what to watch. Print it to PDF here, or set it to email itself on a schedule under Email Schedules.</div>';
+  h += '<div class="card" style="padding:12px 14px;margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;"><div><label class="lbl">Client account</label><select class="inp" onchange="st({crAcct:this.value})">'+opt('', 'All accounts', S.crAcct || '')+accts.map(a => opt(a, a, S.crAcct || '')).join('')+'</select></div><div><label class="lbl">Period</label><select class="inp" onchange="st({crPeriod:this.value})">'+[['last_month', 'Last month'], ['last_30', 'Last 30 days'], ['last_7', 'Last 7 days'], ['month_to_date', 'Month to date']].map(p => opt(p[0], p[1], S.crPeriod || 'last_month')).join('')+'</select></div><label style="font-size:12.5px;display:flex;gap:6px;align-items:center;"><input type="checkbox" '+(S.crRisk !== false ? 'checked ' : '')+'onchange="st({crRisk:this.checked})"> Include matters to watch</label><button class="btn btn-pri" onclick="crPrint()">Print or save as PDF</button><button class="btn btn-out" onclick="crCopyText()">Copy as text</button><button class="btn btn-out" onclick="st({role:\'sched\',caseId:null})">Schedule by email</button></div>';
+  if (S.crMsg) { h += '<div class="alert-good" style="margin-bottom:10px;">'+esc(S.crMsg)+'</div>'; S.crMsg = ''; }
+  h += '<div class="card" style="padding:14px;background:#fff;color:#1F2937;">'+crHtml(d)+'</div></div>';
+  return h;
+}
+
+
+/* ── ui_40_docs.js ── */
+/* ── Matter files: real uploads, download, who-viewed ── */
+function docBytes(n){ return n >= 1048576 ? (n/1048576).toFixed(1)+' MB' : Math.max(1, Math.round(n/1024))+' KB'; }
+async function docLoad(cid, force){
+  S.docs = S.docs || {};
+  if (feedIsDemo() || (S.docs[cid] && !force) || S.docsLoading === cid) return;
+  S.docsLoading = cid;
+  try { const r = await apiFetch('/api/cases/'+encodeURIComponent(cid)+'/documents'); S.docs[cid] = {list:r.documents || [], err:''}; }
+  catch (e) { S.docs[cid] = {list:[], err:e.message}; }
+  S.docsLoading = null; render();
+}
+async function docUpload(cid, input){
+  const f = input.files && input.files[0]; if (!f) return;
+  if (feedIsDemo()) { alert('Sample screen: sign in to a real account to store files.'); input.value = ''; return; }
+  if (f.size > 15*1024*1024) { alert('Files can be up to 15 MB.'); input.value = ''; return; }
+  const type = (document.getElementById('docType') || {}).value || 'Other';
+  S.docBusy = true; render();
+  try {
+    const r = await fetch((API_BASE || '')+'/api/cases/'+encodeURIComponent(cid)+'/documents?name='+encodeURIComponent(f.name)+'&type='+encodeURIComponent(type), {method:'POST', headers:{Authorization:'Bearer '+authToken, 'Content-Type':'application/octet-stream'}, body:f});
+    const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'Upload failed.');
+    S.docMsg = f.name+' saved.';
+  } catch (e) { S.docMsg = e.message; }
+  S.docBusy = false; await docLoad(cid, true); render();
+}
+async function docGet(id, name, inline){
+  try {
+    const r = await fetch((API_BASE || '')+'/api/documents/'+encodeURIComponent(id)+'/download'+(inline ? '?inline=1' : ''), {headers:{Authorization:'Bearer '+authToken}});
+    if (!r.ok) throw new Error('Could not open the file ('+r.status+').');
+    const b = await r.blob(), u = URL.createObjectURL(b);
+    if (inline) window.open(u, '_blank'); else { const a = document.createElement('a'); a.href = u; a.download = name; a.click(); }
+    setTimeout(() => URL.revokeObjectURL(u), 60000);
+    const cid = S.caseId; if (cid) setTimeout(() => docLoad(cid, true), 500);
+  } catch (e) { alert(e.message); }
+}
+async function docViews(id){
+  if (S.docViewOpen === id) { S.docViewOpen = null; render(); return; }
+  try { const r = await apiFetch('/api/documents/'+encodeURIComponent(id)+'/views'); S.docViewList = r.views || []; S.docViewOpen = id; } catch (e) { S.docViewList = []; S.docViewOpen = id; alert(e.message); }
+  render();
+}
+async function docDelete(cid, id){
+  if (!confirm('Delete this file for good?')) return;
+  try { await apiFetch('/api/documents/'+encodeURIComponent(id), {method:'DELETE'}); S.docViewOpen = null; await docLoad(cid, true); render(); } catch (e) { alert(e.message); }
+}
+function docFilesV(c){
+  const demo = feedIsDemo(); if (!demo) docLoad(c.id);
+  const st0 = (S.docs || {})[c.id] || {list:[], err:''}, list = st0.list;
+  let h = docInboundV(c) + '<div class="section-band">Files</div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 10px;">'
+    + '<select id="docType" class="inp" style="width:auto;">'+['Pleading','Correspondence','Discovery','Medical','Expert','Policy','Invoice','Photo','Other'].map(t => '<option>'+t+'</option>').join('')+'</select>'
+    + '<label class="btn btn-pri" style="cursor:pointer;">'+(S.docBusy ? 'Uploading…' : 'Upload a file')+'<input type="file" style="display:none;" '+(S.docBusy ? 'disabled ' : '')+'onchange="docUpload(\''+escAttr(c.id)+'\',this)"></label>'
+    + '<span style="font-size:11.5px;color:var(--dim);">PDF, Word, Excel, PowerPoint, images, text or email files, up to 15 MB. Every open and download is logged.</span></div>';
+  if (S.docMsg) { h += '<div class="alert-good" style="margin-bottom:8px;">'+esc(S.docMsg)+'</div>'; S.docMsg = ''; }
+  if (st0.err) h += '<div class="alert-bad" style="margin-bottom:8px;">'+esc(st0.err)+'</div>';
+  if (demo) return h + '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;">File storage works in a real account. This sample screen only keeps the index below.</div>';
+  if (!list.length) return h + '<div style="padding:12px;color:var(--muted);font-size:12px;">No files yet.</div>';
+  h += '<table><thead><tr><th>File</th><th>Type</th><th>Size</th><th>Added</th><th>Opened</th><th></th></tr></thead><tbody>';
+  list.forEach(d => {
+    const canView = d.mime === 'application/pdf' || /^image\//.test(d.mime);
+    h += '<tr><td style="font-weight:600;">'+esc(d.name)+(d.source && d.source !== 'upload' ? ' <span class="tag">'+esc(d.source)+'</span>' : '')+'</td><td><span class="tag">'+esc(d.type)+'</span></td><td>'+docBytes(d.size)+'</td><td>'+esc(String(d.createdAt).slice(0,10))+(d.uploadedBy ? '<br><span style="font-size:10.5px;color:var(--dim);">'+esc(d.uploadedBy)+'</span>' : '')+'</td><td><span class="muted-link" style="cursor:pointer;" onclick="docViews(\''+escAttr(d.id)+'\')">'+d.views+' time'+(d.views === 1 ? '' : 's')+'</span></td><td style="white-space:nowrap;">'+(canView ? '<button class="btn btn-out" onclick="docGet(\''+escAttr(d.id)+'\',\'\',true)">View</button> ' : '')+'<button class="btn btn-out" onclick="docGet(\''+escAttr(d.id)+'\',\''+escAttr(d.name)+'\',false)">Download</button> <button class="btn btn-out" onclick="docDelete(\''+escAttr(c.id)+'\',\''+escAttr(d.id)+'\')">Delete</button></td></tr>';
+    if (S.docViewOpen === d.id) h += '<tr><td colspan="6" style="background:var(--surf2);font-size:12px;">'+((S.docViewList || []).length ? (S.docViewList || []).map(v => esc(v.user)+' · '+esc(v.action === 'view' ? 'viewed' : 'downloaded')+' · '+esc(feedWhen(v.at))).join('<br>') : 'Nobody has opened this file yet.')+'</td></tr>';
+  });
+  return h + '</tbody></table><div style="height:14px;"></div>';
+}
+
+/* ── Email-in: the matter's own address ── */
+async function docInbound(cid, rotate){
+  if (feedIsDemo()) { S.docInbound = {cid, address:'m-sample@in.example.com', demo:true}; render(); return; }
+  if (rotate && !confirm('Replace the address? The old one stops working right away.')) return;
+  try { const r = await apiFetch('/api/cases/'+encodeURIComponent(cid)+'/inbound-address', {method:'POST', body:JSON.stringify({rotate:!!rotate})}); S.docInbound = {cid, address:r.address}; }
+  catch (e) { S.docInbound = {cid, error:e.message}; }
+  render();
+}
+function docInboundV(c){
+  const d = S.docInbound && S.docInbound.cid === c.id ? S.docInbound : null;
+  let h = '<div class="card" style="padding:10px 14px;margin:6px 0 12px;"><div style="font-weight:700;font-size:13px;">Email this matter</div><div style="font-size:12px;color:var(--muted);margin:2px 0 8px;line-height:1.5;max-width:700px;">Forward or copy an email to this matter\'s own address. The message is saved as a private note and its attachments are saved as files. Only people we know (your team and approved counsel) are accepted.</div>';
+  if (!d) h += '<button class="btn btn-out" onclick="docInbound(\''+escAttr(c.id)+'\')">Show the address</button>';
+  else if (d.error) h += '<div class="alert-bad">'+esc(d.error)+'</div>';
+  else h += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><code id="inAddr" style="background:var(--surf3);padding:6px 10px;border-radius:6px;font-size:12px;">'+esc(d.address)+'</code><button class="btn btn-out" onclick="feedCopy(\'inAddr\')">Copy</button><button class="btn btn-out" onclick="docInbound(\''+escAttr(c.id)+'\',true)">Replace address</button></div>'+(d.demo ? '<div style="font-size:11.5px;color:var(--dim);margin-top:6px;">Sample address. Real accounts get a working one.</div>' : '');
+  return h + '</div>';
+}
+
+
+/* ── ui_50_approvals.js ── */
+/* ── Approvals: settlement authority and reserve requests, with dollar-level rules ── */
+function apvMe(){ return ((S.currentUser && S.currentUser.email) || '').toLowerCase(); }
+function apvPolicy(){ return S.apvPol || {enabled:false, blockSelfApproval:true, reserveThreshold:25000, levels:[]}; }
+async function apvLoad(force){
+  if (feedIsDemo() || S.apvLoading || (S.apvPol && !force)) return;
+  S.apvLoading = true;
+  try { const r = await apiFetch('/api/org-settings/approval_policy'); st({apvPol:r.value || {enabled:false, blockSelfApproval:true, reserveThreshold:25000, levels:[]}, apvLoading:false}); }
+  catch (e) { st({apvPol:{enabled:false, blockSelfApproval:true, reserveThreshold:25000, levels:[]}, apvLoading:false}); }
+}
+function apvLevelFor(amount){ const ls = apvPolicy().levels || []; return ls.find(l => l.upTo == null || amount <= l.upTo) || null; }
+function apvRows(){
+  const pend = [], done = [];
+  CASES.forEach(c => {
+    (c.authorityRequests || []).forEach((a, i) => { const r = {c, a, i, kind:'authority', amt:a.amountRequested}; (a.status === 'Pending' ? pend : done).push(r); });
+    (c.reserveRequests || []).forEach((a, i) => { const r = {c, a, i, kind:'reserve', amt:a.to}; (a.status === 'Pending' ? pend : done).push(r); });
+    (c.budgetRequests || []).forEach((a, i) => { const r = {c, a, i, kind:'budget', amt:a.to}; (a.status === 'Pending' ? pend : done).push(r); });
+  });
+  pend.sort((x, y) => (x.a.requestedAt || x.a.date || '') < (y.a.requestedAt || y.a.date || '') ? -1 : 1);
+  done.sort((x, y) => (y.a.approvedAt || y.a.approvedDate || '') < (x.a.approvedAt || x.a.approvedDate || '') ? -1 : 1);
+  return {pend, done: done.slice(0, 15)};
+}
+function apvDecide(cid, kind, idx, status){
+  const c = CASES.find(x => x.id === cid); if (!c) return;
+  const key = kind === 'reserve' ? 'reserveRequests' : kind === 'budget' ? 'budgetRequests' : 'authorityRequests', a = (c[key] || [])[idx]; if (!a) return;
+  if (!confirm((status === 'Approved' ? 'Approve ' : 'Deny ')+fM(kind === 'authority' ? a.amountRequested : a.to)+(kind === 'reserve' ? ' reserve' : kind === 'budget' ? ' defense budget' : ' settlement authority')+' on '+(c.matterNo || c.id)+'?')) return;
+  a.status = status; a.approvedDate = td(); a.approvedBy = apvMe(); a.approvedByName = (S.currentUser && S.currentUser.name) || '';
+  if (status === 'Approved') { if (kind === 'reserve') { c.insurance = c.insurance || {}; c.insurance.reserveAmount = a.to; } else if (kind === 'budget') { c.billing.budget = a.to; a.approvedAmount = a.to; } else a.approvedAmount = a.amountRequested; }
+  lg(c.id, c.attorney, 'Settlement', (kind === 'reserve' ? 'Reserve request ' : kind === 'budget' ? 'Budget request ' : 'Authority request ')+status.toLowerCase()+': '+fM(kind === 'authority' ? a.amountRequested : a.to));
+  sc(c); render();
+}
+function apvNewReserve(){
+  const g = id => ((document.getElementById(id) || {}).value || '').trim();
+  const c = CASES.find(x => x.id === g('apvCase')), to = parseFloat(g('apvTo'));
+  if (!c || !(to > 0)) { alert('Pick a matter and enter the new reserve amount.'); return; }
+  c.reserveRequests = c.reserveRequests || [];
+  c.reserveRequests.push({date:td(), from:Number(c.insurance && c.insurance.reserveAmount) || 0, to, justification:g('apvWhy'), status:'Pending', requestedBy:apvMe(), requestedByName:(S.currentUser && S.currentUser.name) || ''});
+  lg(c.id, c.attorney, 'Settlement', 'Reserve change requested: '+fM(to));
+  S.apvForm = false; sc(c); render();
+}
+function apvLevelEdit(i, f, v){ const p = JSON.parse(JSON.stringify(apvPolicy())); p.levels = p.levels || []; while (p.levels.length <= i) p.levels.push({name:'Level '+(p.levels.length+1), upTo:null, approvers:[]}); p.levels[i][f] = f === 'approvers' ? String(v).split(/[,;\s]+/).filter(Boolean) : f === 'upTo' ? (v === '' ? null : Number(v)) : v; S.apvPol = p; }
+function apvAddLevel(){ const p = JSON.parse(JSON.stringify(apvPolicy())); p.levels = p.levels || []; if (p.levels.length >= 6) return; const last = p.levels[p.levels.length-1]; if (last && last.upTo == null) last.upTo = (p.levels.length+1) * 25000; p.levels.push({name:'Level '+(p.levels.length+1), upTo:null, approvers:[]}); S.apvPol = p; render(); }
+function apvDelLevel(i){ const p = JSON.parse(JSON.stringify(apvPolicy())); p.levels.splice(i, 1); S.apvPol = p; render(); }
+async function apvSave(){
+  const p = apvPolicy(); p.enabled = !!(document.getElementById('apvOn') || {}).checked; p.blockSelfApproval = !!(document.getElementById('apvSelf') || {}).checked; p.reserveThreshold = Number((document.getElementById('apvThr') || {}).value) || 0;
+  if (feedIsDemo()) { S.apvPol = p; S.apvMsg = 'Sample screen: nothing was saved.'; render(); return; }
+  try { await apiFetch('/api/org-settings/approval_policy', {method:'PUT', body:JSON.stringify({value:p})}); S.apvMsg = p.enabled ? 'Saved. Approval rules are on.' : 'Saved. Approval rules are off, so nothing is blocked.'; S.apvPol = null; await apvLoad(true); render(); }
+  catch (e) { S.apvMsg = e.message; render(); }
+}
+function apvV(){
+  apvLoad();
+  const {pend, done} = apvRows(), pol = apvPolicy(), me = apvMe();
+  const isOwner = feedIsDemo() || (S.currentUser && (S.currentUser.role === 'owner' || S.currentUser.platformAdmin));
+  const who = r => esc(r.a.requestedByName || r.a.requestedBy || 'someone');
+  let h = '<div class="wrap" style="padding-top:18px;max-width:980px;"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-end;"><div><div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">Approvals</div><div style="font-size:13px;color:var(--muted);margin-top:4px;max-width:620px;line-height:1.5;">Requests for settlement authority and reserve changes. '+(pol.enabled ? 'Approval rules are on: the amount decides who can approve.' : 'Approval rules are off, so anyone can decide. Names and dates are still recorded.')+'</div></div><button class="btn btn-pri" onclick="S.apvForm=!S.apvForm;render()">+ Request a reserve change</button></div>';
+  if (S.apvMsg) { h += '<div class="alert-good" style="margin-top:10px;">'+esc(S.apvMsg)+'</div>'; S.apvMsg = ''; }
+  if (S.apvForm) h += '<div class="card" style="padding:12px 14px;margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;align-items:end;"><div><label class="lbl">Matter</label><select id="apvCase" class="inp"><option value="">Choose…</option>'+CASES.filter(c => c.status !== 'Closed').map(c => '<option value="'+escAttr(c.id)+'">'+esc((c.matterNo || c.id)+' '+(c.client || ''))+'</option>').join('')+'</select></div><div><label class="lbl">New reserve</label><input id="apvTo" type="number" class="inp"></div><div style="grid-column:span 2;"><label class="lbl">Reason</label><input id="apvWhy" class="inp"></div><button class="btn btn-pri" onclick="apvNewReserve()">Send for approval</button></div>';
+  h += '<div style="font-weight:800;font-size:15px;margin:18px 0 6px;">Waiting for a decision ('+pend.length+')</div>';
+  if (!pend.length) h += '<div class="card" style="padding:14px;color:var(--muted);font-size:13px;">Nothing is waiting.</div>';
+  pend.forEach(r => { const lv = apvLevelFor(Number(r.amt) || 0), mine = r.a.requestedBy && r.a.requestedBy.toLowerCase() === me && pol.blockSelfApproval !== false && pol.enabled;
+    h += '<div class="card" style="padding:10px 14px;margin-bottom:7px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;"><div style="flex:1;min-width:220px;cursor:pointer;" onclick="stCase(\''+escAttr(r.c.id)+'\',\''+(r.kind === 'reserve' ? 'insurance' : r.kind === 'budget' ? 'billing' : 'closing')+'\')"><div style="font-weight:800;font-size:15px;">'+fM(r.amt)+' <span style="font-size:12px;font-weight:600;color:var(--muted);">'+(r.kind === 'reserve' ? 'reserve (now '+fM(r.a.from)+')' : r.kind === 'budget' ? 'revised defense budget (now '+fM(r.a.from)+')' : 'settlement authority')+'</span></div><div style="font-size:12.5px;">'+esc((r.c.matterNo || r.c.id)+' · '+(r.c.client || ''))+'</div><div style="font-size:11.5px;color:var(--muted);">Asked by '+who(r)+' on '+esc(String(r.a.requestedAt || r.a.date || '').slice(0,10))+(r.a.justification ? ' · '+esc(r.a.justification) : '')+(pol.enabled && lv ? ' · needs '+esc(lv.name)+(lv.approvers && lv.approvers.length ? ' ('+lv.approvers.map(esc).join(', ')+')' : '') : '')+'</div></div>'
+      + (mine ? '<span style="font-size:12px;color:var(--dim);">Someone else needs to decide this.</span>' : '<button class="btn btn-out" style="color:#15803D;" onclick="apvDecide(\''+escAttr(r.c.id)+'\',\''+r.kind+'\','+r.i+',\'Approved\')">Approve</button><button class="btn btn-out" style="color:#B91C1C;" onclick="apvDecide(\''+escAttr(r.c.id)+'\',\''+r.kind+'\','+r.i+',\'Denied\')">Deny</button>')+'</div>'; });
+  h += '<div style="font-weight:800;font-size:15px;margin:18px 0 6px;">Recent decisions</div>';
+  if (!done.length) h += '<div class="card" style="padding:14px;color:var(--muted);font-size:13px;">None yet.</div>';
+  else h += '<div class="card" style="padding:0;overflow-x:auto;"><table><thead><tr><th>Matter</th><th>Request</th><th>Amount</th><th>Asked by</th><th>Decision</th></tr></thead><tbody>'+done.map(r => '<tr><td>'+esc((r.c.matterNo || r.c.id)+' '+(r.c.client || ''))+'</td><td>'+(r.kind === 'reserve' ? 'Reserve' : r.kind === 'budget' ? 'Budget' : 'Authority')+'</td><td>'+fM(r.amt)+'</td><td>'+who(r)+'</td><td><b style="color:'+(r.a.status === 'Approved' ? '#15803D' : '#B91C1C')+';">'+esc(r.a.status)+'</b> by '+esc(r.a.approvedByName || r.a.approvedBy || 'unknown')+' on '+esc(String(r.a.approvedAt || r.a.approvedDate || '').slice(0,10))+'</td></tr>').join('')+'</tbody></table></div>';
+  if (isOwner) {
+    h += '<div style="font-weight:800;font-size:15px;margin:22px 0 6px;">Approval rules</div><div class="card" style="padding:14px 16px;"><div style="font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:10px;max-width:760px;">Set who can approve at each dollar amount. Leave the names blank and any owner or admin can approve that level. Nobody can approve their own request, and a decided request cannot be changed. Only the account owner can edit these rules.</div>'
+      + '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin-bottom:10px;"><label style="font-size:13px;display:flex;gap:6px;align-items:center;"><input id="apvOn" type="checkbox" '+(pol.enabled ? 'checked' : '')+'> Turn the rules on</label><label style="font-size:13px;display:flex;gap:6px;align-items:center;"><input id="apvSelf" type="checkbox" '+(pol.blockSelfApproval !== false ? 'checked' : '')+'> Block self-approval</label><label style="font-size:13px;display:flex;gap:6px;align-items:center;">Reserve raises over <input id="apvThr" type="number" class="inp" style="width:110px;" value="'+escAttr(pol.reserveThreshold || 0)+'"> need a request</label></div>'
+      + (pol.levels || []).map((l, i) => '<div style="display:grid;grid-template-columns:1.2fr 1fr 2.4fr auto;gap:8px;align-items:end;margin-bottom:6px;"><div><label class="lbl">Level</label><input class="inp" value="'+escAttr(l.name)+'" oninput="apvLevelEdit('+i+',\'name\',this.value)"></div><div><label class="lbl">Up to ($)</label><input class="inp" type="number" placeholder="no limit" value="'+escAttr(l.upTo == null ? '' : l.upTo)+'" oninput="apvLevelEdit('+i+',\'upTo\',this.value)"></div><div><label class="lbl">Approvers (emails)</label><input class="inp" placeholder="blank = any owner or admin" value="'+escAttr((l.approvers || []).join(', '))+'" oninput="apvLevelEdit('+i+',\'approvers\',this.value)"></div><button class="btn btn-out" onclick="apvDelLevel('+i+')">Remove</button></div>').join('')
+      + '<div style="display:flex;gap:8px;margin-top:8px;"><button class="btn btn-out" onclick="apvAddLevel()">+ Add a level</button><button class="btn btn-pri" onclick="apvSave()">Save rules</button></div></div>';
+  }
+  return h + '</div>';
+}
+
+
+/* ── ui_60_budget.js ── */
+/* ── Budget vs actual on the matter's Billing tab, with a revised-budget request ── */
+function budgetState(c){
+  const b = c.billing || {}, budget = Number(b.budget) || 0, billed = Number(b.totalBilled) || 0;
+  if (!(budget > 0)) return {budget:0, billed, pct:null, level:'none'};
+  const pct = billed / budget; return {budget, billed, pct, level: pct >= 1 ? 'over' : pct >= 0.75 ? 'warn' : 'ok', left: budget - billed};
+}
+function budgetRequest(cid){
+  const c = CASES.find(x => x.id === cid); if (!c) return;
+  const to = parseFloat(window._bqTo), why = (window._bqWhy || '').trim();
+  if (!(to > 0)) { alert('Enter the new budget amount.'); return; }
+  c.budgetRequests = c.budgetRequests || [];
+  c.budgetRequests.push({date:td(), from:Number(c.billing.budget) || 0, to, justification:why, status:'Pending', requestedBy:apvMe(), requestedByName:(S.currentUser && S.currentUser.name) || ''});
+  lg(c.id, c.attorney, 'Billing', 'Revised budget requested: '+fM(to));
+  window._bqTo = ''; window._bqWhy = ''; sc(c); render();
+}
+function budgetMeterV(c){
+  const b = budgetState(c);
+  let h = '<div class="section-band">Budget vs actual</div>';
+  if (b.level === 'none') h += '<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">No budget is set for this matter. Enter a Matter Budget above and you will see spend against it, with alerts at 75% and 100%.</div>';
+  else {
+    const col = b.level === 'over' ? '#B91C1C' : b.level === 'warn' ? '#B45309' : '#15803D', w = Math.min(100, Math.round(b.pct * 100));
+    h += '<div style="max-width:640px;margin-bottom:10px;"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px;"><span><b>'+fM(b.billed)+'</b> billed of '+fM(b.budget)+'</span><b style="color:'+col+';">'+Math.round(b.pct*100)+'%'+(b.level === 'over' ? ' (over by '+fM(b.billed-b.budget)+')' : b.level === 'warn' ? ' (75% alert)' : '')+'</b></div><div style="position:relative;height:12px;background:var(--surf3);border-radius:6px;overflow:hidden;"><div style="width:'+w+'%;height:100%;background:'+col+';"></div><div style="position:absolute;left:75%;top:0;bottom:0;width:2px;background:#fff;opacity:.9;"></div></div>'+(b.level !== 'ok' ? '<div style="font-size:12px;color:'+col+';margin-top:5px;">'+(b.level === 'over' ? 'This matter is over budget. Ask for a revised budget below.' : 'Spend has passed 75% of budget. Check whether the budget needs to grow before it runs out.')+'</div>' : '')+'</div>';
+  }
+  h += '<div style="display:grid;grid-template-columns:1fr 3fr auto;gap:7px;align-items:end;margin-bottom:10px;max-width:760px;"><div>'+inp('Revised budget','','window._bqTo=this.value','number')+'</div><div>'+inp('Why more is needed','','window._bqWhy=this.value')+'</div><button class="btn btn-pri" onclick="budgetRequest(\''+escAttr(c.id)+'\')">Request</button></div>';
+  const reqs = c.budgetRequests || [];
+  if (reqs.length) h += '<table><thead><tr><th>Date</th><th>From</th><th>To</th><th>Reason</th><th>Status</th></tr></thead><tbody>'+reqs.map((a, i) => '<tr><td>'+esc(a.date)+'</td><td>'+fM(a.from)+'</td><td style="font-weight:700;">'+fM(a.to)+'</td><td style="font-size:11px;color:var(--muted);">'+esc(a.justification || '')+'</td><td>'+(a.status === 'Pending' ? '<button class="btn btn-ghost" style="font-size:10px;color:var(--green);" onclick="apvDecide(\''+escAttr(c.id)+'\',\'budget\','+i+',\'Approved\')">Approve</button> <button class="btn btn-ghost" style="font-size:10px;color:var(--red);" onclick="apvDecide(\''+escAttr(c.id)+'\',\'budget\','+i+',\'Denied\')">Deny</button>' : '<b>'+esc(a.status)+'</b><br><span style="font-size:10px;color:var(--dim);">by '+esc(a.approvedByName || a.approvedBy || '')+'</span>')+'</td></tr>').join('')+'</tbody></table>';
+  return h;
+}
+
+
+/* ── ui_70_matters.js ── */
+/* ── All matters: filter, sort, save the view, export what you see ── */
+const MX_COLS = [['matter','Matter'],['client','Client'],['type','Type'],['status','Status'],['attorney','Attorney'],['reserve','Reserve'],['billed','Billed'],['next','Next date'],['risk','Risk']];
+function mxFilters(){ return S.mx || (S.mx = {q:'', status:'open', type:'', attorney:'', account:'', state:'', risk:'', sort:'risk', dir:'desc'}); }
+function mxNext(c){
+  const k = c.keyDates || {}, t = demandToday(), list = [k.trialDate, k.mediationDate, k.sol, k.answerDue, k.discoveryClose, c.nextStepDue].filter(d => d && String(d).slice(0,10) >= t).map(d => String(d).slice(0,10)).sort();
+  return list[0] || '';
+}
+function mxRows(){
+  const f = mxFilters(), today = demandToday(), q = f.q.trim().toLowerCase();
+  let rows = acctScope().map(c => ({c, r:earlyWarning(c, today), next:mxNext(c)}));
+  rows = rows.filter(x => {
+    const c = x.c;
+    if (f.status === 'open' && c.status === 'Closed') return false;
+    if (f.status === 'closed' && c.status !== 'Closed') return false;
+    if (f.type && c.type !== f.type) return false;
+    if (f.attorney && (c.attorney || '') !== f.attorney) return false;
+    if (f.account && caseAcct(c) !== f.account) return false;
+    if (f.state && (stateFromJurisdiction(c.court && c.court.jurisdiction) || '') !== f.state) return false;
+    if (f.risk === 'high' && x.r.level !== 'high') return false;
+    if (f.risk === 'flagged' && x.r.level === 'ok') return false;
+    if (q && ![c.matterNo, c.client, c.type, c.attorney, c.insurance && c.insurance.claimNo, caseAcct(c), c.opposing && c.opposing.counselFirm].some(v => String(v || '').toLowerCase().indexOf(q) >= 0)) return false;
+    return true;
+  });
+  const val = {matter:x => x.c.matterNo || x.c.id, client:x => x.c.client || '', type:x => x.c.type || '', status:x => x.c.status || '', attorney:x => x.c.attorney || '', reserve:x => Number(x.c.insurance && x.c.insurance.reserveAmount) || 0, billed:x => Number(x.c.billing && x.c.billing.totalBilled) || 0, next:x => x.next || '9999', risk:x => x.r.score}[f.sort] || (x => x.r.score);
+  const dir = f.dir === 'asc' ? 1 : -1;
+  rows.sort((a, b) => { const A = val(a), B = val(b); return (A < B ? -1 : A > B ? 1 : 0) * dir; });
+  return rows;
+}
+function mxSet(k, v){ mxFilters()[k] = v; render(); }
+function mxSort(k){ const f = mxFilters(); if (f.sort === k) f.dir = f.dir === 'asc' ? 'desc' : 'asc'; else { f.sort = k; f.dir = (k === 'risk' || k === 'reserve' || k === 'billed') ? 'desc' : 'asc'; } render(); }
+function mxCsvCell(v){ let s = v == null ? '' : String(v); if (/^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = "'" + s; return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+function mxExport(){
+  const rows = mxRows(), head = ['Matter','Client','Account','Claim no','Type','Status','Stage','Attorney','Defense counsel','State','Reserve','Likely exposure','Billed','Budget','Next date','Risk score','Risk level','Why'];
+  const lines = [head.join(',')].concat(rows.map(x => { const c = x.c; return [c.matterNo || c.id, c.client, caseAcct(c), c.insurance && c.insurance.claimNo, c.type, c.status, c.litigationStage, c.attorney, c.defenseCounsel && c.defenseCounsel.name, stateFromJurisdiction(c.court && c.court.jurisdiction), c.insurance && c.insurance.reserveAmount, c.exposure && c.exposure.likelyExposure, c.billing && c.billing.totalBilled, c.billing && c.billing.budget, x.next, x.r.score, x.r.level, x.r.reasons.slice(0,3).map(z => z.text).join('; ')].map(mxCsvCell).join(','); }));
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([lines.join('\r\n') + '\r\n'], {type:'text/csv'})); a.download = 'matters-' + td() + '.csv'; a.click();
+}
+async function mxLoadViews(){
+  if (S.mxViews || S.mxViewsLoading) return;
+  if (feedIsDemo()) { try { S.mxViews = JSON.parse(sessionStorage.getItem('ccpViews') || '[]'); } catch (e) { S.mxViews = []; } return; }
+  S.mxViewsLoading = true;
+  try { const r = await apiFetch('/api/my-views'); S.mxViews = r.views || []; } catch (e) { S.mxViews = []; }
+  S.mxViewsLoading = false; render();
+}
+async function mxPersistViews(){
+  if (feedIsDemo()) { try { sessionStorage.setItem('ccpViews', JSON.stringify(S.mxViews)); } catch (e) {} return; }
+  try { const r = await apiFetch('/api/my-views', {method:'PUT', body:JSON.stringify({views:S.mxViews})}); S.mxViews = r.views; } catch (e) { alert('The view could not be saved: ' + e.message); }
+}
+async function mxSaveView(){
+  const name = (prompt('Name this view, for example: High risk, Texas') || '').trim(); if (!name) return;
+  const f = Object.assign({}, mxFilters());
+  S.mxViews = (S.mxViews || []).filter(v => v.name.toLowerCase() !== name.toLowerCase()).concat([{id:'v' + Date.now().toString(36), name, filters:f}]);
+  await mxPersistViews(); S.mxCur = S.mxViews.find(v => v.name === name).id; render();
+}
+function mxApplyView(id){ const v = (S.mxViews || []).find(x => x.id === id); S.mxCur = id; if (v) S.mx = Object.assign({q:'', status:'open', type:'', attorney:'', account:'', state:'', risk:'', sort:'risk', dir:'desc'}, v.filters); render(); }
+async function mxDeleteView(){ const id = S.mxCur; if (!id || !confirm('Delete this saved view?')) return; S.mxViews = (S.mxViews || []).filter(v => v.id !== id); S.mxCur = ''; await mxPersistViews(); render(); }
+function mattersV(){
+  mxLoadViews();
+  const f = mxFilters(), rows = mxRows(), all = acctScope();
+  const uniq = fn => [...new Set(all.map(fn).filter(Boolean))].sort();
+  const opt = (v, l, cur) => '<option value="' + escAttr(v) + '"' + (String(cur) === String(v) ? ' selected' : '') + '>' + esc(l) + '</option>';
+  const selF = (k, label, list, any) => '<div><label class="lbl">' + label + '</label><select class="inp" onchange="mxSet(\'' + k + '\',this.value)">' + opt('', any, f[k]) + list.map(v => opt(v, v, f[k])).join('') + '</select></div>';
+  const views = S.mxViews || [];
+  let h = '<div class="wrap" style="padding-top:18px;"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-end;"><div><div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">All matters</div><div style="font-size:13px;color:var(--muted);margin-top:4px;">' + rows.length + ' of ' + all.length + ' shown. Click a heading to sort.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
+    + '<select class="inp" style="width:auto;" onchange="mxApplyView(this.value)"><option value="">Saved views…</option>' + views.map(v => opt(v.id, v.name, S.mxCur)).join('') + '</select><button class="btn btn-out" onclick="mxSaveView()">Save this view</button>' + (S.mxCur ? '<button class="btn btn-out" onclick="mxDeleteView()">Delete view</button>' : '') + '<button class="btn btn-pri" onclick="mxExport()">Export CSV</button></div></div>';
+  h += '<div class="card" style="padding:12px 14px;margin:12px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;align-items:end;"><div style="grid-column:span 2;"><label class="lbl">Search</label><input class="inp" placeholder="Matter, client, claim no, firm" value="' + escAttr(f.q) + '" oninput="mxFilters().q=this.value;clearTimeout(window._mxT);window._mxT=setTimeout(render,250)"></div>'
+    + '<div><label class="lbl">Status</label><select class="inp" onchange="mxSet(\'status\',this.value)">' + opt('open', 'Open', f.status) + opt('closed', 'Closed', f.status) + opt('all', 'All', f.status) + '</select></div>'
+    + selF('type', 'Type', uniq(c => c.type), 'Any type') + selF('attorney', 'Attorney', uniq(c => c.attorney), 'Anyone') + selF('account', 'Client account', uniq(c => caseAcct(c)), 'All accounts') + selF('state', 'State', uniq(c => stateFromJurisdiction(c.court && c.court.jurisdiction)), 'Any state')
+    + '<div><label class="lbl">Risk</label><select class="inp" onchange="mxSet(\'risk\',this.value)">' + opt('', 'Any', f.risk) + opt('flagged', 'Watch or high', f.risk) + opt('high', 'High only', f.risk) + '</select></div></div>';
+  if (!rows.length) return h + '<div class="card" style="padding:18px;color:var(--muted);font-size:13px;">No matters match. Loosen a filter to see more.</div></div>';
+  h += '<div class="card" style="padding:0;overflow-x:auto;"><table><thead><tr>' + MX_COLS.map(([k, l]) => '<th style="cursor:pointer;white-space:nowrap;" onclick="mxSort(\'' + k + '\')">' + l + (f.sort === k ? (f.dir === 'asc' ? ' ▲' : ' ▼') : '') + '</th>').join('') + '</tr></thead><tbody>'
+    + rows.slice(0, 300).map(x => { const c = x.c; return '<tr class="row-link" style="cursor:pointer;" onclick="stCase(\'' + escAttr(c.id) + '\',\'overview\')"><td style="font-weight:700;">' + esc(c.matterNo || c.id) + '</td><td>' + esc(c.client || '') + '</td><td>' + esc(c.type || '') + '</td><td>' + esc(c.litigationStage || c.status || '') + '</td><td>' + esc(c.attorney || '') + '</td><td>' + fM(c.insurance && c.insurance.reserveAmount) + '</td><td>' + fM(c.billing && c.billing.totalBilled) + '</td><td>' + esc(x.next) + '</td><td>' + riskPill(x.r) + '</td></tr>'; }).join('') + '</tbody></table></div>';
+  if (rows.length > 300) h += '<div style="font-size:12px;color:var(--muted);margin-top:8px;">Showing the first 300. Narrow the filters or export the CSV to get all ' + rows.length + '.</div>';
+  return h + '</div>';
+}
+
+
+/* ── ui_80_audit.js ── */
+/* ── Activity log: this account's own audit trail ── */
+const AUD_LABELS = {'auth.login':'Signed in','case.create':'Created a matter','case.update':'Changed a matter','case.delete':'Deleted a matter','document.upload':'Added a file','document.delete':'Deleted a file','claim_feed.import':'Claim feed load','claim_feed.undo':'Undid a claim feed load','claim_feed.delete_matters':'Deleted feed-created matters','claim_feed.export_file':'Downloaded all matters','integration_key.create':'Made a key','integration_key.revoke':'Turned off a key','sso.configure':'Changed single sign-on','sso.remove':'Removed single sign-on','approval.requested':'Approval requested','approval.approved':'Approval granted','approval.denied':'Approval denied','inbound.saved':'Email saved to a matter','inbound.rejected':'Email refused','inbound.create':'Made a matter email address','inbound.rotate':'Replaced a matter email address','audit.export':'Downloaded the activity log','org_settings.save':'Saved a setting','scheduled_email.create':'Made a scheduled email','scheduled_email.update':'Changed a scheduled email','scheduled_email.delete':'Deleted a scheduled email'};
+function audLabel(a){ return AUD_LABELS[a] || a.replace(/[._]/g, ' '); }
+function audDemo(){ const n = Date.now(); return [{id:'3', at:new Date(n-600e3).toISOString(), action:'case.update', user:'Alex Rivera', entityType:'case', detail:{fields:['data']}, ip:'203.0.113.4'},{id:'2', at:new Date(n-7200e3).toISOString(), action:'approval.approved', user:'Mo Manager', entityType:'case', detail:{kind:'authority', amount:60000}, ip:'203.0.113.9'},{id:'1', at:new Date(n-86400e3).toISOString(), action:'auth.login', user:'Alex Rivera', detail:null, ip:'203.0.113.4'}]; }
+async function audLoad(more){
+  if (feedIsDemo()) { S.aud = {list:audDemo(), next:null}; return; }
+  if (S.audLoading) return; S.audLoading = true;
+  const f = S.audF || {};
+  const qs = new URLSearchParams(); if (f.action) qs.set('action', f.action); if (f.from) qs.set('from', f.from); if (f.to) qs.set('to', f.to); if (more && S.aud && S.aud.next) qs.set('before', S.aud.next); qs.set('limit', '100');
+  try { const r = await apiFetch('/api/audit-log?'+qs.toString()); S.aud = {list:(more && S.aud ? S.aud.list : []).concat(r.entries || []), next:r.next || null}; S.audErr = ''; }
+  catch (e) { S.aud = {list:[], next:null}; S.audErr = e.message; }
+  S.audLoading = false; render();
+}
+function audSet(k, v){ S.audF = S.audF || {}; S.audF[k] = v; S.aud = null; render(); }
+async function audCsv(){
+  if (feedIsDemo()) { alert('Sample screen: sign in to a real account to download the log.'); return; }
+  const f = S.audF || {}, qs = new URLSearchParams({format:'csv', limit:'500'}); if (f.action) qs.set('action', f.action); if (f.from) qs.set('from', f.from); if (f.to) qs.set('to', f.to);
+  try { const r = await fetch((API_BASE || '')+'/api/audit-log?'+qs.toString(), {headers:{Authorization:'Bearer '+authToken}}); if (!r.ok) throw new Error('Download failed ('+r.status+').'); const b = await r.blob(); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'activity-log.csv'; a.click(); } catch (e) { alert(e.message); }
+}
+function auditV(){
+  const f = S.audF || {};
+  if (!S.aud && !S.audLoading) audLoad(false);
+  const L = S.aud ? S.aud.list : [];
+  const groups = [['','Everything'],['auth','Sign-ins'],['case','Matters'],['document','Files'],['approval','Approvals'],['claim_feed','Claim feed'],['integration_key','Keys'],['sso','Single sign-on'],['inbound','Email-in']];
+  let h = '<div class="wrap" style="padding-top:18px;max-width:1000px;"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-end;"><div><div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">Activity log</div><div style="font-size:13px;color:var(--muted);margin-top:4px;max-width:600px;line-height:1.5;">Who did what in your account, newest first. It only shows your own account, and entries cannot be edited.</div></div><button class="btn btn-pri" onclick="audCsv()">Download CSV</button></div>';
+  h += '<div class="card" style="padding:12px 14px;margin:12px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;"><div><label class="lbl">What</label><select class="inp" onchange="audSet(\'action\',this.value)">'+groups.map(g => '<option value="'+g[0]+'"'+((f.action || '') === g[0] ? ' selected' : '')+'>'+g[1]+'</option>').join('')+'</select></div><div><label class="lbl">From</label><input type="date" class="inp" value="'+escAttr(f.from || '')+'" onchange="audSet(\'from\',this.value)"></div><div><label class="lbl">To</label><input type="date" class="inp" value="'+escAttr(f.to || '')+'" onchange="audSet(\'to\',this.value)"></div></div>';
+  if (S.audErr) h += '<div class="alert-bad" style="margin-bottom:10px;">'+esc(S.audErr)+'</div>';
+  if (!S.aud) return h + '<div style="color:var(--muted);font-size:13px;">Loading…</div></div>';
+  if (!L.length) return h + '<div class="card" style="padding:16px;color:var(--muted);font-size:13px;">Nothing logged for those filters.</div></div>';
+  h += '<div class="card" style="padding:0;overflow-x:auto;"><table><thead><tr><th>When</th><th>Who</th><th>What</th><th>Details</th></tr></thead><tbody>'+L.map(x => { const d = x.detail ? esc(JSON.stringify(x.detail)).slice(0, 160) : ''; return '<tr><td style="white-space:nowrap;">'+esc(feedWhen(x.at))+'</td><td>'+esc(x.user || '—')+'</td><td style="font-weight:600;">'+esc(audLabel(x.action))+'</td><td style="font-size:11.5px;color:var(--muted);">'+d+(x.ip ? '<br><span style="color:var(--dim);">'+esc(x.ip)+'</span>' : '')+'</td></tr>'; }).join('')+'</tbody></table></div>';
+  if (S.aud.next) h += '<div style="margin-top:10px;"><button class="btn btn-out" onclick="audLoad(true)">Show older</button></div>';
+  return h + '</div>';
+}
+
+/*==NEW-FEATURES-END==*/
+
 /* ── HEADER ────────────────────────────────────────────────── */
 function hdr(){
   /* Grouped by how the role is actually used day to day, same clustering
@@ -2917,9 +4013,12 @@ function hdr(){
     { label:'', items:[
       ['today','Today'],
       ['litigation','Litigation'],
+      ['matters','All Matters'],
       ['attorney','My Matters'],
+      ['diary','My Diary'],
       ['demands','🛡 Verdict Shield'],
       ['claims','Claims Desk'],
+      ['approvals','Approvals'],
       ['calendar','Calendar'],
       ['activity','Activity Hub'],
       ['billing','Billing'],
@@ -2929,6 +4028,8 @@ function hdr(){
       ['executive','Executive'],
       ['execvs','🛡 Executive Shield'],
       ['scorecard','Scorecards'],
+      ['risk','Matters at Risk'],
+      ['creport','Client Reports'],
       ['lifecycle','Lifecycle'],
       ['reports','Reports Hub']
     ]},
@@ -2939,6 +4040,8 @@ function hdr(){
       ['tpa','Account Executive'],
       ['carrier','Carrier Portal'],
       ['partner','TPA Leadership'],
+      ['sched','Email Schedules'],
+      ['audit','Activity Log'],
       ['api','API & Import']
     ]}
   ];
@@ -2970,14 +4073,14 @@ function hdr(){
           '<rect x="244" y="80" width="10" height="13" fill="#F5B700" stroke="none"/>'+
         '</svg></div>'+
         '<div>'+
-          '<div class="serif" style="font-weight:700;font-size:15px;color:var(--ink);letter-spacing:-.3px;line-height:1;">Case Closed Sentinel</div>'+
+          '<div class="serif" style="font-weight:700;font-size:15px;color:var(--ink);letter-spacing:-.3px;line-height:1;">Case Closed</div>'+
           '<div style="font-size:9px;color:var(--dim);letter-spacing:1.8px;text-transform:uppercase;font-weight:600;margin-top:2px;">Carrier-Grade Litigation Intelligence</div>'+
         '</div>'+
       '</div>'+
       globalSearchBox()+
       '<div style="display:flex;align-items:center;gap:10px;">'+notifBellHtml()+userMenuHtml()+'</div>'+
     '</div>'+
-    '<div style="padding:0 18px 10px;display:flex;gap:8px;align-items:center;">'+
+    '<div class="nav-row" style="padding:0 18px 10px;display:flex;gap:8px;align-items:center;">'+
       '<div class="nav-scroll" style="background:var(--surf2);border:1px solid var(--line);border-radius:8px;display:flex;padding:3px;gap:1px;align-items:center;flex-wrap:wrap;">'+roleBtns+'</div>'+
       (S.role !== 'attorney' && S.role !== 'reports' ? '<button onclick="st({showRpt:true})" class="btn btn-out nav-side-btn">Report Builder</button>' : '')+
       (viewAsOn() ? '<label style="font-size:11px;color:var(--muted);display:inline-flex;gap:5px;align-items:center;">View as <select class="inp" style="width:auto;font-size:11.5px;padding:4px 6px;" onchange="st({viewAs:this.value,role:\'today\',caseId:null})"><option value="owner"'+(userTier()==="owner"?' selected':'')+'>Owner / admin</option><option value="member"'+(userTier()==="member"?' selected':'')+'>Attorney (member)</option></select></label>' : '')+
@@ -3002,7 +4105,7 @@ function privacyPolicyV(){
     <div style="font-size:24px;font-weight:700;margin-bottom:20px;">Privacy Policy</div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:20px;">Last Updated: October 5, 2026</div>
     <div style="line-height:1.8;color:var(--ink);">
-      <p>This Privacy Policy explains how Case Closed Pro ("we," "us") collects, uses and shares information when you visit our website, use the demo, contact us, or use the Case Closed Pro application (the "Service").</p>
+      <p>This Privacy Policy explains how Case Closed ("we," "us") collects, uses and shares information when you visit our website, use the demo, contact us, or use the Case Closed application (the "Service").</p>
       <p style="background:#FFF6D6;border-left:4px solid #F5B700;padding:10px 12px;">When a customer (such as a TPA, carrier or law firm) uses the Service, the customer decides what case data goes in. For that data we act as the customer's service provider and handle it under our agreement with them. If you have a question about your claim or case information, contact the organization that handles it.</p>
       <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">1. Information we collect</h3>
       <p>Information from you:</p>
@@ -3040,10 +4143,10 @@ function termsOfServiceV(){
     <div style="font-size:24px;font-weight:700;margin-bottom:20px;">Terms of Service</div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:20px;">Last Updated: October 5, 2026</div>
     <div style="line-height:1.8;color:var(--ink);">
-      <p>These Terms of Service ("Terms") govern your use of the Case Closed Pro website, demo and application (the "Service"), provided by Case Closed Pro ("we," "us"). By accessing or using the Service you agree to these Terms. If you use the Service on behalf of a company, you confirm you have authority to bind that company.</p>
+      <p>These Terms of Service ("Terms") govern your use of the Case Closed website, demo and application (the "Service"), provided by Case Closed ("we," "us"). By accessing or using the Service you agree to these Terms. If you use the Service on behalf of a company, you confirm you have authority to bind that company.</p>
       <p style="background:#FFF6D6;border-left:4px solid #F5B700;padding:10px 12px;">If your company has signed a Master Services Agreement with us, that agreement controls wherever it conflicts with these Terms.</p>
       <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">1. The Service</h3>
-      <p>Case Closed Pro is a litigation and claims management platform for insurance carriers, third-party administrators and defense counsel. It includes case tracking, reporting, and optional AI-assisted features branded Sentinel.</p>
+      <p>Case Closed is a litigation and claims management platform for insurance carriers, third-party administrators and defense counsel. It includes case tracking, reporting, and optional AI-assisted features branded Sentinel.</p>
       <p>We are a software provider. We are not a law firm, claims adjuster, insurer or broker, and we do not provide legal, insurance, financial or medical advice.</p>
       <p>The public demo uses sample data only. Do not enter real client, claim or personal information into the demo.</p>
       <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">2. Accounts</h3>
@@ -3073,7 +4176,7 @@ function termsOfServiceV(){
       <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">12. Termination</h3>
       <p>You may stop using the Service at any time, subject to your agreement. We may suspend or end your access if you materially breach these Terms, with notice where practical. After termination, your organization may export its data for 30 days. After that we delete it as described in the Privacy Policy.</p>
       <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">13. Governing law and disputes</h3>
-      <p>These Terms are governed by the laws of the state in which Case Closed Pro has its principal place of business, without regard to conflict-of-law rules. The state and federal courts located there have exclusive jurisdiction, and each party consents to them.</p>
+      <p>These Terms are governed by the laws of the state in which Case Closed has its principal place of business, without regard to conflict-of-law rules. The state and federal courts located there have exclusive jurisdiction, and each party consents to them.</p>
       <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">14. General</h3>
       <p>These Terms and any signed agreement are the entire agreement on this subject. If a provision is unenforceable the rest stays in effect. We may update these Terms by posting a new version with a new date; material changes will be notified in the app or by email. Continued use after the effective date means you accept them.</p>
       <h3 style="margin-top:20px;margin-bottom:10px;font-size:14px;font-weight:700;">15. Contact</h3>
@@ -3132,7 +4235,7 @@ function loginScreenV(){
         '<rect x="278" y="80" width="10" height="27" fill="#F5B700" stroke="none"/>'+
         '<rect x="261" y="80" width="10" height="20" fill="#F5B700" stroke="none"/>'+
         '<rect x="244" y="80" width="10" height="13" fill="#F5B700" stroke="none"/></svg></div>';
-  h += '<div style="color:#fff;font-family:var(--serif);font-weight:700;font-size:19px;">Case Closed Sentinel</div>';
+  h += '<div style="color:#fff;font-family:var(--serif);font-weight:700;font-size:19px;">Case Closed</div>';
   h += '</div>';
 
   h += '<div class="card" style="padding:30px 28px;">';
@@ -4068,7 +5171,7 @@ function icsFold(line){ const out = []; let l = line; while (l.length > 74) { ou
 function icsStamp(ms){ return new Date(ms).toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,''); }
 function icsDay(ds){ return String(ds).slice(0,10).replace(/-/g,''); }
 function buildIcs(events){
-  const L = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Case Closed Sentinel//Deadlines//EN','CALSCALE:GREGORIAN','METHOD:PUBLISH'];
+  const L = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Case Closed//Deadlines//EN','CALSCALE:GREGORIAN','METHOD:PUBLISH'];
   const now = icsStamp(Date.now());
   events.forEach(e => {
     L.push('BEGIN:VEVENT','UID:'+e.uid+'@cclosed.com','DTSTAMP:'+now);
@@ -4117,7 +5220,7 @@ function demandRecordHtml(c, d){
   const ms = demandDeadlineMs(d);
   let h = '<!doctype html><html><head><meta charset="utf-8"><title>Demand compliance record - '+e(c.matterNo || c.id)+'</title><style>body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:28px 36px;font-size:12px;line-height:1.45}h1{font-size:19px;margin:0 0 2px}h2{font-size:13px;margin:16px 0 5px;border-bottom:1px solid #999;padding-bottom:3px}table{border-collapse:collapse;width:100%}th{text-align:left;width:190px;vertical-align:top;padding:3px 8px 3px 0;color:#333;font-weight:700}td{padding:3px 0;vertical-align:top}.t td,.t th{border-bottom:1px solid #ddd;padding:4px 6px;width:auto}.sm{font-size:10.5px;color:#555}@media print{.np{display:none}}</style></head><body>';
   h += '<div class="np" style="margin-bottom:10px;"><button onclick="window.print()">Print or save as PDF</button></div>';
-  h += '<h1>Time-limit demand compliance record</h1><div class="sm">Prepared '+e(demandStamp(new Date().toISOString()))+' from Case Closed Sentinel records. Matter '+e(c.matterNo || c.id)+'.</div>';
+  h += '<h1>Time-limit demand compliance record</h1><div class="sm">Prepared '+e(demandStamp(new Date().toISOString()))+' from Case Closed records. Matter '+e(c.matterNo || c.id)+'.</div>';
   h += '<h2>Matter</h2><table>'+row('Insured / client', e(c.client || ''))+row('Claim number', e((c.insurance && c.insurance.claimNo) || 'Not recorded'))+row('State', e(d.state || caseStateName(c) || 'Not recorded'))+row('Adjuster', e(prim || 'None assigned'))+row('Backup adjuster', e(bk || 'None assigned'))+row('Defense counsel', e((c.defenseCounsel && (c.defenseCounsel.name || c.defenseCounsel.firm)) || c.attorney || 'Not recorded'))+'</table>';
   h += '<h2>The demand</h2><table>'+row('Received', e(d.receivedDate || 'Not recorded')+(d.method ? ' by '+e(d.method) : ''))+row('Claimant counsel', e(d.claimantFirm || plaintiffFirmOf(c) || 'Not recorded'))+row('Demand amount', d.demandAmount ? e(fM(d.demandAmount)) : 'Not recorded')+row('Policy limits', d.policyLimits ? e(fM(d.policyLimits)) : 'Not recorded')+
     row('Deadline', e(demandEff(d))+' '+e(demandTimeLabel(d))+(d.extendedDeadline ? '<br>Extended from '+e(d.deadline)+(d.extensionNote ? ': '+e(d.extensionNote) : '') : ''))+'</table>';
@@ -4877,6 +5980,8 @@ function todayV(){
   if (nobk.length) h += sec('Needs a backup adjuster', 'These matters have a demand or a statute date inside 120 days and no second person tracking it.', nobk.slice(0, 8).map(c => '<div style="margin-bottom:6px;"><div style="font-weight:700;font-size:13px;margin-bottom:4px;cursor:pointer;" onclick="stCase(\''+esc(c.id)+'\',\'demands\')">'+esc(c.client)+' <span style="font-weight:500;color:var(--dim);">'+esc(c.matterNo||c.id)+'</span></div>'+backupPickerV(c)+'</div>').join('')+(nobk.length>8?'<div style="font-size:12px;color:var(--muted);">and '+(nobk.length-8)+' more</div>':''));
   if (sols.length) h += sec('Statutes of limitation within 30 days', '', '<div class="card" style="padding:4px 14px;">'+sols.slice(0, 12).map(x => '<div class="row-link" onclick="stCase(\''+esc(x.c.id)+'\',\'dates\')" style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--surf2);font-size:12.5px;"><span>'+esc(x.c.client)+' <span style="color:var(--dim);">'+esc(x.c.matterNo||x.c.id)+'</span></span><span style="font-weight:700;color:'+(x.n<=7?'#B91C1C':'#B45309')+';">'+(x.n<0?Math.abs(x.n)+' days past':x.n===0?'Today':x.n+' days')+'</span></div>').join('')+'</div>');
   if (tasks.length) h += sec('Tasks due today or overdue', '', '<div class="card" style="padding:4px 14px;">'+tasks.slice(0, 15).map(x => '<div class="row-link" onclick="stCase(\''+esc(x.c.id)+'\',\'tasks\')" style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--surf2);font-size:12.5px;"><span>'+esc(x.t.title||'Task')+' <span style="color:var(--dim);">· '+esc(x.c.client)+'</span></span><span style="font-weight:700;color:'+(x.t.due<today?'#B91C1C':'#B45309')+';">'+(x.t.due<today?'Overdue since '+esc(x.t.due):'Due today')+'</span></div>').join('')+'</div>'+(tasks.length>15?'<div style="font-size:12px;color:var(--muted);margin-top:4px;">and '+(tasks.length-15)+' more</div>':''));
+  { const rk = cases.map(c => ({c, r:earlyWarning(c, today)})).filter(x => x.r.level === 'high').sort((a, b) => b.r.score - a.r.score).slice(0, 5);
+    if (rk.length) h += sec('Matters at high risk', '<span class="muted-link" style="cursor:pointer;" onclick="st({role:\'risk\',caseId:null})">See all</span>', '<div class="card" style="padding:4px 14px;">'+rk.map(x => '<div class="row-link" onclick="stCase(\''+esc(x.c.id)+'\',\'overview\')" style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--surf2);font-size:13px;">'+riskPill(x.r)+'<span style="flex:1;"><b>'+esc(x.c.matterNo || x.c.id)+'</b> '+esc(x.c.client || '')+'<br><span style="font-size:11.5px;color:var(--muted);">'+x.r.reasons.slice(0, 2).map(z => esc(z.text)).join(' · ')+'</span></span></div>').join('')+'</div>'); }
   h += '<div style="font-size:11.5px;color:var(--dim);margin-top:22px;">Matters in view: '+cases.length+'. "My matters" means you are the adjuster, the backup or the attorney of record.</div>';
   return h + '</div>';
 }
@@ -5175,7 +6280,7 @@ function roiOutV(r){
   const o = roiCompute(r), f = v => Math.round(v).toLocaleString(), m = v => '$' + Math.round(v).toLocaleString();
   const tile = (label, v, sub) => '<div style="flex:1 1 180px;border:1px solid #E5E7EB;border-radius:10px;padding:12px 14px;background:#fff;"><div style="font-size:11.5px;color:var(--muted);">'+label+'</div><div style="font-size:30px;font-weight:800;line-height:1.15;">'+v+'</div><div style="font-size:11px;color:var(--dim);">'+sub+'</div></div>';
   let h = '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">'+tile('Hours saved each year', f(o.hours), 'about '+o.fte.toFixed(1)+' full-time people')+tile('Value of that time', m(o.value), 'at '+m(r.rate)+' an hour')+tile('Time-limit demands tracked', f(o.demands), 'each with two adjusters and an escalation path')+'</div>';
-  h += '<div class="card" style="padding:0;overflow-x:auto;margin-bottom:12px;"><table><thead><tr><th>Where the time comes from</th><th>Per year</th><th>Before</th><th>With Case Closed Sentinel</th><th>Hours saved</th></tr></thead><tbody>'+
+  h += '<div class="card" style="padding:0;overflow-x:auto;margin-bottom:12px;"><table><thead><tr><th>Where the time comes from</th><th>Per year</th><th>Before</th><th>With Case Closed</th><th>Hours saved</th></tr></thead><tbody>'+
     o.rows.map(x => '<tr><td>'+esc(x.label)+'<div style="font-size:11px;color:var(--dim);">'+esc(x.unit)+'</div></td><td>'+f(x.volume)+'</td><td>'+x.before+(x.hours===undefined?'':'')+(ROI_DEFAULTS.rows.find(d=>d.k===x.k).hours?' hr':' min')+'</td><td>'+x.after+(ROI_DEFAULTS.rows.find(d=>d.k===x.k).hours?' hr':' min')+'</td><td style="font-weight:800;">'+f(x.hours)+'</td></tr>').join('')+
     '<tr><td colspan="4" style="text-align:right;font-weight:700;">Total</td><td style="font-weight:800;">'+f(o.hours)+'</td></tr></tbody></table></div>';
   if (o.price) h += '<div class="card" style="padding:12px 16px;margin-bottom:12px;"><div style="font-weight:800;font-size:13.5px;margin-bottom:4px;">Against the price</div><div style="font-size:12.5px;line-height:1.6;">Time saved is worth '+m(o.value)+' a year against a price of '+m(o.price)+', a difference of <strong style="color:'+(o.netTime>=0?'#15803D':'#B45309')+';">'+(o.netTime>=0?'+':'-')+m(Math.abs(o.netTime))+'</strong> from time alone. Separately, if one missed time-limit demand costs '+m(r.missCost)+', the price is covered if it prevents <strong>'+o.breakEvenMisses.toFixed(2)+'</strong> such event a year.</div></div>';
@@ -5190,7 +6295,7 @@ function roiSet(path, v){
 function roiReset(){ S.roi = null; render(); }
 function roiCopy(){
   const r = roiState(), o = roiCompute(r);
-  const t = 'Case Closed Sentinel: estimated time saved\nOpen litigated claims: '+r.openClaims+'; new per year: '+r.newPerYear+'; adjusters: '+r.adjusters+'\nHours saved per year: '+Math.round(o.hours).toLocaleString()+' (about '+o.fte.toFixed(1)+' full-time people)\nValue at $'+r.rate+'/hour: $'+Math.round(o.value).toLocaleString()+'\nThese are estimates from the inputs above, not guaranteed results.';
+  const t = 'Case Closed: estimated time saved\nOpen litigated claims: '+r.openClaims+'; new per year: '+r.newPerYear+'; adjusters: '+r.adjusters+'\nHours saved per year: '+Math.round(o.hours).toLocaleString()+' (about '+o.fte.toFixed(1)+' full-time people)\nValue at $'+r.rate+'/hour: $'+Math.round(o.value).toLocaleString()+'\nThese are estimates from the inputs above, not guaranteed results.';
   try { navigator.clipboard.writeText(t); alert('Summary copied.'); } catch (e) { alert(t); }
 }
 function roiV(){
@@ -5198,15 +6303,15 @@ function roiV(){
   const num = (label, key, val, w, hint) => '<div class="fld" style="flex:1 1 '+(w||170)+'px;margin:0;"><label class="lbl">'+label+'</label><input class="inp" type="number" min="0" value="'+esc(val)+'" oninput="roiSet(\''+key+'\',this.value)">'+(hint?'<div style="font-size:10.5px;color:var(--dim);margin-top:2px;">'+hint+'</div>':'')+'</div>';
   let h = '<div class="wrap" style="padding-top:18px;">';
   h += '<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-end;"><div><div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">What it is worth to you</div>'+
-    '<div style="font-size:13px;color:var(--muted);margin:4px 0 14px;max-width:760px;line-height:1.6;">Tell us the size of your litigated caseload and see the time Case Closed Sentinel could give back. Every number below can be changed, so you can use your own.</div></div><div style="display:flex;gap:8px;"><button class="btn btn-out" onclick="roiCopy()">Copy summary</button><button class="btn btn-out" onclick="window.print()">Print</button><button class="btn btn-out" onclick="roiReset()">Reset</button></div></div>';
+    '<div style="font-size:13px;color:var(--muted);margin:4px 0 14px;max-width:760px;line-height:1.6;">Tell us the size of your litigated caseload and see the time Case Closed could give back. Every number below can be changed, so you can use your own.</div></div><div style="display:flex;gap:8px;"><button class="btn btn-out" onclick="roiCopy()">Copy summary</button><button class="btn btn-out" onclick="window.print()">Print</button><button class="btn btn-out" onclick="roiReset()">Reset</button></div></div>';
   h += '<div class="card" style="padding:14px 16px;margin-bottom:14px;"><div style="font-weight:800;font-size:14px;margin-bottom:8px;">Your caseload</div><div style="display:flex;gap:12px;flex-wrap:wrap;">'+
     num('Open litigated claims','openClaims',r.openClaims)+num('New litigated claims a year','newPerYear',r.newPerYear)+num('Adjusters handling them','adjusters',r.adjusters)+num('Cost of an adjuster hour ($)','rate',r.rate,170,'Salary plus benefits, per hour')+num('Claims that get a time-limit demand (%)','demandPct',r.demandPct,200,'Your best estimate')+'</div></div>';
   h += '<div id="roiOut">'+roiOutV(r)+'</div>';
   h += '<details style="margin:6px 0 14px;" '+(S.roiOpen?'open':'')+' ontoggle="S.roiOpen=this.open"><summary style="font-weight:800;font-size:13.5px;cursor:pointer;">Change the time assumptions</summary><div class="card" style="padding:14px 16px;margin-top:8px;"><div style="font-size:12px;color:var(--muted);margin-bottom:10px;max-width:760px;line-height:1.55;">These are starting assumptions, not measured results. In a pilot we measure your real numbers before and after, and replace these with them.</div>'+
-    r.rows.map((x, i) => '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;"><div style="flex:2 1 260px;font-size:12.5px;font-weight:600;">'+esc(x.label)+'<div style="font-size:11px;color:var(--dim);font-weight:400;">'+esc(x.unit)+'</div></div>'+num('Before ('+(x.hours?'hours':'minutes')+')','rows.'+i+'.before',x.before,110)+num('With Case Closed Sentinel','rows.'+i+'.after',x.after,110)+'</div>').join('')+'</div></details>';
+    r.rows.map((x, i) => '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;"><div style="flex:2 1 260px;font-size:12.5px;font-weight:600;">'+esc(x.label)+'<div style="font-size:11px;color:var(--dim);font-weight:400;">'+esc(x.unit)+'</div></div>'+num('Before ('+(x.hours?'hours':'minutes')+')','rows.'+i+'.before',x.before,110)+num('With Case Closed','rows.'+i+'.after',x.after,110)+'</div>').join('')+'</div></details>';
   h += '<details style="margin:6px 0 14px;"><summary style="font-weight:800;font-size:13.5px;cursor:pointer;">Optional: compare against price and exposure</summary><div class="card" style="padding:14px 16px;margin-top:8px;"><div style="display:flex;gap:12px;flex-wrap:wrap;">'+
     num('Annual price you are weighing ($)','price',r.price,200,'Leave at 0 to hide')+num('Cost of one missed time-limit demand ($)','missCost',r.missCost,220,'Use your own number')+num('Days faster each claim closes','daysFaster',r.daysFaster,170,'Leave at 0 unless you have a basis')+'</div></div></details>';
-  h += '<div style="font-size:11.5px;color:var(--dim);max-width:820px;line-height:1.55;margin-top:10px;">This is an estimate built from the numbers above. It is not a guarantee of savings or of any result on a claim. Case Closed Sentinel supports claims staff and does not decide how a demand or a claim should be handled.</div>';
+  h += '<div style="font-size:11.5px;color:var(--dim);max-width:820px;line-height:1.55;margin-top:10px;">This is an estimate built from the numbers above. It is not a guarantee of savings or of any result on a claim. Case Closed supports claims staff and does not decide how a demand or a claim should be handled.</div>';
   return h + '</div>';
 }
 
@@ -9260,7 +10365,7 @@ function openEmailModal(savedId){
   const message = 'Hi,\n\nAttached is the "' + snap.name + '" report generated on ' + snap.generatedDate +
     ' (' + snap.rowCount + ' rows).\n\n' +
     (snap.aiSummary ? 'Summary:\n' + snap.aiSummary + '\n\n' : '') +
-    'Full data is attached as a CSV export from Case Closed Sentinel.';
+    'Full data is attached as a CSV export from Case Closed.';
   st({showEmailModal:true, emailingReportId:savedId, _emailTo:S._emailTo||'', _emailSubject:subject, _emailMessage:message, emailStatus:'', emailStatusType:''});
 }
 
@@ -9835,7 +10940,7 @@ function invoiceHubV(){
 
   /* Budget burn flags */
   const overBudget = CASES.filter(c => c.billing.budget > 0 && c.billing.totalBilled > c.billing.budget);
-  const nearBudget = CASES.filter(c => c.billing.budget > 0 && c.billing.totalBilled > c.billing.budget*0.8 && c.billing.totalBilled <= c.billing.budget);
+  const nearBudget = CASES.filter(c => c.billing.budget > 0 && c.billing.totalBilled >= c.billing.budget*0.75 && c.billing.totalBilled <= c.billing.budget);
 
   /* UTBMS code distribution */
   const byCode = {};
@@ -10331,13 +11436,14 @@ function feedTabV(){
   let h = '<div style="font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:12px;max-width:820px;">Let your claims system send open claims here on a schedule. Each claim is matched on its claim number: new claims are created, known claims are updated, and a blank never erases anything. Sending the same file twice changes nothing. Dates from first notice of loss to the claimant attorney to the defense attorney feed the lifecycle reports. This is a batch feed (every few minutes to nightly), not a live connection.</div>';
   if (S.feedErr) h += '<div class="alert-bad" style="margin-bottom:10px;">'+esc(S.feedErr)+'</div>';
   h += feedUploadV();
+  h += feedExtrasV(canMake, base, mono);
   if (S.feedNewKey) h += '<div class="card" style="padding:12px 14px;margin-bottom:12px;border-left:4px solid #15803D;"><div style="font-weight:800;margin-bottom:4px;">Key for '+esc(S.feedNewName || '')+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Copy it now and give it to the person who sets up the feed. For safety it cannot be shown again. If it is lost, turn it off and make a new one.'+(demo ? ' (This is a sample screen, so the key below is not real.)' : '')+'</div><div id="fkNew" style="'+mono+'">'+esc(S.feedNewKey)+'</div><div style="margin-top:8px;display:flex;gap:8px;"><button class="btn btn-out" onclick="feedCopy(\'fkNew\')">Copy key</button><button class="btn btn-out" onclick="S.feedNewKey=\'\';render()">Done</button></div></div>';
   if (canMake) h += '<div class="card" style="padding:12px 14px;margin-bottom:12px;"><div style="font-weight:800;font-size:13px;margin-bottom:2px;">Automatic feed: make a key</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px;">For your IT team. A key lets your claims system send files on its own, without anyone uploading them.</div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;"><div><label class="lbl">System that will send claims</label><input id="fkName" class="inp" style="width:300px;" placeholder="Claims system"></div><button class="btn btn-pri" onclick="feedCreateKey()">Make key</button></div></div>';
   else h += '<div style="font-size:12px;color:var(--dim);margin-bottom:10px;">An owner or admin makes the keys.</div>';
   h += '<div class="serif" style="font-size:20px;font-weight:700;margin-bottom:6px;">Keys</div>';
   if (S.feedLoading && !keys.length) h += '<div style="font-size:12.5px;color:var(--muted);">Loading…</div>';
   else if (!keys.length) h += '<div class="card" style="padding:16px;font-size:13px;color:var(--muted);margin-bottom:14px;">No keys yet. Make one to start a feed.</div>';
-  else h += '<div class="card" style="padding:0;overflow-x:auto;margin-bottom:14px;"><table><thead><tr><th>System</th><th>Made</th><th>Last sent</th><th>Last result</th><th>Status</th><th></th></tr></thead><tbody>'+keys.map(k => { const ls = k.last_summary || null; return '<tr><td style="font-weight:700;">'+esc(k.name)+'</td><td>'+esc(String(k.created_at).slice(0,10))+'</td><td>'+(k.last_used_at ? esc(String(k.last_used_at).slice(0,16).replace('T',' ')) : 'Never')+'</td><td>'+(ls ? esc(ls.created+' new, '+ls.updated+' updated, '+ls.failed+' failed') : '—')+'</td><td>'+(k.active ? '<span style="color:#15803D;font-weight:700;">On</span>' : '<span style="color:var(--dim);">Off</span>')+'</td><td>'+(k.active && canMake ? '<button class="btn btn-out" onclick="feedRevokeKey(\''+escAttr(k.id)+'\')">Turn off</button>' : '')+'</td></tr>'; }).join('')+'</tbody></table></div>';
+  else h += '<div class="card" style="padding:0;overflow-x:auto;margin-bottom:14px;"><table><thead><tr><th>System</th><th>Type</th><th>Made</th><th>Last sent</th><th>Last result</th><th>Status</th><th></th></tr></thead><tbody>'+keys.map(k => { const ls = k.last_summary || null; return '<tr><td style="font-weight:700;">'+esc(k.name)+'</td><td>'+(k.kind === 'claim_export' ? 'Reads matters' : 'Sends claims')+'</td><td>'+esc(String(k.created_at).slice(0,10))+'</td><td>'+(k.last_used_at ? esc(String(k.last_used_at).slice(0,16).replace('T',' ')) : 'Never')+'</td><td>'+(ls ? esc(ls.created+' new, '+ls.updated+' updated, '+ls.failed+' failed') : '—')+'</td><td>'+(k.active ? '<span style="color:#15803D;font-weight:700;">On</span>' : '<span style="color:var(--dim);">Off</span>')+'</td><td>'+(k.active && canMake ? '<button class="btn btn-out" onclick="feedRevokeKey(\''+escAttr(k.id)+'\')">Turn off</button>' : '')+'</td></tr>'; }).join('')+'</tbody></table></div>';
   h += '<div class="serif" style="font-size:20px;font-weight:700;margin-bottom:6px;">How your IT team sends claims</div>';
   h += '<div class="card" style="padding:14px 16px;margin-bottom:12px;"><div style="font-size:12.5px;color:var(--muted);line-height:1.7;margin-bottom:8px;max-width:820px;">Send a file of claims with the key in the header. Try it with <b>dryRun=1</b> first: it checks every row and tells you what would happen without saving anything. Only <b>claimNo</b> is required on every row, and <b>client</b> is also needed the first time a claim is sent. The one-page field map lists every column, with examples (ask us for the Claim Feed Field Map PDF).</div>'
     + '<div style="'+mono+'">curl -X POST "'+esc(base)+'/api/feed/claims?dryRun=1" \\\n  -H "Authorization: Bearer YOUR_KEY" \\\n  -H "Content-Type: text/csv" \\\n  --data-binary @claims.csv</div>'
@@ -10375,7 +11481,7 @@ async function loadSso(force){
 }
 async function ssoSave(){
   const v = id => ((document.getElementById(id) || {}).value || '').trim();
-  const body = {issuer:v('ssoIssuer'), clientId:v('ssoClientId'), clientSecret:v('ssoSecret'), domains:v('ssoDomains'), enabled:!!(document.getElementById('ssoOn') || {}).checked, autoCreate:!!(document.getElementById('ssoAuto') || {}).checked, defaultRole:v('ssoRole')};
+  const body = {issuer:v('ssoIssuer'), clientId:v('ssoClientId'), clientSecret:v('ssoSecret'), domains:v('ssoDomains'), enabled:!!(document.getElementById('ssoOn') || {}).checked, autoCreate:!!(document.getElementById('ssoAuto') || {}).checked, enforceSso:!!(document.getElementById('ssoEnf') || {}).checked, defaultRole:v('ssoRole')};
   if (feedIsDemo()) { S.ssoNote = 'Sample screen: nothing was saved.'; render(); return; }
   try { await apiFetch('/api/sso-config', {method:'PUT', body:JSON.stringify(body)}); S.ssoNote = body.enabled ? 'Saved. Single sign-on is on.' : 'Saved. Single sign-on is off until you turn it on.'; S.ssoErr = ''; await loadSso(true); render(); }
   catch (e) { S.ssoErr = e.message; S.ssoNote = ''; render(); }
@@ -10403,6 +11509,7 @@ function ssoTabV(){
     + '</div><div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">'
     + f('ssoDomains','Email domains allowed', c && (c.domains || []).join(', '), 'yourcompany.com, yourcompany.org')
     + '<div class="fld" style="flex:1 1 220px;margin:0;"><label class="lbl">New people start as</label><select id="ssoRole" class="inp"><option value="member"'+(c && c.default_role==='member' || !c ? ' selected':'')+'>Attorney or adjuster (own matters only)</option><option value="admin"'+(c && c.default_role==='admin' ? ' selected':'')+'>Admin (sees everything)</option></select></div></div>'
+    + '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin-bottom:2px;text-transform:none;letter-spacing:0;font-weight:600;color:var(--ink);"><input id="ssoEnf" type="checkbox" '+(c && c.enforce_sso ? 'checked' : '')+'> Require single sign-on (passwords stop working)</label><div style="font-size:11.5px;color:var(--dim);margin:0 0 8px 24px;max-width:560px;line-height:1.5;">Only the account owner can turn this on, and only after one person has signed in with single sign-on successfully. The owner can still use a password, so you are never locked out if your identity provider goes down.</div>'
     + '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin-bottom:6px;text-transform:none;letter-spacing:0;font-weight:600;color:var(--ink);"><input id="ssoAuto" type="checkbox" '+(!c || c.auto_create ? 'checked' : '')+'> Create an account the first time someone signs in</label>'
     + '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin-bottom:12px;text-transform:none;letter-spacing:0;font-weight:600;color:var(--ink);"><input id="ssoOn" type="checkbox" '+(c && c.enabled ? 'checked' : '')+'> Turn single sign-on on</label>'
     + '<div style="display:flex;gap:8px;"><button class="btn btn-pri" onclick="ssoSave()">Save</button>'+(c ? '<button class="btn btn-out" onclick="ssoRemove()">Remove single sign-on</button>' : '')+'</div></div>';
@@ -10588,7 +11695,7 @@ async function onbWelcome(orgId){
 function onbCopyWelcome(orgId){
   const c = (S.onb.customers||[]).find(x => x.id === orgId); if (!c) return;
   const url = location.origin + '/case-closed-pro.html';
-  const t = 'Hi '+(c.ownerName||'there')+',\n\nWelcome to Case Closed Sentinel. Your account for '+c.name+' is ready.\n\nSign in here: '+url+'\nYour login is this email address. We will give you your temporary password separately (by phone or text) — please change it after you sign in.\n\nThree things to do first:\n  1. Turn on two-factor sign-in (your name in the top corner, then Security).\n  2. Invite your attorneys and staff (Team tab).\n  3. Import your open cases, or add a few by hand.\n\nOnce your cases are in, we will walk through the dashboards and Sentinel with you.\n\n— The Case Closed Sentinel team';
+  const t = 'Hi '+(c.ownerName||'there')+',\n\nWelcome to Case Closed. Your account for '+c.name+' is ready.\n\nSign in here: '+url+'\nYour login is this email address. We will give you your temporary password separately (by phone or text) — please change it after you sign in.\n\nThree things to do first:\n  1. Turn on two-factor sign-in (your name in the top corner, then Security).\n  2. Invite your attorneys and staff (Team tab).\n  3. Import your open cases, or add a few by hand.\n\nOnce your cases are in, we will walk through the dashboards and Sentinel with you.\n\n— The Case Closed team';
   if (navigator.clipboard) navigator.clipboard.writeText(t).then(()=>st({onbSaved:'Welcome text copied'})).catch(()=>prompt('Copy this text:', t));
   else prompt('Copy this text:', t);
 }
@@ -11673,7 +12780,7 @@ function hcReportV(r){
   // Header
   h += '<div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:6px;border-bottom:3px solid #0B1220;padding-bottom:8px;">';
   h += '<div><div class="serif" style="font-size:24px;font-weight:700;line-height:1.15;">Sentinel Health Check</div><div style="font-size:13px;color:var(--muted);margin-top:2px;">Prepared for '+name+' · '+esc(R.generatedAt)+' · '+plural(R.matterCount,'open matter')+' reviewed</div></div>';
-  h += '<div style="font-size:11px;color:var(--dim);">Case Closed Sentinel</div></div>';
+  h += '<div style="font-size:11px;color:var(--dim);">Case Closed</div></div>';
 
   // Score and findings
   h += '<div class="hc-sec" style="display:flex;gap:22px;flex-wrap:wrap;margin-top:16px;align-items:flex-start;">';
@@ -11699,15 +12806,15 @@ function hcReportV(r){
   const top = R.topFiles.map((t,i)=>({ cls: i>=5?'hc-extra':'', cells:[(i+1), '<strong>'+esc(t.client)+'</strong><div style="font-size:10.5px;color:var(--dim);">'+esc(t.matterNo||'')+' · '+esc(t.attorney)+'</div>', hcM(t.value), esc(t.why.join('; ')), esc(t.action)] }));
   h += hcSec('Where to look first','the ten files that most need a human this week', top.length ? hcTbl(['#','Matter','Exposure','Why it is here','Suggested next step'], top, ['left','left','right','left','left']) : '<div style="font-size:13px;">Nothing here trips a threshold.</div>');
 
-  // What Case Closed Sentinel does about it
+  // What Case Closed does about it
   const W = R.withProduct, bul = [];
   if (W.deadlineAlerts) bul.push('<strong>'+plural(W.deadlineAlerts,'deadline')+'</strong> inside 90 days would already be on the calendar with escalating alerts, so none arrives as a surprise.');
   if (W.staleNudges) bul.push('<strong>'+plural(W.staleNudges,'file')+'</strong> quiet for 30+ days would have triggered a status-update nudge to the responsible attorney.');
   if (W.routing.count) bul.push('<strong>'+plural(W.routing.count,'unassigned matter')+'</strong> would go to Sentinel Match for a ranked attorney recommendation'+(W.routing.plan.length?' (balancing the load, '+W.routing.plan.map(p=>esc(p.name)+' +'+p.count).join(', ')+')':'')+', each with the reasoning shown.');
   if (W.reserveReviews) bul.push('<strong>'+plural(W.reserveReviews,'reserve')+'</strong> would be queued for review against how the rest of the book reserves similar matters.');
   if (W.dataGapsFlagged) bul.push('<strong>'+plural(W.dataGapsFlagged,'file')+'</strong> with several missing fields would be flagged for cleanup at intake.');
-  if (!bul.length) bul.push('Nothing urgent here. Case Closed Sentinel would keep it that way by watching deadlines, activity and reserves continuously.');
-  h += hcSec('What Case Closed Sentinel would do with this book','', '<ul style="margin:0 0 0 18px;padding:0;font-size:13px;line-height:1.6;">'+bul.map(b=>'<li style="margin-bottom:5px;">'+b+'</li>').join('')+'</ul>');
+  if (!bul.length) bul.push('Nothing urgent here. Case Closed would keep it that way by watching deadlines, activity and reserves continuously.');
+  h += hcSec('What Case Closed would do with this book','', '<ul style="margin:0 0 0 18px;padding:0;font-size:13px;line-height:1.6;">'+bul.map(b=>'<li style="margin-bottom:5px;">'+b+'</li>').join('')+'</ul>');
 
   // ---- Appendix (full report only) ----
   h += '<div class="hc-detail hc-detail-break"></div>';
@@ -13335,7 +14442,7 @@ function tabClosing(c){
       if (a.status === 'Pending') {
         h += '<button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;color:var(--green);" onclick="setAuthReqStatus('+i+',\'Approved\')">Approve</button> ';
         h += '<button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;color:var(--red);" onclick="setAuthReqStatus('+i+',\'Denied\')">Deny</button>';
-      } else { h += '<span style="font-size:10px;color:var(--dim);">'+(a.approvedDate?esc(a.approvedDate):'—')+'</span>'; }
+      } else { h += '<span style="font-size:10px;color:var(--dim);">'+(a.approvedDate?esc(a.approvedDate):'—')+(a.approvedByName||a.approvedBy ? '<br>by '+esc(a.approvedByName||a.approvedBy) : '')+'</span>'; }
       h += '</td></tr>';
     });
     h += '</tbody></table>';
@@ -13391,6 +14498,7 @@ function tabBilling(c){
   h += '<div>'+inpMoney('Matter Budget', c.billing.budget, 'un(\'billing\',\'budget\',moneyVal(this.value))')+'</div>';
   h += '<div>'+inpMoney('Flat/Capped Fee (if applicable)', c.billing.flatFee, 'un(\'billing\',\'flatFee\',moneyVal(this.value))')+'</div>';
   h += '</div>';
+  h += budgetMeterV(c);
   h += '<div style="font-size:10px;color:var(--dim);margin:-4px 0 12px;">Fee Type feeds the Enterprise dashboard\'s Alternative Fee Arrangement (AFA) savings metric — anything other than "Hourly" counts as an AFA matter.</div>';
 
   h += '<div class="section-band">Time Entry (LEDES Compatible)</div>';
@@ -13480,7 +14588,7 @@ function tabTasks(c){
 
 /* ── TAB: DOCUMENTS ────────────────────────────────────── */
 function tabDocuments(c){
-  let h = '<div class="section-band">Add Document</div>';
+  let h = docFilesV(c) + '<div class="section-band">Add Document</div>';
   h += '<div style="font-size:10px;color:var(--dim);margin:-4px 0 10px;">Leave Type on its default and it\'ll be auto-classified from the title — override it manually if it guesses wrong.</div>';
   h += '<div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:7px;align-items:end;margin-bottom:14px;">';
   h += '<div>'+inp('Title','','window._dcT=this.value')+'</div>';
