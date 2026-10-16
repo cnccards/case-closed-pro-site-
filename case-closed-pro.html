@@ -362,9 +362,9 @@ tr.row-link:hover td{background:#EEF3FB;}
 
 /* ── Brand mark — shield-style C ───────────────────────── */
 .brand-mark{
-  width:36px;height:36px;flex-shrink:0;border-radius:10px;
-  background:url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%20100%20100%22%3E%3Cdefs%3E%3ClinearGradient%20id=%22cg%22%20x1=%220%22%20y1=%220%22%20x2=%221%22%20y2=%221%22%3E%3Cstop%20offset=%220%22%20stop-color=%22%23001C41%22/%3E%3Cstop%20offset=%221%22%20stop-color=%22%230056D2%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect%20width=%22100%22%20height=%22100%22%20rx=%2222%22%20fill=%22url(%23cg)%22/%3E%3Cg%20transform=%22translate(14%2014)%20scale(.72)%22%3E%3Cpath%20d=%22M71.85%2023.95%20A34%2034%200%201%200%2071.85%2076.05%22%20fill=%22none%22%20stroke=%22%23FFFFFF%22%20stroke-width=%2211%22%20stroke-linecap=%22round%22/%3E%3Cpath%20d=%22M40%2051%20L50%2062%20L82%2028%22%20fill=%22none%22%20stroke=%22%23F5B700%22%20stroke-width=%2210%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22/%3E%3C/g%3E%3C/svg%3E") center/100% 100% no-repeat;
-  box-shadow:0 2px 6px rgba(0,28,65,.28);
+  width:34px;height:37px;flex-shrink:0;
+  background:url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%20100%20108%22%3E%3Cdefs%3E%3ClinearGradient%20id=%22cg%22%20x1=%220%22%20y1=%220%22%20x2=%221%22%20y2=%221%22%3E%3Cstop%20offset=%220%22%20stop-color=%22%23001C41%22/%3E%3Cstop%20offset=%221%22%20stop-color=%22%230056D2%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath%20d=%22M50%204%20L90%2017%20V54%20C90%2080%2073%2097%2050%20105%20C27%2097%2010%2080%2010%2054%20V17%20Z%22%20fill=%22url(%23cg)%22/%3E%3Cg%20transform=%22translate(50%2054)%20scale(.62)%20translate(-50%20-50)%22%3E%3Cpath%20d=%22M71.85%2023.95%20A34%2034%200%201%200%2071.85%2076.05%22%20fill=%22none%22%20stroke=%22%23fff%22%20stroke-width=%2212%22%20stroke-linecap=%22round%22/%3E%3Cpath%20d=%22M40%2051%20L50%2062%20L82%2028%22%20fill=%22none%22%20stroke=%22%2322C55E%22%20stroke-width=%2211%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22/%3E%3C/g%3E%3C/svg%3E") center/contain no-repeat;
+  filter:drop-shadow(0 2px 4px rgba(0,28,65,.3));
 }
 
 /* landing page: phone layout */
@@ -2458,14 +2458,14 @@ function auditLogViewerV() {
 /* ══════════════════════════════════════════════════════════════════════
    PUBLIC LANDING PAGE — matches the live cclosed.com hero design
    (navy gradient, pill badge, "and" highlight, See a Live Demo /
-   Start a 90-Day Pilot buttons) using the app's own CSS variables
+   Start a 60-Day Pilot buttons) using the app's own CSS variables
    (var(--pri), var(--pri2), var(--pri3)) so colors stay consistent.
    ══════════════════════════════════════════════════════════════════════ */
 function landingPageV() {
   const tab = S.showLandingTab || 'home';
   /* Clean geometric C mark */
-  const logoMark = '<svg width="28" height="28" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#001C41"/><stop offset="1" stop-color="#0056D2"/></linearGradient></defs><rect width="100" height="100" rx="22" fill="url(#cg)"/><g transform="translate(14 14) scale(.72)"><path d="M71.85 23.95 A34 34 0 1 0 71.85 76.05" fill="none" stroke="#FFFFFF" stroke-width="11" stroke-linecap="round"/><path d="M40 51 L50 62 L82 28" fill="none" stroke="#F5B700" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/></g></svg>';
-  const logoMarkWhite = '<svg width="28" height="28" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#001C41"/><stop offset="1" stop-color="#0056D2"/></linearGradient></defs><rect width="100" height="100" rx="22" fill="url(#cg)"/><g transform="translate(14 14) scale(.72)"><path d="M71.85 23.95 A34 34 0 1 0 71.85 76.05" fill="none" stroke="#FFFFFF" stroke-width="11" stroke-linecap="round"/><path d="M40 51 L50 62 L82 28" fill="none" stroke="#F5B700" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/></g></svg>';
+  const logoMark = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 108" width="28" height="30"><defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#001C41"/><stop offset="1" stop-color="#0056D2"/></linearGradient></defs><path d="M50 4 L90 17 V54 C90 80 73 97 50 105 C27 97 10 80 10 54 V17 Z" fill="url(#cg)"/><g transform="translate(50 54) scale(.62) translate(-50 -50)"><path d="M71.85 23.95 A34 34 0 1 0 71.85 76.05" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round"/><path d="M40 51 L50 62 L82 28" fill="none" stroke="#22C55E" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/></g></svg>';
+  const logoMarkWhite = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 108" width="28" height="30"><defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#001C41"/><stop offset="1" stop-color="#0056D2"/></linearGradient></defs><path d="M50 4 L90 17 V54 C90 80 73 97 50 105 C27 97 10 80 10 54 V17 Z" fill="url(#cg)"/><g transform="translate(50 54) scale(.62) translate(-50 -50)"><path d="M71.85 23.95 A34 34 0 1 0 71.85 76.05" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round"/><path d="M40 51 L50 62 L82 28" fill="none" stroke="#22C55E" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/></g></svg>';
 
   let h = '<div style="background:#fff;min-height:100vh;font-family:var(--sans);color:var(--ink);">';
 
@@ -2533,7 +2533,7 @@ function landingPageV() {
   h += '<p style="font-size:16.5px;color:#A8BDD6;max-width:540px;margin:0 auto 36px;line-height:1.65;">Unify every key fact, filing, deadline, and strategy note in one secure platform.<br>Reduce friction. Strengthen your position. Close claims with confidence.</p>';
   h += '<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:56px;">';
   h += '<button onclick="window.open(\'https://calendly.com/cclosed\')" style="background:#fff;color:#0B1E3A;padding:13px 26px;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:14.5px;">See a Live Demo</button>';
-  h += '<button onclick="window.location.href=\'mailto:sales@cclosed.com?subject=90-Day%20Pilot\'" style="background:transparent;color:#fff;padding:13px 26px;border:1.5px solid rgba(255,255,255,.4);border-radius:8px;font-weight:600;cursor:pointer;font-size:14.5px;">Start a 90-Day Pilot</button>';
+  h += '<button onclick="window.location.href=\'mailto:sales@cclosed.com?subject=60-Day%20Pilot\'" style="background:transparent;color:#fff;padding:13px 26px;border:1.5px solid rgba(255,255,255,.4);border-radius:8px;font-weight:600;cursor:pointer;font-size:14.5px;">Start a 60-Day Pilot</button>';
   h += '</div>';
   h += '<div style="display:flex;justify-content:center;gap:0;flex-wrap:wrap;border-top:1px solid rgba(255,255,255,.12);padding-top:36px;max-width:640px;margin:0 auto;">';
   [['$0','Cost to defense firms'],[String(REPORT_TEMPLATES.length),'Built-in reports'],['100–200','Our target for days to close']].forEach(([n,l],i) => {
@@ -2594,10 +2594,10 @@ function landingPageV() {
   /* Final CTA */
   h += '<section style="background:#0B1E3A;color:#fff;padding:80px 28px;text-align:center;">';
   h += '<h2 style="font-family:var(--serif);font-size:32px;font-weight:500;letter-spacing:-.5px;margin-bottom:12px;">Ready to become the system of record?</h2>';
-  h += '<p style="font-size:15.5px;color:#A8BDD6;margin-bottom:28px;max-width:480px;margin-left:auto;margin-right:auto;line-height:1.6;">Land a 90-day pilot. Prove fewer missed demands and faster closings.</p>';
+  h += '<p style="font-size:15.5px;color:#A8BDD6;margin-bottom:28px;max-width:480px;margin-left:auto;margin-right:auto;line-height:1.6;">Land a 60-day pilot. Prove fewer missed demands and faster closings.</p>';
   h += '<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">';
   h += '<button onclick="window.open(\'https://calendly.com/cclosed\')" style="background:#fff;color:#0B1E3A;padding:13px 26px;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:14.5px;">See a Live Demo</button>';
-  h += '<button onclick="window.location.href=\'mailto:sales@cclosed.com?subject=90-Day%20Pilot\'" style="background:transparent;color:#fff;padding:13px 26px;border:1.5px solid rgba(255,255,255,.4);border-radius:8px;font-weight:600;cursor:pointer;font-size:14.5px;">Start a 90-Day Pilot</button>';
+  h += '<button onclick="window.location.href=\'mailto:sales@cclosed.com?subject=60-Day%20Pilot\'" style="background:transparent;color:#fff;padding:13px 26px;border:1.5px solid rgba(255,255,255,.4);border-radius:8px;font-weight:600;cursor:pointer;font-size:14.5px;">Start a 60-Day Pilot</button>';
   h += '</div></section>';
 
   h += landingFooterV();
@@ -2606,7 +2606,7 @@ function landingPageV() {
 }
 
 function landingFooterV(){
-  const logo = '<svg width="24" height="24" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#001C41"/><stop offset="1" stop-color="#0056D2"/></linearGradient></defs><rect width="100" height="100" rx="22" fill="url(#cg)"/><g transform="translate(14 14) scale(.72)"><path d="M71.85 23.95 A34 34 0 1 0 71.85 76.05" fill="none" stroke="#FFFFFF" stroke-width="11" stroke-linecap="round"/><path d="M40 51 L50 62 L82 28" fill="none" stroke="#F5B700" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/></g></svg>';
+  const logo = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 108" width="24" height="26"><defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#001C41"/><stop offset="1" stop-color="#0056D2"/></linearGradient></defs><path d="M50 4 L90 17 V54 C90 80 73 97 50 105 C27 97 10 80 10 54 V17 Z" fill="url(#cg)"/><g transform="translate(50 54) scale(.62) translate(-50 -50)"><path d="M71.85 23.95 A34 34 0 1 0 71.85 76.05" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round"/><path d="M40 51 L50 62 L82 28" fill="none" stroke="#22C55E" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/></g></svg>';
   let h = '<footer style="padding:36px 28px;background:#fff;border-top:1px solid #E8ECF2;">';
   h += '<div style="max-width:1100px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;">';
   h += '<div style="display:flex;align-items:center;gap:10px;">'+logo+'<span style="font-weight:700;font-size:15px;color:#0B1220;">Case Closed</span></div>';
@@ -4439,7 +4439,7 @@ function hdr(){
   return '<div style="background:rgba(255,255,255,.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50;">'+
     '<div class="hdr-top-row" style="padding:12px 22px 10px;display:flex;align-items:center;justify-content:space-between;gap:14px;">'+
       '<div style="display:flex;align-items:center;gap:11px;">'+
-        '<div class="brand-mark" style="width:34px;height:34px;"></div>'+
+        '<div class="brand-mark" style="width:32px;height:35px;"></div>'+
         '<div>'+
           '<div class="serif" style="font-weight:700;font-size:16px;color:var(--ink);letter-spacing:-.3px;line-height:1;">Case Closed</div>'+
           '<div style="font-size:9px;color:var(--dim);letter-spacing:1.8px;text-transform:uppercase;font-weight:600;margin-top:2px;">Carrier-Grade Litigation Intelligence</div>'+
@@ -4595,7 +4595,7 @@ function loginScreenV(){
   h += '<div style="width:100%;max-width:420px;">';
 
   h += '<div style="display:flex;align-items:center;gap:11px;justify-content:center;margin-bottom:28px;">';
-  h += '<div class="brand-mark" style="width:38px;height:38px;"></div>';
+  h += '<div class="brand-mark" style="width:40px;height:43px;"></div>';
   h += '<div style="color:#fff;font-family:var(--serif);font-weight:700;font-size:19px;">Case Closed</div>';
   h += '</div>';
 
