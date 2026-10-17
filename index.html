@@ -27,7 +27,7 @@ nav{position:sticky;top:0;z-index:40;background:rgba(255,255,255,.9);backdrop-fi
 .nav-in{max-width:1180px;margin:0 auto;padding:14px 32px;display:flex;align-items:center;justify-content:space-between;}
 @media(max-width:720px){.nav-in{padding:14px 20px;}}
 .brand{display:flex;align-items:center;gap:11px;}
-.brand-mark{width:30px;height:33px;background:none;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 1px 3px rgba(0,28,65,.35));flex-shrink:0;}
+.brand-mark{width:32px;height:32px;background:linear-gradient(135deg,#001C41 0%,#0056D2 100%);border-radius:8px;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,28,65,.4);flex-shrink:0;}
 .brand-name{font-family:var(--serif);font-weight:700;font-size:16px;letter-spacing:-.2px;}
 .nav-links{display:flex;align-items:center;gap:28px;font-size:13.5px;font-weight:500;color:var(--muted);}
 .nav-links a:hover{color:var(--pri);}
@@ -192,14 +192,14 @@ footer{padding:44px 0 36px;}
 .cf-note{font-size:11px;color:var(--dim);margin-top:14px;text-align:center;}
 .cf-note a{color:var(--pri2);text-decoration:none;font-weight:600;}
 </style>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%20100%20108%22%3E%3Cdefs%3E%3ClinearGradient%20id=%22cg%22%20x1=%220%22%20y1=%220%22%20x2=%221%22%20y2=%221%22%3E%3Cstop%20offset=%220%22%20stop-color=%22%23001C41%22/%3E%3Cstop%20offset=%221%22%20stop-color=%22%230056D2%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath%20d=%22M50%204%20L90%2017%20V54%20C90%2080%2073%2097%2050%20105%20C27%2097%2010%2080%2010%2054%20V17%20Z%22%20fill=%22url(%23cg)%22/%3E%3Cg%20transform=%22translate(50%2054)%20scale(.62)%20translate(-50%20-50)%22%3E%3Cpath%20d=%22M71.85%2023.95%20A34%2034%200%201%200%2071.85%2076.05%22%20fill=%22none%22%20stroke=%22%23fff%22%20stroke-width=%2212%22%20stroke-linecap=%22round%22/%3E%3Cpath%20d=%22M40%2051%20L50%2062%20L82%2028%22%20fill=%22none%22%20stroke=%22%2322C55E%22%20stroke-width=%2211%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22/%3E%3C/g%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%20100%20100%22%3E%3Cdefs%3E%3ClinearGradient%20id=%22g%22%20x1=%220%22%20y1=%220%22%20x2=%221%22%20y2=%221%22%3E%3Cstop%20offset=%220%22%20stop-color=%22%23001C41%22/%3E%3Cstop%20offset=%221%22%20stop-color=%22%230056D2%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect%20width=%22100%22%20height=%22100%22%20rx=%2222%22%20fill=%22url(%23g)%22/%3E%3Cg%20transform=%22translate(14%2014)%20scale(.72)%22%3E%3Cpath%20d=%22M71.85%2023.95%20A34%2034%200%201%200%2071.85%2076.05%22%20fill=%22none%22%20stroke=%22%23FFFFFF%22%20stroke-width=%2211%22%20stroke-linecap=%22round%22/%3E%3Cpath%20d=%22M40%2051%20L50%2062%20L82%2028%22%20fill=%22none%22%20stroke=%22%23F5B700%22%20stroke-width=%2210%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22/%3E%3C/g%3E%3C/svg%3E">
 </head>
 <body>
 
 <nav>
   <div class="nav-in">
     <div class="brand">
-      <div class="brand-mark"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 108" width="30" height="32"><defs><linearGradient id="sg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#001C41"/><stop offset="1" stop-color="#0056D2"/></linearGradient></defs><path d="M50 4 L90 17 V54 C90 80 73 97 50 105 C27 97 10 80 10 54 V17 Z" fill="url(#sg)"/><g transform="translate(50 54) scale(.62) translate(-50 -50)"><path d="M71.85 23.95 A34 34 0 1 0 71.85 76.05" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round"/><path d="M40 51 L50 62 L82 28" fill="none" stroke="#22C55E" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/></g></svg></div>
+      <div class="brand-mark"><svg viewBox="0 0 100 100" width="24" height="24" fill="none"><path d="M71.85 23.95 A34 34 0 1 0 71.85 76.05" stroke="#fff" stroke-width="11" stroke-linecap="round"/><path d="M40 51 L50 62 L82 28" stroke="#F5B700" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
       <div class="brand-name">Case Closed</div>
     </div>
     <div class="nav-links">
@@ -223,7 +223,7 @@ footer{padding:44px 0 36px;}
     <p class="sub">Case Closed replaces the email threads and spreadsheets between claims and outside counsel with a single litigation platform — from first assignment to a closing package your claims team can actually act on.</p>
     <div class="hero-btns">
       <a href="javascript:void(0)" onclick="openContactModal('I would like to see a live demo of Case Closed.')" class="btn-white">See a Live Demo</a>
-      <a href="javascript:void(0)" onclick="openContactModal()" class="btn-outline-w">Start a 60-Day Pilot</a>
+      <a href="javascript:void(0)" onclick="openContactModal()" class="btn-outline-w">Start a 90-Day Pilot</a>
     </div>
     <div class="hero-stats">
       <div class="hero-stat"><div class="n">$0</div><div class="l">Cost to defense firms</div></div>
@@ -422,7 +422,7 @@ footer{padding:44px 0 36px;}
   <div class="wrap">
     <div class="foot-grid">
       <div class="brand">
-        <div class="brand-mark"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 108" width="28" height="30"><defs><linearGradient id="sg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#001C41"/><stop offset="1" stop-color="#0056D2"/></linearGradient></defs><path d="M50 4 L90 17 V54 C90 80 73 97 50 105 C27 97 10 80 10 54 V17 Z" fill="url(#sg)"/><g transform="translate(50 54) scale(.62) translate(-50 -50)"><path d="M71.85 23.95 A34 34 0 1 0 71.85 76.05" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round"/><path d="M40 51 L50 62 L82 28" fill="none" stroke="#22C55E" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/></g></svg></div>
+        <div class="brand-mark"><svg viewBox="0 0 100 100" width="22" height="22" fill="none"><path d="M71.85 23.95 A34 34 0 1 0 71.85 76.05" stroke="#fff" stroke-width="11" stroke-linecap="round"/><path d="M40 51 L50 62 L82 28" stroke="#F5B700" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <div class="brand-name">Case Closed</div>
       </div>
       <div class="foot-links">
