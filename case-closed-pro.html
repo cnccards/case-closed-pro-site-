@@ -3034,10 +3034,9 @@ function render(){
   else html += '<div style="padding:15px;text-align:right;"><button onclick="st({isAuthenticated:false, attorneyId:null, attorneyName:null})" class="btn btn-out">Sign Out</button></div>';
   if (S.role && !roleAllowed(S.role)) S.role = 'today';
   html += '<div id="ct">';
-  if (S.role === 'calendar') html += calendarV();
+  if (S.role === 'calendar' || S.role === 'diary') html += calTabsV(S.role === 'diary' ? 'tasks' : (S.calView || 'dates'));
   else if (S.role === 'lifecycle') html += lifecycleV();
   else if (S.role === 'sched') html += schedV();
-  else if (S.role === 'diary') html += diaryV();
   else if (S.role === 'approvals') html += apvV();
   else if (S.role === 'matters') html += mattersV();
   else if (S.role === 'audit') html += auditV();
@@ -4009,13 +4008,18 @@ function diaryAdd(){
   c.tasks.push({id:'t'+Date.now(), title, assignedTo:g('dyWho') || diaryMe() || c.attorney, priority:g('dyPri') || 'Medium', due:g('dyDue'), done:false, created:td()});
   sc(c); S.diaryOpenAdd = false; render();
 }
+/* Calendar and Tasks share one tab: dates on one side, the task list on the other */
+function calTabsV(view){
+  const tab = (k, l) => '<button class="pill'+(view === k ? ' on' : '')+'" onclick="st({role:\'calendar\',calView:\''+k+'\',caseId:null,showWelcome:false})">'+l+'</button>';
+  return '<div class="wrap" style="padding-top:16px;padding-bottom:0;"><div class="tab-bar" style="padding-top:0;margin-bottom:0;">'+tab('dates','Deadlines and court dates')+tab('tasks','My tasks')+'</div></div>' + (view === 'tasks' ? diaryV() : calendarV());
+}
 function diaryV(){
   const {today, rows} = diaryRows(), who = S.diaryWho || 'mine', show = S.diaryShow || 'open';
   const open = rows.filter(r => !r.t.done);
   const over = open.filter(r => r.t.due && r.t.due < today), due0 = open.filter(r => r.t.due === today);
   const wk = open.filter(r => r.t.due && r.t.due > today && r.t.due <= demandAddDays(today, 7)), later = open.filter(r => r.t.due && r.t.due > demandAddDays(today, 7)), nod = open.filter(r => !r.t.due);
   const pill = (k, l, cur, fn) => '<span class="pill'+(cur === k ? ' on' : '')+'" onclick="'+fn+'(\''+k+'\')">'+l+'</span>';
-  let h = '<div class="wrap" style="padding-top:18px;max-width:900px;"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-end;"><div><div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">My Diary</div><div style="font-size:13px;color:var(--muted);margin-top:4px;">Every task across your matters, soonest first.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap;">'
+  let h = '<div class="wrap" style="padding-top:18px;max-width:900px;"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-end;"><div><div class="serif" style="font-size:28px;font-weight:700;letter-spacing:-.5px;">My tasks</div><div style="font-size:13px;color:var(--muted);margin-top:4px;">Every task across your matters, soonest first.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap;">'
     + pill('mine', 'Mine', who, 'diarySetWho') + pill('all', 'Everyone', who, 'diarySetWho') + pill('open', 'Open', show, 'diarySetShow') + pill('done', 'Done', show, 'diarySetShow') + '<button class="btn btn-pri" onclick="S.diaryOpenAdd=!S.diaryOpenAdd;render()">+ Add task</button></div></div>';
   h += '<div style="margin:14px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;">' + [['Overdue', over.length, over.length ? '#B91C1C' : 'var(--ink)'], ['Due today', due0.length, 'var(--ink)'], ['Next 7 days', wk.length, 'var(--ink)'], ['Later', later.length + nod.length, 'var(--ink)']].map(k => '<div class="card" style="padding:10px 12px;"><div style="font-size:11.5px;color:var(--muted);">'+k[0]+'</div><div style="font-size:24px;font-weight:800;color:'+k[2]+';">'+k[1]+'</div></div>').join('') + '</div>';
   if (S.diaryOpenAdd) {
@@ -4028,7 +4032,7 @@ function diaryV(){
   if (show === 'done') { const dn = rows.filter(r => r.t.done).sort((a, b) => (b.t.completedDate || '') < (a.t.completedDate || '') ? -1 : 1).slice(0, 60); h += dn.length ? dn.map(rowV).join('') : '<div class="card" style="padding:16px;color:var(--muted);font-size:13px;">Nothing finished yet.</div>'; }
   else {
     h += sec('Overdue', over.sort(byDue)) + sec('Today', due0) + sec('Next 7 days', wk.sort(byDue)) + sec('Later', later.sort(byDue)) + sec('No date', nod);
-    if (!open.length) h += '<div class="card" style="padding:16px;color:var(--muted);font-size:13px;">Nothing open. Use <b>+ Add task</b> to put something on your diary.</div>';
+    if (!open.length) h += '<div class="card" style="padding:16px;color:var(--muted);font-size:13px;">Nothing open. Use <b>+ Add task</b> to put something on your task list.</div>';
   }
   return h + '</div>';
 }
@@ -4390,10 +4394,9 @@ function hdr(){
     { label:'', items:[
       ['today','Today'],
       ['litigation','Litigation'],
+      ['demands','🛡 Verdict Shield'],
       ['matters','All Matters'],
       ['attorney','My Matters'],
-      ['diary','My Diary'],
-      ['demands','🛡 Verdict Shield'],
       ['claims','Claims Desk'],
       ['approvals','Approvals'],
       ['calendar','Calendar'],
@@ -4428,7 +4431,7 @@ function hdr(){
   groups.forEach(g => { g.items = g.items.filter(it => userTier() !== 'member' || MEMBER_PAGES.indexOf(it[0]) >= 0); });
   const visGroups = groups.filter(g => g.items.length);
   const btn = ([r, l]) =>
-    '<button onclick="'+(r==='admin' ? 'goToAdmin()' : r==='scorecard' ? "st({role:'scorecard',caseId:null,scorecardDetail:null,showWelcome:false})" : "st({role:'"+r+"',caseId:null,showWelcome:false})")+'" class="role-tab'+((S.role===r||(r==='billing'&&(S.role==='review'||S.role==='payables')))?' on':'')+(r==='admin'?' admin-tab':'')+(r==='premium'?' premium-tab':'')+'">'+l+(r==='litigation'?attnBadgeV():'')+(r==='demands'?demandBadgeV():'')+'</button>';
+    '<button onclick="'+(r==='admin' ? 'goToAdmin()' : r==='scorecard' ? "st({role:'scorecard',caseId:null,scorecardDetail:null,showWelcome:false})" : "st({role:'"+r+"',caseId:null,showWelcome:false})")+'" class="role-tab'+((S.role===r||(r==='billing'&&(S.role==='review'||S.role==='payables'))||(r==='calendar'&&S.role==='diary'))?' on':'')+(r==='admin'?' admin-tab':'')+(r==='premium'?' premium-tab':'')+'">'+l+(r==='litigation'?attnBadgeV():'')+(r==='demands'?demandBadgeV():'')+'</button>';
 
   const roleBtns = visGroups.map((g,gi) =>
     (gi>0 ? '<div class="nav-divider"></div>' : '') +
