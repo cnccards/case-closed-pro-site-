@@ -4621,6 +4621,8 @@ function loginScreenV(){
   h += inp('Password', S._loginPassword||'', 'window._loginPassword=this.value', 'password', mode==='register'?'At least 8 characters':'');
 
   if (S.loginError) h += '<div class="alert-bad" style="margin-bottom:14px;">'+esc(S.loginError)+'</div>';
+  if (S.verifySentTo) h += '<div class="alert-good" style="margin-bottom:14px;">We sent a link to '+esc(S.verifySentTo)+'. Click it to confirm your address, then sign in.</div>';
+  if (S.verifySentTo || /Confirm your email/.test(S.loginError||'')) h += '<button onclick="resendVerifyEmail()" class="btn btn-out" style="width:100%;justify-content:center;padding:9px;margin-bottom:10px;">Resend the confirmation link</button>';
 
   if (mode === 'register') {
     h += '<button onclick="attemptRegister()" class="btn btn-pri" style="width:100%;justify-content:center;padding:11px;margin-bottom:10px;" '+(S.loginLoading?'disabled':'')+'>'+(S.loginLoading?'Creating…':'Create Organization')+'</button>';
@@ -4721,6 +4723,13 @@ async function attempt2FALogin(){
   }
 }
 
+async function resendVerifyEmail(){
+  const who = S.verifySentTo || S._loginEmail || '';
+  if (!who) { st({loginError:'Enter your email above first.'}); return; }
+  try { await apiFetch('/api/auth/resend-verification', { method:'POST', body: JSON.stringify({ email: who }) }); }
+  catch (e) { /* the server always answers generically; nothing to show */ }
+  st({ loginError:'', verifySentTo: who });
+}
 async function attemptRegister(){
   const email = (window._loginEmail || '').trim();
   const password = window._loginPassword || '';
@@ -4733,6 +4742,10 @@ async function attemptRegister(){
   st({loginError:'', loginLoading:true});
   try {
     const data = await apiFetch('/api/auth/register', { method:'POST', body: JSON.stringify({ email, password, name, orgName, persona }) });
+    if (data && data.needsVerification) {
+      st({ loginError:'', loginLoading:false, verifySentTo: email, _authMode:'signin', _loginEmail: email, _loginPassword:'' });
+      return;
+    }
     completeLoginSession(data);
     await Promise.all([loadCasesFromApi(), loadMyFeatures()]);
     render();
