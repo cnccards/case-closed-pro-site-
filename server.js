@@ -573,6 +573,7 @@ app.post('/api/auth/register', async (req, res) => {
   if (!orgName || !orgName.trim()) return res.status(400).json({ error: 'Organization name is required' });
   const normalizedEmail = email.trim().toLowerCase();
   const client = await pool.connect();
+  let user, rawToken;
   try {
     await client.query('BEGIN');
     const existing = await client.query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
@@ -587,22 +588,93 @@ app.post('/api/auth/register', async (req, res) => {
     );
     const org = orgResult.rows[0];
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    // New self-registered accounts start UNVERIFIED. They get no session until
+    // they click the link in their email (see /api/auth/verify-email).
     const userResult = await client.query(
-      `INSERT INTO users (org_id, email, password_hash, name, persona, role)
-       VALUES ($1,$2,$3,$4,$5,'owner') RETURNING *`,
+      `INSERT INTO users (org_id, email, password_hash, name, persona, role, email_verified)
+       VALUES ($1,$2,$3,$4,$5,'owner', false) RETURNING *`,
       [org.id, normalizedEmail, passwordHash, (name || normalizedEmail.split('@')[0]).trim(), personaVal]
     );
-    const user = userResult.rows[0];
+    user = userResult.rows[0];
+    rawToken = generateResetToken();
+    await client.query(
+      'UPDATE users SET email_verify_hash = $2, email_verify_expires_at = now() + interval \'24 hours\' WHERE id = $1',
+      [user.id, hashToken(rawToken)]
+    );
     await client.query('COMMIT');
     await audit(org.id, user.id, 'auth.register', 'organization', org.id, { orgName: org.name }, req.ip);
-    res.status(201).json({ token: signToken(user), user: publicUser(user), organization: { id: org.id, name: org.name, persona: org.persona, planTier: org.plan_tier } });
   } catch (e) {
     await client.query('ROLLBACK');
     console.error(e);
-    res.status(500).json({ error: 'Registration failed: ' + e.message });
+    return res.status(500).json({ error: 'Registration failed: ' + e.message });
   } finally {
     client.release();
   }
+  await sendVerificationEmail(user, rawToken);
+  res.status(201).json({ needsVerification: true, email: normalizedEmail });
+});
+
+// ---------------------------------------------------------------
+// Email verification. Self-registered accounts must confirm their address
+// before they can sign in. Links are single-use and expire after 24 hours.
+// Invited users, SSO users and accounts created by a platform admin are
+// verified by the path that created them, so they default to verified.
+// ---------------------------------------------------------------
+async function sendVerificationEmail(user, rawToken) {
+  const url = `${(process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')}/case-closed-pro.html?verifyToken=${rawToken}`;
+  if (!SMTP_CONFIGURED) {
+    // Fail closed: the account stays unverified until email is configured.
+    console.warn(`SMTP not configured — verification link for ${user.email}: ${url}`);
+    return;
+  }
+  try {
+    await mailer.sendMail({
+      from: process.env.FROM_EMAIL || process.env.SMTP_USER,
+      to: user.email,
+      subject: 'Confirm your email for Case Closed',
+      text: `Hi ${user.name},\n\nConfirm your email address to finish setting up your Case Closed account. This link expires in 24 hours:\n\n${url}\n\nIf you did not create this account, you can ignore this email.`
+    });
+  } catch (e) {
+    console.error('Verification email failed to send:', e.message);
+  }
+}
+
+app.get('/api/auth/verify-email', async (req, res) => {
+  try {
+    const token = String(req.query.token || '');
+    if (!token) return res.status(400).json({ error: 'This verification link is invalid.' });
+    const r = await q(
+      `UPDATE users SET email_verified = true, email_verify_hash = NULL, email_verify_expires_at = NULL
+       WHERE email_verify_hash = $1 AND email_verify_expires_at > now() AND email_verified = false
+       RETURNING id, org_id`,
+      [hashToken(token)]
+    );
+    if (!r.rows[0]) return res.status(400).json({ error: 'This verification link is invalid or has expired. Request a new one from the sign-in page.' });
+    await audit(r.rows[0].org_id, r.rows[0].id, 'auth.email_verified', 'user', r.rows[0].id, null, req.ip);
+    res.json({ message: 'Email verified. You can sign in now.' });
+  } catch (e) {
+    console.error('verify-email failed:', e.message);
+    res.status(500).json({ error: 'Could not verify the email right now. Try again in a moment.' });
+  }
+});
+
+app.post('/api/auth/resend-verification', async (req, res) => {
+  const generic = { message: 'If that account is waiting for verification, a new link is on its way.' };
+  const email = String((req.body && req.body.email) || '').trim().toLowerCase();
+  if (!isValidEmail(email)) return res.json(generic);
+  try {
+    const u = (await q('SELECT * FROM users WHERE email = $1 AND email_verified = false AND is_active = true', [email])).rows[0];
+    // At most one new link per hour: skip if the current link was issued less than an hour ago.
+    const recent = u && u.email_verify_expires_at && (new Date(u.email_verify_expires_at) - Date.now()) > 23 * 3600e3;
+    if (u && !recent) {
+      const rawToken = generateResetToken();
+      await q('UPDATE users SET email_verify_hash = $2, email_verify_expires_at = now() + interval \'24 hours\' WHERE id = $1', [u.id, hashToken(rawToken)]);
+      await sendVerificationEmail(u, rawToken);
+    }
+  } catch (e) {
+    console.error('resend-verification failed:', e.message);
+  }
+  res.json(generic);
 });
 
 // ---------------------------------------------------------------
@@ -646,6 +718,7 @@ app.post('/api/auth/login', async (req, res) => {
   if (!user) return invalid();
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) return invalid();
+  if (!user.email_verified) return res.status(403).json({ error: 'Confirm your email first. Check your inbox for the link, or request a new one.', needsVerification: true });
 
   loginFails.delete(throttleKey);
   // SSO-only: when the customer requires single sign-on, passwords stop working for everyone except the account owner
@@ -3354,6 +3427,12 @@ app.post('/api/approved-counsel', requireOrgRole('admin'), counselTableGuard, as
   await audit(req.orgId, req.user?.sub, 'approved_counsel.add', 'organization', req.orgId, { created: result.created, updated: result.updated }, req.ip);
   res.status(201).json(result);
 });
+app.post('/api/approved-counsel/clear', requireOrgRole('admin'), counselTableGuard, async (req, res) => {
+  if (String((req.body && req.body.confirm) || '') !== 'DELETE') return res.status(400).json({ error: 'Type DELETE to confirm.' });
+  const r = await req.db.query('DELETE FROM approved_counsel WHERE org_id = $1', [req.orgId]);
+  await audit(req.orgId, req.user?.sub, 'approved_counsel.clear', 'organization', req.orgId, { deleted: r.rowCount }, req.ip);
+  res.json({ ok: true, deleted: r.rowCount });
+});
 app.delete('/api/approved-counsel/:id', requireOrgRole('admin'), counselTableGuard, async (req, res) => {
   if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ error: 'Bad id' });
   const r = await req.db.query('DELETE FROM approved_counsel WHERE id = $1 AND org_id = $2', [req.params.id, req.orgId]);
@@ -3517,6 +3596,24 @@ app.post('/api/feed/runs/:id/undo', requireOrgRole('admin'), async (req, res) =>
   } catch (e) {
     if (e.statusCode) return res.status(e.statusCode).json({ error: e.message });
     console.error('feed undo failed:', e.message);
+    res.status(500).json({ error: 'That load could not be undone. Nothing was changed.' });
+  }
+});
+app.get('/api/import-batches', requireOrgRole('admin'), async (req, res) => {
+  if (!feedTablesReady) await ensureFeedTables();
+  const runs = await listRuns(req.db, req.orgId, 30);
+  res.json({ batches: runs.filter(r => !r.undoneAt).map(r => ({ id: r.id, n: r.created + r.updated, kind: 'claim feed (' + (r.keyName || r.source || 'load') + ')', at: r.at })) });
+});
+app.post('/api/import-batches/delete', requireOrgRole('admin'), async (req, res) => {
+  const id = String((req.body && req.body.id) || '');
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: 'Bad id' });
+  try {
+    const r = await undoRun(req.db, req.orgId, id, req.user?.sub);
+    audit(req.orgId, req.user?.sub, 'claim_feed.undo', 'feed_run', id, { restored: r.restored, removed: r.removed }, req.ip).catch(() => {});
+    res.json({ ok: true, deleted: r.removed, restored: r.restored, skipped: r.skipped.length });
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ error: e.message });
+    console.error('import batch undo failed:', e.message);
     res.status(500).json({ error: 'That load could not be undone. Nothing was changed.' });
   }
 });
