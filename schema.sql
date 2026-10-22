@@ -625,3 +625,9 @@ DO $$ BEGIN
 
 -- single sign-on only switch (owner can require SSO once it has worked)
 ALTER TABLE sso_config ADD COLUMN IF NOT EXISTS enforce_sso BOOLEAN NOT NULL DEFAULT false;
+
+-- Email verification (added October 2026). Existing accounts default to verified;
+-- only new self-registrations are created with email_verified = false.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verify_hash TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verify_expires_at TIMESTAMPTZ;
