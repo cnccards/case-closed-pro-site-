@@ -2464,8 +2464,8 @@ function auditLogViewerV() {
 function landingPageV() {
   const tab = S.showLandingTab || 'home';
   /* Clean geometric C mark */
-  const logoMark = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 108" width="28" height="30"><defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#001C41"/><stop offset="1" stop-color="#0056D2"/></linearGradient></defs><path d="M50 4 L90 17 V54 C90 80 73 97 50 105 C27 97 10 80 10 54 V17 Z" fill="url(#cg)"/><g transform="translate(50 54) scale(.62) translate(-50 -50)"><path d="M40 51 L50 62 L82 28" fill="none" stroke="#22C55E" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/></g></svg>';
-  const logoMarkWhite = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 108" width="28" height="30"><defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#001C41"/><stop offset="1" stop-color="#0056D2"/></linearGradient></defs><path d="M50 4 L90 17 V54 C90 80 73 97 50 105 C27 97 10 80 10 54 V17 Z" fill="url(#cg)"/><g transform="translate(50 54) scale(.62) translate(-50 -50)"><path d="M40 51 L50 62 L82 28" fill="none" stroke="#22C55E" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/></g></svg>';
+  const logoMark = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 108" width="28" height="30"><defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#001C41"/><stop offset="1" stop-color="#0056D2"/></linearGradient></defs><path d="M50 4 L90 17 V54 C90 80 73 97 50 105 C27 97 10 80 10 54 V17 Z" fill="url(#cg)"/><g transform="translate(50 54) scale(.62) translate(-50 -50)"><path d="M71.85 23.95 A34 34 0 1 0 71.85 76.05" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round"/><path d="M40 51 L50 62 L82 28" fill="none" stroke="#22C55E" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/></g></svg>';
+  const logoMarkWhite = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 108" width="28" height="30"><defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#001C41"/><stop offset="1" stop-color="#0056D2"/></linearGradient></defs><path d="M50 4 L90 17 V54 C90 80 73 97 50 105 C27 97 10 80 10 54 V17 Z" fill="url(#cg)"/><g transform="translate(50 54) scale(.62) translate(-50 -50)"><path d="M71.85 23.95 A34 34 0 1 0 71.85 76.05" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round"/><path d="M40 51 L50 62 L82 28" fill="none" stroke="#22C55E" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/></g></svg>';
 
   let h = '<div style="background:#fff;min-height:100vh;font-family:var(--sans);color:var(--ink);">';
 
@@ -2606,7 +2606,7 @@ function landingPageV() {
 }
 
 function landingFooterV(){
-  const logo = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 108" width="24" height="26"><defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#001C41"/><stop offset="1" stop-color="#0056D2"/></linearGradient></defs><path d="M50 4 L90 17 V54 C90 80 73 97 50 105 C27 97 10 80 10 54 V17 Z" fill="url(#cg)"/><g transform="translate(50 54) scale(.62) translate(-50 -50)"><path d="M40 51 L50 62 L82 28" fill="none" stroke="#22C55E" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/></g></svg>';
+  const logo = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 108" width="24" height="26"><defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#001C41"/><stop offset="1" stop-color="#0056D2"/></linearGradient></defs><path d="M50 4 L90 17 V54 C90 80 73 97 50 105 C27 97 10 80 10 54 V17 Z" fill="url(#cg)"/><g transform="translate(50 54) scale(.62) translate(-50 -50)"><path d="M71.85 23.95 A34 34 0 1 0 71.85 76.05" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round"/><path d="M40 51 L50 62 L82 28" fill="none" stroke="#22C55E" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/></g></svg>';
   let h = '<footer style="padding:36px 28px;background:#fff;border-top:1px solid #E8ECF2;">';
   h += '<div style="max-width:1100px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;">';
   h += '<div style="display:flex;align-items:center;gap:10px;">'+logo+'<span style="font-weight:700;font-size:15px;color:#0B1220;">Case Closed</span></div>';
@@ -4394,7 +4394,7 @@ function hdr(){
     { label:'', items:[
       ['today','Today'],
       ['litigation','Litigation'],
-      ['demands','🛡 Verdict Shield'],
+      ['demands','<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 108" width="16" height="17" style="vertical-align:-3px;margin-right:5px;"><defs><linearGradient id="cgTab" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#001C41"/><stop offset="1" stop-color="#0056D2"/></linearGradient></defs><path d="M50 4 L90 17 V54 C90 80 73 97 50 105 C27 97 10 80 10 54 V17 Z" fill="url(#cgTab)"/><g transform="translate(50 54) scale(.62) translate(-50 -50)"><path d="M71.85 23.95 A34 34 0 1 0 71.85 76.05" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round"/><path d="M40 51 L50 62 L82 28" fill="none" stroke="#22C55E" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/></g></svg>Verdict Shield'],
       ['matters','All Matters'],
       ['attorney','My Matters'],
       ['claims','Claims Desk'],
