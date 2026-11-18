@@ -2949,10 +2949,10 @@ function carrierPortalV() {
   
   h += '<div class="g5" style="margin-bottom:20px;">';
   h += '<div class="card"><div class="sh">Open Cases</div><div style="font-size:24px;font-weight:700;">'+openCases.length+'</div></div>';
-  h += '<div class="card"><div class="sh">Total Reserve</div><div style="font-size:22px;font-weight:700;">$'+f$(totalReserve)+'</div></div>';
-  h += '<div class="card"><div class="sh">Total Billed</div><div style="font-size:22px;font-weight:700;">$'+f$(totalBilled)+'</div></div>';
+  h += '<div class="card"><div class="sh">Total Reserve</div><div style="font-size:22px;font-weight:700;">$'+f(totalReserve)+'</div></div>';
+  h += '<div class="card"><div class="sh">Total Billed</div><div style="font-size:22px;font-weight:700;">$'+f(totalBilled)+'</div></div>';
   h += '<div class="card"><div class="sh">Closed Cases</div><div style="font-size:24px;font-weight:700;">'+closedCases.length+'</div></div>';
-  h += '<div class="card"><div class="sh">Savings vs Demand</div><div style="font-size:20px;font-weight:700;color:var(--good);">$'+f$(totalSettled > 0 ? carrierCases.reduce((a,c) => a + c.value, 0) - totalSettled : 0)+'</div></div>';
+  h += '<div class="card"><div class="sh">Savings vs Demand</div><div style="font-size:20px;font-weight:700;color:var(--good);">$'+f(totalSettled > 0 ? carrierCases.reduce((a,c) => a + c.value, 0) - totalSettled : 0)+'</div></div>';
   h += '</div>';
   
   h += '<div class="card">';
@@ -5393,7 +5393,7 @@ function demandEmailsV(){
 /* ── Acknowledgment: each person on the matter confirms "I have seen this demand". The matter is fully
    acknowledged when the primary AND the backup have both done it. ── */
 function demandAcks(d){ return Array.isArray(d.acks) ? d.acks : []; }
-function demandAckedBy(d, name){ return !!name && demandAcks(d).some(a => a.by === name); }
+function demandAckedBy(d, name){ const w = String(name||'').toLowerCase().replace(/\s+/g,' ').trim(); return !!w && demandAcks(d).some(a => String((a && a.by)||'').toLowerCase().replace(/\s+/g,' ').trim() === w); }
 function demandFullyAcked(c, d){
   const prim = claimsPrimary(c), bk = claimsBackup(c);
   const needP = !!prim, needB = !backupMissing(c);
@@ -15029,7 +15029,7 @@ const SENTINEL_MODS = [
     what:'Scans the whole open book for reserve burn, quiet files and approaching deadlines, and ranks what needs attention.',
     sample:'Priority 1: Brightwater Logistics. SOL in 21 days, quiet for 80 days, 95% of reserve billed.\nPriority 2: Ironbridge Steel. SOL in 82 days with a $4.2M exposure and no activity in 69 days.\nPriority 3: Harborview Senior Living. No attorney assigned and SOL in 59 days.\n\n9 matters are flagged in total; the first three account for about $7M of exposure.' }
 ];
-const PREMIUM_PW_HASH = 'dcca36fe6d4e65d66b7d9e4e7a75336c77f76fcab84c7595121e7bedb1919a39'; /* SHA-256 of the premium password; the password itself is not stored in this file */
+const PREMIUM_PW_HASH = '0323fcde5947d97974382e2bf7cbbd4107af3c5862b1602cc4964344541165bc'; /* SHA-256 of the premium password; the password itself is not stored in this file */
 function premiumUnlocked(){
   if (S.premiumUnlocked === undefined) { let v = false; try { v = sessionStorage.getItem('ccpPremiumPreview') === '1'; } catch (e) {} S.premiumUnlocked = v; }
   return !!S.premiumUnlocked;
